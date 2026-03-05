@@ -94,17 +94,25 @@ func (e *Engine) round(ctx context.Context) {
 	sentAt := time.Now().UTC()
 
 	e.mu.Lock()
+	nextRound := e.State.Round + 1
+	nextVersion := e.State.VersionCounter + 1
+	e.State.Round = nextRound
+	e.State.VersionCounter = nextVersion
+	e.State.UpdatedAt = sentAt
+
 	stateSnapshot := sanitizedStateForMessage(e.State)
+	stateVersion := normalizeVersion(stateSnapshot)
+	messageID := shared.MessageID(fmt.Sprintf("%s-%d-%d", e.NodeID, nextVersion, sentAt.UnixNano()))
+	e.State.LastMessageID = messageID
+	e.State.LastSenderNodeID = e.NodeID
 	msg := shared.GossipMessage{
-		MessageID:    shared.MessageID(fmt.Sprintf("%s-%d-%d", e.NodeID, e.State.VersionCounter+1, sentAt.UnixNano())),
+		MessageID:    messageID,
 		OriginNode:   e.NodeID,
 		SentAt:       sentAt,
 		Version:      currentMessageVersion,
-		StateVersion: normalizeVersion(e.State),
+		StateVersion: stateVersion,
 		State:        stateSnapshot,
 	}
-	e.State.Round++
-	e.State.VersionCounter++
 	e.mu.Unlock()
 
 	raw, _ := json.Marshal(msg)

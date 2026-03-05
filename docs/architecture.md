@@ -29,6 +29,8 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 
 ### Semantica
 - Il messaggio rappresenta uno snapshot parziale dello stato locale del mittente.
+- `state_version` deve rappresentare esattamente la versione dello `state` serializzato nello stesso messaggio (nessun disallineamento temporale tra metadata e payload).
+- `message_id`, `state.round` e `state.version_counter` condividono la stessa semantica di avanzamento del round locale per evitare off-by-one.
 - Il ricevente applica merge locale con regole deterministiche (vedi sezione merge).
 - Il formato resta *forward-compatible* tramite `metadata` opzionale.
 
