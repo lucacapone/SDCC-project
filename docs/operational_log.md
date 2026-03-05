@@ -138,3 +138,8 @@
 - **Descrizione task**: Redazione documentazione M02 (`docs/task/M02.md`), aggiornamento architettura/README su membership gossip e verifica coerenza testo↔codice evitando claim su join endpoint runtime non implementato.
 - **File modificati**: `docs/task/M02.md`, `docs/architecture.md`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho consolidato il modello membership locale, il payload gossip membership, le regole di merge/versioning basate su `incarnation` e i trade-off dei timeout di failure detection; in README ho esplicitato stato milestone M01/M02 e comandi test membership, chiarendo che nel runtime corrente viene usato `NoopJoinClient` con fallback ai peer statici.
+
+## 2026-03-05 19:02:16 UTC
+- **Descrizione task**: Correzione disallineamento lessicale in documentazione architetturale membership (`ApplyTimeouts`/`MarkLeave`) rispetto ai nomi metodo reali nel codice (`ApplyTimeoutTransitions`/`Leave`).
+- **File modificati**: `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho allineato la terminologia del documento di architettura ai simboli realmente esposti dal package `internal/membership`, in modo da mantenere coerenza documento↔implementazione senza alterare il comportamento runtime.
