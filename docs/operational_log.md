@@ -33,3 +33,8 @@
 - **Descrizione task**: Applicazione delle decisioni architetturali selezionate (HTTP+JSON, gossip push-pull fanout variabile, aggregazioni sum/average/min/max) e raccomandazione operativa membership/discovery.
 - **File modificati**: `internal/aggregate/aggregate.go`, `internal/aggregate/aggregate_test.go`, `internal/config/config.go`, `configs/example.yaml`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho esteso lo scaffolding delle aggregazioni includendo placeholder `min` e `max`, aggiornato i default/config di esempio per riflettere il set completo richiesto e documentato una raccomandazione bilanciata per membership basata su join endpoint con fallback seed statici.
+
+## 2026-03-05 14:24:37 UTC
+- **Descrizione task**: Pulizia e aggiornamento README dopo decisione finale su membership/discovery (opzione B) e consolidamento scelte architetturali definitive.
+- **File modificati**: `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho rimosso la matrice decisionale e la richiesta di scelta non più necessarie, mantenendo solo le decisioni finali confermate e allineando la sezione aggregazioni/esempi config ai valori effettivamente richiesti.
