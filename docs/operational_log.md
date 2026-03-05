@@ -58,3 +58,8 @@
 - **Descrizione task**: Standardizzazione del contratto messaggio gossip con ID univoco, versione messaggio esplicita e campi di tracciamento (`origin_node`, `state_version`, `sent_at`), con aggiornamento serializzazione engine e test associati.
 - **File modificati**: `internal/types/types.go`, `internal/gossip/engine.go`, `internal/gossip/state.go`, `internal/gossip/state_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho sostituito il vecchio envelope con campi top-level nel `GossipMessage`, aggiunto fallback di normalizzazione in deserializzazione per compatibilità con payload legacy e introdotto sincronizzazione/serializzazione sicura dello stato nel loop gossip per evitare condivisione concorrente delle mappe di merge durante i test di integrazione.
+
+## 2026-03-05 16:56:01 UTC
+- **Descrizione task**: Aggiornamento test gossip con suite `TestMergeRules` deterministica per validare regole di merge richieste dalla roadmap (idempotenza, duplicate delivery, out-of-order, conflitto versione e convergenza logica).
+- **File modificati**: `internal/gossip/state_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho consolidato i casi di merge in un unico test a subtest con fixture a timestamp fisso (senza dipendenza da clock reale) e helper dedicati per stato/messaggi, in modo da rendere riproducibile il comando target `go test ./internal/gossip -run TestMergeRules`.
