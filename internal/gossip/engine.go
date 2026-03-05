@@ -117,7 +117,7 @@ func (e *Engine) round(ctx context.Context) {
 
 	raw, _ := json.Marshal(msg)
 	for _, p := range peers {
-		_ = e.Transport.Send(ctx, p.Address, raw)
+		_ = e.Transport.Send(ctx, p.Addr, raw)
 	}
 
 	if e.Logger != nil {
