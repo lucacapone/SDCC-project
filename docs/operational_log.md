@@ -18,3 +18,8 @@
 - **Descrizione task**: Introduzione configurazione esterna completa per bootstrap nodo, compose multi-nodo in `deploy/`, eliminazione fallback hard-coded in avvio e aggiornamento README operativo.
 - **File modificati**: `internal/config/config.go`, `internal/config/config_test.go`, `cmd/node/main.go`, `internal/gossip/engine.go`, `internal/gossip/engine_test.go`, `configs/example.yaml`, `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`, `deploy/docker-compose.yml`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho esternalizzato i parametri critici (interval, fanout, porta, seed peers, timeout membership, aggregazioni abilitate) con parsing YAML/JSON + override env, ho rimosso nel bootstrap il fallback silente ai default in caso di errore config, e ho predisposto un compose a 3 nodi con rete condivisa e mount di file config dedicati documentando avvio e personalizzazione.
+
+## 2026-03-05 14:01:19 UTC
+- **Descrizione task**: Estensione della test strategy con unit test su config/aggregate/membership, test di integrazione gossip in-memory, scenari crash/restart e aggiornamento README con comandi standard e criteri di successo misurabili.
+- **File modificati**: `internal/config/config_test.go`, `internal/aggregate/aggregate_test.go`, `internal/membership/membership_test.go`, `internal/gossip/integration_test.go`, `Makefile`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho introdotto un transport in-memory per rendere deterministici i test di convergenza e robustezza senza rete reale, rafforzato la validazione di configurazione e documentato una matrice di esecuzione test locale/Docker con soglie quantitative (delta convergenza e timeout) per accettazione riproducibile.
