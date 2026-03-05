@@ -43,3 +43,8 @@
 - **Descrizione task**: Creazione documentazione architetturale gossip (`docs/architecture.md`) con specifica del formato messaggio, strategia di versioning, regole di merge, proprietà/limiti di convergenza e verifica esplicita dell'assenza di coordinatore centrale.
 - **File modificati**: `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho documentato lo stato implementato e la direzione evolutiva per rendere espliciti vincoli e comportamenti del protocollo gossip, includendo una sezione di verifica sull'assenza di componenti centralizzati nel piano di controllo del protocollo.
+
+## 2026-03-05 16:25:05 UTC
+- **Descrizione task**: Rifattorizzazione dei tipi condivisi creando `internal/types` e spostando i DTO gossip cross-package fuori da `internal/gossip`.
+- **File modificati**: `internal/types/types.go`, `internal/gossip/engine.go`, `internal/gossip/state.go`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho centralizzato identificatori e strutture serializzabili (`NodeID`, `MessageID`, `StateVersion`, `MessageEnvelope`, `GossipMessage`, `GossipState`) nel nuovo package `internal/types`, mantenendo `internal/gossip` focalizzato sulla logica di round/merge e aggiornando la documentazione architetturale per evitare divergenze code-doc.

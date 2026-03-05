@@ -7,18 +7,20 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `cmd/node`: bootstrap del nodo (configurazione, membership, engine gossip).
 - `internal/config`: parsing/validazione configurazione YAML/JSON + override env.
 - `internal/membership`: vista locale dei peer e timeout di sospetto.
-- `internal/gossip`: tipo messaggio, stato locale, loop round periodico, merge stato remoto.
+- `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageEnvelope`, `GossipMessage`).
+- `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
 - `internal/transport`: astrazione trasporto (implementazioni concrete e test in-memory).
 
 ## Formato messaggio gossip
-Il messaggio applicativo è `internal/gossip.Message` ed è serializzato in JSON.
+Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in JSON.
 
 ### Campi obbligatori
-1. `node_id` (`string`): identificativo univoco del nodo mittente.
-2. `round` (`uint64`): versione logica locale del mittente al momento dell'invio.
-3. `aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
-4. `value` (`float64`): valore numerico corrente del nodo.
-5. `sent_at` (`timestamp`): timestamp UTC di emissione.
+1. `envelope.message_id` (`string`): identificativo univoco del messaggio gossip.
+2. `envelope.sender_node_id` (`string`): identificativo univoco del nodo mittente.
+3. `envelope.sent_at` (`timestamp`): timestamp UTC di emissione.
+4. `state.round` (`uint64`): versione logica locale del mittente al momento dell'invio.
+5. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
+6. `state.value` (`float64`): valore numerico corrente del nodo.
 
 ### Campi opzionali
 - `metadata` (`map[string]string`, omesso se vuoto): estensioni non critiche per compatibilità futura.
@@ -51,7 +53,7 @@ Evoluzione prevista (raccomandata):
 - mantenere una cache degli ultimi `(node_id, round)` applicati per deduplicazione forte.
 
 ## Regole di merge
-Lo stato locale è `internal/gossip.State` e il merge remoto avviene tramite `ApplyRemote`.
+Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramite `applyRemote` in `internal/gossip/state.go`.
 
 ### Regola base attuale
 - `new_value = (local.value + remote.value) / 2`
