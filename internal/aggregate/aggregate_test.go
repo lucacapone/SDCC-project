@@ -10,6 +10,8 @@ func TestFactory(t *testing.T) {
 	}{
 		{kind: "sum", expectType: "sum", expectErr: false},
 		{kind: "average", expectType: "average", expectErr: false},
+		{kind: "min", expectType: "min", expectErr: false},
+		{kind: "max", expectType: "max", expectErr: false},
 		{kind: "median", expectErr: true},
 	}
 
@@ -42,5 +44,15 @@ func TestMergeRules(t *testing.T) {
 	avg := AveragePlaceholder{}
 	if got := avg.Merge(10, 4); got != 7 {
 		t.Fatalf("merge average inatteso: got=%v want=7", got)
+	}
+
+	min := MinPlaceholder{}
+	if got := min.Merge(10, 4); got != 4 {
+		t.Fatalf("merge min inatteso: got=%v want=4", got)
+	}
+
+	max := MaxPlaceholder{}
+	if got := max.Merge(10, 4); got != 10 {
+		t.Fatalf("merge max inatteso: got=%v want=10", got)
 	}
 }

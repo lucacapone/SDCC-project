@@ -10,5 +10,7 @@ membership_timeout_ms: 5000
 enabled_aggregations:
   - sum
   - average
+  - min
+  - max
 aggregation: sum
 log_level: info
