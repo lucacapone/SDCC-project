@@ -38,3 +38,8 @@
 - **Descrizione task**: Pulizia e aggiornamento README dopo decisione finale su membership/discovery (opzione B) e consolidamento scelte architetturali definitive.
 - **File modificati**: `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho rimosso la matrice decisionale e la richiesta di scelta non più necessarie, mantenendo solo le decisioni finali confermate e allineando la sezione aggregazioni/esempi config ai valori effettivamente richiesti.
+
+## 2026-03-05 16:13:03 UTC
+- **Descrizione task**: Creazione documentazione architetturale gossip (`docs/architecture.md`) con specifica del formato messaggio, strategia di versioning, regole di merge, proprietà/limiti di convergenza e verifica esplicita dell'assenza di coordinatore centrale.
+- **File modificati**: `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho documentato lo stato implementato e la direzione evolutiva per rendere espliciti vincoli e comportamenti del protocollo gossip, includendo una sezione di verifica sull'assenza di componenti centralizzati nel piano di controllo del protocollo.
