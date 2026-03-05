@@ -83,3 +83,13 @@
 - **Descrizione task**: Redazione di `docs/task/M01.md` come assessment dello stato microtask con 6 sezioni richieste e citazione esplicita dei file gossip/architettura indicati, senza modifiche al codice.
 - **File modificati**: `docs/task/M01.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho sintetizzato lo stato dell'implementazione attuale (stato locale, messaggi, merge, convergenza), le scelte architetturali e i gap residui in un documento di sola analisi, mantenendo tracciabilità nel log operativo.
+
+## 2026-03-05 17:22:17 UTC
+- **Descrizione task**: Aggiornamento README con sezione sintetica "Protocollo gossip (M01)" su struttura messaggi, versioning, regole merge e comando di verifica dedicato.
+- **File modificati**: , .
+- **Reasoning summary**: Ho aggiunto una sezione breve e orientata all'uso pratico, includendo un riferimento diretto a  per i dettagli completi e mantenendo coerenza con la suite test M01 esistente.
+
+## 2026-03-05 17:22:32 UTC
+- **Descrizione task**: Nota correttiva dell'entry precedente per ripristinare l'elenco completo dei file modificati e il riferimento al documento di architettura.
+- **File modificati**: README.md, docs/operational_log.md.
+- **Reasoning summary**: Correzione append-only dopo espansione indesiderata dei backtick nella shell; il contenuto corretto conferma l'aggiunta della sezione "Protocollo gossip (M01)" e del link a docs/architecture.md.

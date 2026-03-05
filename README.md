@@ -6,6 +6,7 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Panoramica sistema gossip decentralizzato](#panoramica-sistema-gossip-decentralizzato)
 - [Architettura ad alto livello](#architettura-ad-alto-livello)
 - [Scelte architetturali confermate](#scelte-architetturali-confermate)
+- [Protocollo gossip (M01)](#protocollo-gossip-m01)
 - [Sezione aggregazioni](#sezione-aggregazioni)
 - [Configurazione esterna](#configurazione-esterna)
 - [Avvio locale con Docker Compose](#avvio-locale-con-docker-compose)
@@ -33,6 +34,15 @@ Queste scelte sono definitive per il progetto corrente e sostituiscono la preced
 - **Transport**: A — HTTP+JSON.
 - **Strategia gossip**: C — Push-pull con fanout variabile.
 - **Aggregazioni richieste**: **sum + average + min/max**.
+
+## Protocollo gossip (M01)
+Sintesi operativa del protocollo M01:
+- `GossipMessage` include i campi principali `message_id`, `origin_node`, `state_version` (con `version_epoch` + `version_counter`), `payload` e `sent_at`.
+- Il versioning è composto da `version_epoch + version_counter`: l'epoch separa i cicli/logical reset, il counter ordina gli aggiornamenti nello stesso epoch.
+- Regole principali di merge: `duplicate_message_id` (idempotenza), `out_of_order_stale` (scarto update vecchi), `same_version_different_payload` (conflitto a parità versione) e `remote_newer_version` (applicazione update più recente).
+- Comando mirato di verifica: `go test ./internal/gossip -run TestMergeRules`.
+
+Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/architecture.md).
 
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
