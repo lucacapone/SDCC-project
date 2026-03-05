@@ -16,6 +16,10 @@ func Factory(kind string) (Algorithm, error) {
 		return SumPlaceholder{}, nil
 	case "average":
 		return AveragePlaceholder{}, nil
+	case "min":
+		return MinPlaceholder{}, nil
+	case "max":
+		return MaxPlaceholder{}, nil
 	default:
 		return nil, fmt.Errorf("aggregazione non supportata: %s", kind)
 	}
@@ -32,3 +36,25 @@ type AveragePlaceholder struct{}
 
 func (AveragePlaceholder) Type() string                        { return "average" }
 func (AveragePlaceholder) Merge(local, remote float64) float64 { return (local + remote) / 2 }
+
+// MinPlaceholder mantiene il minimo locale/remoto (semantica monotona semplice).
+type MinPlaceholder struct{}
+
+func (MinPlaceholder) Type() string { return "min" }
+func (MinPlaceholder) Merge(local, remote float64) float64 {
+	if remote < local {
+		return remote
+	}
+	return local
+}
+
+// MaxPlaceholder mantiene il massimo locale/remoto (semantica monotona semplice).
+type MaxPlaceholder struct{}
+
+func (MaxPlaceholder) Type() string { return "max" }
+func (MaxPlaceholder) Merge(local, remote float64) float64 {
+	if remote > local {
+		return remote
+	}
+	return local
+}
