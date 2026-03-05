@@ -20,6 +20,8 @@ func TestLoadYAML(t *testing.T) {
 	content := []byte(`node_id: test-node
 bind_address: 0.0.0.0
 node_port: 7010
+join_endpoint: bootstrap:9000
+bootstrap_peers: [node-4:7004,node-5:7005]
 seed_peers: [node-1:7001,node-2:7002]
 gossip_interval_ms: 1200
 fanout: 3
@@ -39,6 +41,12 @@ log_level: debug
 
 	if cfg.NodeID != "test-node" || cfg.Aggregation != "average" || cfg.Fanout != 3 {
 		t.Fatalf("config caricata in modo inatteso: %+v", cfg)
+	}
+	if cfg.JoinEndpoint != "bootstrap:9000" {
+		t.Fatalf("join_endpoint inatteso: %+v", cfg)
+	}
+	if len(cfg.BootstrapPeers) != 2 {
+		t.Fatalf("bootstrap_peers inattesi: %+v", cfg.BootstrapPeers)
 	}
 }
 
@@ -75,6 +83,8 @@ func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("NODE_ID", "env-node")
 	t.Setenv("AGGREGATION", "average")
 	t.Setenv("ENABLED_AGGREGATIONS", "sum,average")
+	t.Setenv("JOIN_ENDPOINT", "seed:9010")
+	t.Setenv("BOOTSTRAP_PEERS", "node-a:7001,node-b:7002")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -85,6 +95,23 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 	if cfg.Aggregation != "average" {
 		t.Fatalf("override AGGREGATION non applicato: %+v", cfg)
+	}
+	if cfg.JoinEndpoint != "seed:9010" {
+		t.Fatalf("override JOIN_ENDPOINT non applicato: %+v", cfg)
+	}
+	if len(cfg.BootstrapPeers) != 2 {
+		t.Fatalf("override BOOTSTRAP_PEERS non applicato: %+v", cfg)
+	}
+}
+
+func TestDiscoveryPeersPreferBootstrapPeers(t *testing.T) {
+	cfg := Default()
+	cfg.SeedPeers = []string{"seed-1", "seed-2"}
+	cfg.BootstrapPeers = []string{"bootstrap-1"}
+
+	got := cfg.DiscoveryPeers()
+	if len(got) != 1 || got[0] != "bootstrap-1" {
+		t.Fatalf("discovery peers inattesi: %+v", got)
 	}
 }
 

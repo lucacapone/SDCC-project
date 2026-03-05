@@ -5,7 +5,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 
 ## Componenti principali
 - `cmd/node`: bootstrap del nodo (configurazione, membership, engine gossip).
-- `internal/config`: parsing/validazione configurazione YAML/JSON + override env.
+- `internal/config`: parsing/validazione configurazione YAML/JSON + override env (inclusi `join_endpoint`, `bootstrap_peers`, `seed_peers`).
 - `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
@@ -90,7 +90,7 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 ## Verifica assenza coordinatore centrale
 Architettura e implementazione correnti non introducono componenti di coordinamento centrale per la logica gossip:
 - ogni nodo avvia round in autonomia;
-- membership locale con seed/join e vista distribuita;
+- membership locale con join endpoint usato solo come seed discovery iniziale (snapshot/delta) e fallback su peer statici;
 - scambio stato peer-to-peer.
 
 L'unico riferimento a sistemi centralizzati resta opzionale e **solo osservabile** (es. log centralizzati in deploy), non coinvolto nelle decisioni di protocollo.
