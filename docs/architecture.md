@@ -11,6 +11,22 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
 - `internal/transport`: astrazione trasporto (implementazioni concrete e test in-memory).
 
+## Modello membership locale
+Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da record `Peer` con:
+
+- `node_id`: identificativo logico del peer.
+- `addr`: endpoint di rete noto localmente.
+- `status`: stato corrente (`alive`, `suspect`, `dead`, `leave`).
+- `incarnation`: versione monotona del peer usata per ordinare aggiornamenti concorrenti.
+- `last_seen`: ultimo timestamp utile a timeout e osservabilità.
+
+Transizioni principali implementate:
+
+1. `Join`/`Upsert` inseriscono o aggiornano un peer in stato `alive`.
+2. `ApplyTimeouts` degrada `alive -> suspect -> dead` in base a timeout configurabili.
+3. `MarkLeave` pubblica tombstone `leave` per preservare convergenza e prevenire resurrect implicite.
+4. aggiornamenti con `incarnation` più alta riattivano il peer e sovrascrivono stati precedenti.
+
 ## Formato messaggio gossip
 Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in JSON.
 
@@ -24,6 +40,23 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 7. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
 8. `state.value` (`float64`): valore numerico corrente del nodo.
 9. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
+
+### Payload gossip membership (dettaglio)
+Il campo `membership` è un array di `MembershipEntry` serializzato integralmente ad ogni messaggio:
+
+```text
+membership: [
+  {
+    node_id: string,
+    addr: string,
+    status: "alive" | "suspect" | "dead" | "leave",
+    incarnation: uint64,
+    last_seen: timestamp
+  }
+]
+```
+
+Questa scelta privilegia robustezza di convergenza rispetto alla minimizzazione del payload.
 
 ### Campi opzionali
 - `metadata` (`map[string]string`, omesso se vuoto): estensioni non critiche per compatibilità futura.
@@ -85,6 +118,26 @@ Il digest `membership` viene unito localmente entry-per-entry con proprietà di 
 3. `last_seen` e `addr` vengono aggiornati solo se il nuovo dato è più recente/non vuoto.
 4. L'operazione è idempotente: riapplicare lo stesso digest non altera lo stato.
 
+## Versioning membership e regole incarnation
+Il versioning membership non usa contatori globali condivisi: l'ordinamento è locale per peer e si basa su `incarnation`.
+
+- `incarnation` è il discriminante primario: update con `incarnation` inferiore non devono sovrascrivere lo stato locale.
+- a parità di `incarnation` prevale la priorità di stato (`alive < suspect < dead < leave`) per garantire ordine deterministico.
+- `last_seen` è un attributo ausiliario: non annulla la regola principale su `incarnation`, ma aggiorna la freschezza osservabile quando più recente.
+
+Questo schema evita dipendenze da ordering totale dei messaggi e mantiene convergenza eventuale con gossip best-effort.
+
+## Timeout configurabili e trade-off failure detection
+La failure detection membership dipende da timeout configurabili a runtime (es. `membership_timeout_ms` e timeout interni `SuspectTimeout`/`DeadTimeout`).
+
+Trade-off principali:
+
+- timeout più bassi: rilevazione guasti più rapida, ma rischio maggiore di false positive su jitter/latency.
+- timeout più alti: maggiore stabilità della vista membership, ma tempi più lunghi per isolare nodi realmente down.
+- fanout/intervallo gossip influenzano indirettamente la bontà della detection: round più radi aumentano la probabilità di transizioni conservative verso `suspect`/`dead`.
+
+Per questo i timeout devono essere calibrati in base al profilo rete e al target operativo (reattività vs stabilità).
+
 ## Proprietà attese di convergenza e limiti
 
 ### Proprietà attese
@@ -100,7 +153,7 @@ Il digest `membership` viene unito localmente entry-per-entry con proprietà di 
 ## Verifica assenza coordinatore centrale
 Architettura e implementazione correnti non introducono componenti di coordinamento centrale per la logica gossip:
 - ogni nodo avvia round in autonomia;
-- membership locale con join endpoint usato solo come seed discovery iniziale (snapshot/delta) e fallback su peer statici;
+- membership locale con tentativo opzionale di bootstrap via `join_endpoint`; in assenza di client join attivo (default runtime), viene usato il fallback su peer statici;
 - scambio stato peer-to-peer.
 
 L'unico riferimento a sistemi centralizzati resta opzionale e **solo osservabile** (es. log centralizzati in deploy), non coinvolto nelle decisioni di protocollo.

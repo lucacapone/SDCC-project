@@ -7,6 +7,7 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Architettura ad alto livello](#architettura-ad-alto-livello)
 - [Scelte architetturali confermate](#scelte-architetturali-confermate)
 - [Protocollo gossip (M01)](#protocollo-gossip-m01)
+- [Stato avanzamento milestone](#stato-avanzamento-milestone)
 - [Sezione aggregazioni](#sezione-aggregazioni)
 - [Configurazione esterna](#configurazione-esterna)
 - [Avvio locale con Docker Compose](#avvio-locale-con-docker-compose)
@@ -45,6 +46,14 @@ Sintesi operativa del protocollo M01:
 Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/architecture.md).
 - Test membership dedicati: `go test ./internal/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder`.
 
+## Stato avanzamento milestone
+- **M01**: completata (contratto messaggio gossip, versioning `epoch+counter`, merge deterministico e test di convergenza base).
+- **M02**: completata a livello repository su modello membership locale + propagazione digest gossip + merge `incarnation/status` + test dedicati.
+
+Documento task:
+- `docs/task/M01.md`
+- `docs/task/M02.md`
+
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
 
@@ -54,9 +63,9 @@ Perché questa scelta è la più equilibrata per il progetto:
 - resta semplice da testare in locale e su EC2 perché i seed rimangono piano B operativo.
 
 Impatto pratico previsto:
-- aggiungiamo `join_endpoint` opzionale in configurazione;
-- all'avvio il nodo prova prima il join endpoint, in fallback usa la seed list;
-- nei test crash/restart validiamo esplicitamente il rientro nodo via join endpoint.
+- `join_endpoint` è già presente in configurazione come meccanismo di bootstrap opzionale;
+- nel runtime corrente (`cmd/node`) viene usato `NoopJoinClient`, quindi in pratica si applica fallback su `bootstrap_peers`/`seed_peers`;
+- la membership operativa resta decentralizzata e evolve via gossip peer-to-peer.
 
 ## Sezione aggregazioni
 Aggregazioni abilitate via configurazione:
@@ -128,6 +137,14 @@ Per passare configurazioni personalizzate basta cambiare i file montati o impost
 ## Esecuzione test
 ```bash
 go test ./...
+```
+
+Comandi mirati membership (M02):
+```bash
+go test ./internal/membership -run TestJoinLeave
+go test ./internal/membership -run TestTimeoutTransitions
+go test ./internal/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder
+go test ./internal/gossip -run TestRoundSerializzaMembershipConIncarnation
 ```
 
 ## Script/comandi standard
