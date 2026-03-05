@@ -23,3 +23,8 @@
 - **Descrizione task**: Estensione della test strategy con unit test su config/aggregate/membership, test di integrazione gossip in-memory, scenari crash/restart e aggiornamento README con comandi standard e criteri di successo misurabili.
 - **File modificati**: `internal/config/config_test.go`, `internal/aggregate/aggregate_test.go`, `internal/membership/membership_test.go`, `internal/gossip/integration_test.go`, `Makefile`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto un transport in-memory per rendere deterministici i test di convergenza e robustezza senza rete reale, rafforzato la validazione di configurazione e documentato una matrice di esecuzione test locale/Docker con soglie quantitative (delta convergenza e timeout) per accettazione riproducibile.
+
+## 2026-03-05 14:07:22 UTC
+- **Descrizione task**: Inserimento in README di matrice decisionale architetturale (transport, gossip/fanout, coppie aggregazioni, membership/discovery) con pro/contro e impatti su test/deploy EC2, chiudendo con richiesta decisionale a risposta secca senza implementazioni definitive.
+- **File modificati**: `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho preparato un confronto strutturato tra opzioni architetturali alternative per permettere una decisione esplicita del human prima di introdurre scelte irreversibili nel codice, mantenendo lo scope limitato alla documentazione come richiesto.
