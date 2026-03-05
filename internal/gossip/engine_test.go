@@ -13,6 +13,7 @@ import (
 func TestEngineStartStop(t *testing.T) {
 	eng := NewEngine(
 		"node-1",
+		"sum",
 		transport.NoopTransport{},
 		membership.NewSet(),
 		slog.Default(),

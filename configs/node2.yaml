@@ -1,8 +1,8 @@
-node_id: node-1
+node_id: node-2
 bind_address: 0.0.0.0
-node_port: 7001
+node_port: 7002
 seed_peers:
-  - node-2:7002
+  - node-1:7001
   - node-3:7003
 gossip_interval_ms: 1000
 fanout: 2

@@ -1,14 +1,14 @@
-node_id: node-1
+node_id: node-3
 bind_address: 0.0.0.0
-node_port: 7001
+node_port: 7003
 seed_peers:
+  - node-1:7001
   - node-2:7002
-  - node-3:7003
 gossip_interval_ms: 1000
 fanout: 2
 membership_timeout_ms: 5000
 enabled_aggregations:
   - sum
   - average
-aggregation: sum
+aggregation: average
 log_level: info
