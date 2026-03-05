@@ -56,7 +56,11 @@ func (e *Engine) Start(ctx context.Context) error {
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			return err
 		}
-		e.State = applyRemote(e.State, msg)
+		merge := applyRemote(e.State, msg)
+		e.State = merge.State
+		if e.Logger != nil {
+			e.Logger.Debug("merge remoto", "status", merge.Status, "reason", merge.Reason, "from", msg.Envelope.SenderNodeID, "message_id", msg.Envelope.MessageID)
+		}
 		return nil
 	})
 	if err != nil {
@@ -98,6 +102,7 @@ func (e *Engine) round(ctx context.Context) {
 		e.Logger.Debug("gossip round eseguito", "peers", len(peers), "round", e.State.Round)
 	}
 	e.State.Round++
+	e.State.VersionCounter++
 }
 
 // Stop ferma ticker e transport.

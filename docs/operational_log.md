@@ -48,3 +48,8 @@
 - **Descrizione task**: Rifattorizzazione dei tipi condivisi creando `internal/types` e spostando i DTO gossip cross-package fuori da `internal/gossip`.
 - **File modificati**: `internal/types/types.go`, `internal/gossip/engine.go`, `internal/gossip/state.go`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho centralizzato identificatori e strutture serializzabili (`NodeID`, `MessageID`, `StateVersion`, `MessageEnvelope`, `GossipMessage`, `GossipState`) nel nuovo package `internal/types`, mantenendo `internal/gossip` focalizzato sulla logica di round/merge e aggiornando la documentazione architetturale per evitare divergenze code-doc.
+
+## 2026-03-05 16:36:06 UTC
+- **Descrizione task**: Introduzione versioning composto dello stato gossip, merge remoto idempotente con deduplica/out-of-order handling, gestione esplicita conflitti e nuovi esiti merge per metriche/debug.
+- **File modificati**: `internal/types/types.go`, `internal/gossip/state.go`, `internal/gossip/engine.go`, `internal/gossip/state_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito il merge best-effort con un flusso deterministico basato su `version_epoch + version_counter`, aggiungendo metadati locali allo stato (`SeenMessageIDs`, `LastSeenVersionByNode`) per deduplica e filtro aggiornamenti obsoleti, includendo il caso no-op su stessa versione+payload e tie-break riproducibile sui conflitti stessa versione payload diverso, con test dedicati sugli esiti `applied/skipped/conflict`.

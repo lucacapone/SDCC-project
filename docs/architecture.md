@@ -36,41 +36,40 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 - Il payload trasportato è `[]byte` JSON su canale di trasporto astratto.
 
 ## Strategia di versioning dello stato
-La versione logica dello stato è basata su `round`.
+La versione logica è composta da **`version_epoch` + `version_counter`** (`internal/types.StateVersionStamp`).
 
 ### Regole
-1. Ogni round locale completato incrementa `State.Round` di 1.
-2. Ogni merge remoto, nello stato attuale, incrementa `State.Round` di 1.
-3. `round` è monotono locale (non decrescente per nodo).
+1. Ogni round locale completato incrementa `State.Round` e `State.VersionCounter` di 1.
+2. Ogni merge remoto applicato aggiorna `version_counter` con `max(local, remote)+1`.
+3. `version_epoch` è mantenuto per evoluzioni future (reset/riavvii logici) e partecipa al confronto versione.
+4. `round` resta presente per retrocompatibilità e osservabilità.
 
 ### Regole di confronto versione
-Stato attuale implementato:
-- Il confronto è **best-effort**: il messaggio remoto viene fuso senza blocco esplicito su `round` minore/maggiore.
-- `round` è usato principalmente come metrica di progresso locale e osservabilità.
-
-Evoluzione prevista (raccomandata):
-- introdurre confronto `msg.round` vs `local.round` per filtrare aggiornamenti palesemente obsoleti;
-- mantenere una cache degli ultimi `(node_id, round)` applicati per deduplicazione forte.
+Implementazione attuale:
+- confronto lessicografico su `(version_epoch, version_counter)`;
+- messaggi con versione inferiore vengono scartati (`older_version`);
+- out-of-order per mittente (`LastSeenVersionByNode`) vengono scartati (`out_of_order_stale`);
+- duplicati (`SeenMessageIDs`) vengono ignorati in modo idempotente.
 
 ## Regole di merge
 Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramite `applyRemote` in `internal/gossip/state.go`.
 
-### Regola base attuale
-- `new_value = (local.value + remote.value) / 2`
-- `new_round = local.round + 1`
-- `updated_at = now_utc`
+### Regola di merge implementata
+- `new_value = (local.value + remote.value) / 2` quando `remote_version > local_version`;
+- `new_round = max(local.round, remote.round) + 1`;
+- `updated_at = now_utc`;
+- tracciamento `last_message_id` e `last_sender_node_id`;
+- metadati locali non serializzati: `SeenMessageIDs`, `LastSeenVersionByNode`.
 
-### Proprietà richieste
-- **Idempotenza**: non pienamente garantita nello stato corrente (riapplicare lo stesso messaggio altera il valore).
-- **Duplicati**: tollerati funzionalmente ma possono introdurre bias.
-- **Out-of-order**: non bloccanti, ma senza filtro versione possono rallentare la convergenza.
-- **Conflitti** (`aggregation_type` diverso): da gestire come messaggio non applicabile; raccomandato scarto con log warning.
+### Esiti merge esposti
+`applyRemote` restituisce `MergeResult` con:
+- `applied`: update remoto applicato;
+- `skipped`: no-op (duplicato, stessa versione+payload, versione vecchia/out-of-order);
+- `conflict`: conflitto rilevato (es. stessa versione con payload diverso o aggregazione incompatibile).
 
-### Direzione evolutiva consigliata
-Per robustezza production-grade:
-1. deduplica per `(node_id, round)`;
-2. guardia su `aggregation_type` coerente;
-3. regole merge specifiche per algoritmo (`sum`, `average`, `min`, `max`) oltre alla media placeholder corrente.
+### Risoluzione conflitti
+- `aggregation_type` differente: conflitto e scarto update;
+- stessa versione ma payload differente: conflitto con tie-break deterministico (timestamp più recente, poi `sender_node_id`, poi `message_id`).
 
 ## Proprietà attese di convergenza e limiti
 
