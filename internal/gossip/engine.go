@@ -22,13 +22,13 @@ type Engine struct {
 }
 
 // NewEngine costruisce un engine con dipendenze minime.
-func NewEngine(nodeID string, t transport.Transport, m *membership.Set, logger *slog.Logger, roundEvery time.Duration) *Engine {
+func NewEngine(nodeID, aggregationType string, t transport.Transport, m *membership.Set, logger *slog.Logger, roundEvery time.Duration) *Engine {
 	if roundEvery <= 0 {
 		roundEvery = time.Second
 	}
 	return &Engine{
 		NodeID:      nodeID,
-		State:       State{NodeID: nodeID, AggregationType: "sum", UpdatedAt: time.Now().UTC()},
+		State:       State{NodeID: nodeID, AggregationType: aggregationType, UpdatedAt: time.Now().UTC()},
 		Membership:  m,
 		Transport:   t,
 		Logger:      logger,

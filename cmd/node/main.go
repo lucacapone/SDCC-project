@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,25 +22,22 @@ func main() {
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		// Bootstrap minimo: fallback su default se parser non ancora implementato.
-		cfg = config.Default()
-	}
-	if err := config.Validate(cfg); err != nil {
-		panic(err)
+		log.Fatalf("errore caricamento configurazione: %v", err)
 	}
 
 	logger := observability.NewLogger(cfg.LogLevel, nil)
 	mset := membership.NewSet()
-	for _, p := range cfg.Peers {
+	for _, p := range cfg.SeedPeers {
 		mset.Join(p, time.Now().UTC())
 	}
 
 	eng := gossip.NewEngine(
 		cfg.NodeID,
+		cfg.Aggregation,
 		transport.NoopTransport{},
 		mset,
 		logger,
-		time.Duration(cfg.RoundEveryMS)*time.Millisecond,
+		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

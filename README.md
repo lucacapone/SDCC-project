@@ -15,80 +15,80 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 ## Panoramica sistema gossip decentralizzato
 Il sistema è pensato per nodi indipendenti che scambiano periodicamente informazioni in modalità peer-to-peer.
 
-Obiettivi principali:
-- evitare single point of failure;
-- propagare stato e stime aggregate in round successivi;
-- convergere verso un valore condiviso anche in presenza di ritardi o perdita parziale di messaggi.
-
 ## Architettura ad alto livello
-### Nodi
-Ogni nodo mantiene:
-- stato locale (valore osservato, metadati, timestamp/round);
-- membership conosciuta (peer disponibili);
-- logica di merge dello stato ricevuto.
-
-### Round gossip
-A ogni round, un nodo:
-1. seleziona uno o più peer;
-2. invia il proprio payload;
-3. riceve payload remoto;
-4. applica merge/aggiornamento locale.
-
-### Payload scambiato
-Payload minimo consigliato:
-- `node_id`
-- `round`
-- `aggregation_type`
-- `value`
-- `metadata` (facoltativo: versione schema, timestamp, qualità dato)
+Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo e fanout configurabili.
 
 ## Sezione aggregazioni
-Placeholder aggregazioni previste (da confermare durante implementazione):
-1. **sum**
-2. **average**
+Aggregazioni abilitate via configurazione:
+- `sum`
+- `average`
 
-Possibili estensioni future: `min`, `max`, `count`, combinazioni pesate.
+La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contro `enabled_aggregations`.
 
 ## Configurazione esterna
-Il repository include un file di esempio:
+File di esempio:
 - `configs/example.yaml`
 
-Esempio utilizzo (bootstrap attuale):
+Parametri esterni principali:
+- `gossip_interval_ms`
+- `fanout`
+- `node_port`
+- `seed_peers`
+- `membership_timeout_ms`
+- `enabled_aggregations`
+
+Esecuzione locale con file config:
 ```bash
 go run ./cmd/node --config configs/example.yaml
 ```
 
+Override via variabili ambiente (precedenza sull'YAML):
+```bash
+NODE_ID=node-custom \
+NODE_PORT=7100 \
+SEED_PEERS=node-1:7001,node-2:7002 \
+GOSSIP_INTERVAL_MS=500 \
+FANOUT=1 \
+MEMBERSHIP_TIMEOUT_MS=3000 \
+ENABLED_AGGREGATIONS=sum,average \
+AGGREGATION=average \
+go run ./cmd/node --config configs/example.yaml
+```
+
 ## Avvio locale con Docker Compose
-File di riferimento presente nello scaffolding:
-- `docker-compose.yml`
+Compose multi-nodo:
+- `deploy/docker-compose.yml`
 
 Comandi:
 ```bash
-docker compose up -d
-docker compose ps
-docker compose down
+docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml logs -f node1
+docker compose -f deploy/docker-compose.yml down
 ```
 
+Ogni servizio monta una config esterna dedicata:
+- `configs/node1.yaml`
+- `configs/node2.yaml`
+- `configs/node3.yaml`
+
+Per passare configurazioni personalizzate basta cambiare i file montati o impostare env nel servizio desiderato.
+
 ## Esecuzione test
-Comando standard Go:
 ```bash
 go test ./...
 ```
 
 ## Demo rapida
-Sequenza minima con i file attuali:
 ```bash
-# 1) Verifica file di configurazione esempio
-cat configs/example.yaml
+# 1) Avvio cluster
+docker compose -f deploy/docker-compose.yml up -d
 
-# 2) Avvio stack locale (placeholder scaffolding)
-docker compose up -d
+# 2) Verifica servizi
+docker compose -f deploy/docker-compose.yml ps
 
-# 3) Stato servizi
-docker compose ps
-
-# 4) Arresto
-docker compose down
+# 3) Arresto
+docker compose -f deploy/docker-compose.yml down
 ```
 
 ## Nota deploy EC2 essenziale
