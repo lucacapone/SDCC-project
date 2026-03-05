@@ -13,8 +13,12 @@ func TestJoinLeave(t *testing.T) {
 		t.Fatalf("snapshot peers = %d, atteso 1", got)
 	}
 	set.Leave("node-2:7002")
-	if got := len(set.Snapshot()); got != 0 {
-		t.Fatalf("snapshot peers = %d, atteso 0", got)
+	peers := byNodeID(set.Snapshot())
+	if got := len(peers); got != 1 {
+		t.Fatalf("snapshot peers = %d, atteso 1 tombstone", got)
+	}
+	if peers["node-2:7002"].Status != Left {
+		t.Fatalf("stato leave non serializzato: got=%s", peers["node-2:7002"].Status)
 	}
 }
 

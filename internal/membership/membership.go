@@ -12,6 +12,7 @@ const (
 	Alive   Status = "alive"
 	Suspect Status = "suspect"
 	Dead    Status = "dead"
+	Left    Status = "leave"
 )
 
 // Config definisce timeout espliciti per le transizioni di membership.
@@ -107,7 +108,18 @@ func (s *Set) Upsert(update Peer) {
 func (s *Set) Leave(nodeID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.peers, nodeID)
+	if nodeID == "" {
+		return
+	}
+	peer, ok := s.peers[nodeID]
+	if !ok {
+		s.peers[nodeID] = Peer{NodeID: nodeID, Addr: nodeID, Status: Left, Incarnation: 1, LastSeen: time.Now().UTC()}
+		return
+	}
+	peer.Status = Left
+	peer.Incarnation++
+	peer.LastSeen = time.Now().UTC()
+	s.peers[nodeID] = peer
 }
 
 // Touch aggiorna heartbeat di un peer.
@@ -141,6 +153,9 @@ func (s *Set) ApplyTimeoutTransitions(now time.Time) []Peer {
 
 	updated := make([]Peer, 0)
 	for id, p := range s.peers {
+		if p.Status == Left {
+			continue
+		}
 		next := statusForElapsed(now.Sub(p.LastSeen), s.cfg)
 		if p.Status != next {
 			p.Status = next
@@ -170,6 +185,8 @@ func maxStatus(a, b Status) Status {
 
 func rankStatus(s Status) int {
 	switch s {
+	case Left:
+		return 4
 	case Dead:
 		return 3
 	case Suspect:

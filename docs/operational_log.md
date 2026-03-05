@@ -108,3 +108,23 @@
 - **Descrizione task**: Estensione bootstrap nodo con configurazione discovery (`join_endpoint`, `bootstrap_peers`), fase di join attiva all'avvio con fallback statico e test in-memory per vista membership iniziale.
 - **File modificati**: `internal/config/config.go`, `internal/config/config_test.go`, `cmd/node/main.go`, `internal/membership/bootstrap.go`, `internal/membership/bootstrap_test.go`, `configs/example.yaml`, `README.md`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto una fase di bootstrap esplicita seed-only: il nodo tenta join dinamico verso endpoint configurato per ottenere snapshot/delta iniziale, e se non disponibile ricade su peer statici (`bootstrap_peers` o `seed_peers` per retrocompatibilità); ho mantenuto override env, aggiornato la documentazione e aggiunto test con transport in-memory del join per verificare discovery e fallback senza introdurre una fonte autoritativa centralizzata.
+
+## 2026-03-05 18:11:58 UTC
+- **Obiettivo:** estendere il protocollo gossip con digest membership (status/incarnation), merge robusto e test di convergenza multi-nodo.
+- **Attività svolte:**
+  - esteso `GossipMessage` con campo `membership` e DTO serializzabile `MembershipEntry`;
+  - serializzato periodicamente il digest membership ad ogni round gossip insieme allo stato applicativo;
+  - implementato merge membership lato ricezione con confronto per `incarnation` e priorità di stato, mantenendo idempotenza su duplicati/out-of-order;
+  - introdotto stato tombstone `leave` nel package membership per propagare eventi di uscita e preservare convergenza;
+  - aggiunti test dedicati in `internal/gossip` per serializzazione digest e convergenza membership in presenza di messaggi duplicati/out-of-order;
+  - aggiornata documentazione architetturale/README per coerenza del protocollo.
+- **File modificati:**
+  - `internal/types/types.go`
+  - `internal/gossip/engine.go`
+  - `internal/gossip/membership_convergence_test.go`
+  - `internal/membership/membership.go`
+  - `internal/membership/membership_test.go`
+  - `docs/architecture.md`
+  - `README.md`
+  - `docs/operational_log.md`
+- **Sintesi reasoning:** scelta di digest full membership per ridurre complessità di ordering degli eventi mantenendo merge deterministico (incarnation + status priority), così da garantire convergenza anche con duplicati e riordino dei messaggi.
