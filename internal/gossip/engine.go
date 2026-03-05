@@ -9,12 +9,13 @@ import (
 
 	"sdcc-project/internal/membership"
 	"sdcc-project/internal/transport"
+	shared "sdcc-project/internal/types"
 )
 
 // Engine coordina il ciclo gossip locale.
 type Engine struct {
-	NodeID      string
-	State       State
+	NodeID      shared.NodeID
+	State       shared.GossipState
 	Membership  *membership.Set
 	Transport   transport.Transport
 	Logger      *slog.Logger
@@ -27,8 +28,12 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 		roundEvery = time.Second
 	}
 	return &Engine{
-		NodeID:      nodeID,
-		State:       State{NodeID: nodeID, AggregationType: aggregationType, UpdatedAt: time.Now().UTC()},
+		NodeID: shared.NodeID(nodeID),
+		State: shared.GossipState{
+			NodeID:          shared.NodeID(nodeID),
+			AggregationType: aggregationType,
+			UpdatedAt:       time.Now().UTC(),
+		},
 		Membership:  m,
 		Transport:   t,
 		Logger:      logger,
@@ -47,11 +52,11 @@ func (e *Engine) Start(ctx context.Context) error {
 	}
 
 	err := e.Transport.Start(ctx, func(_ context.Context, raw []byte) error {
-		var msg Message
+		var msg shared.GossipMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			return err
 		}
-		e.State = e.State.ApplyRemote(msg)
+		e.State = applyRemote(e.State, msg)
 		return nil
 	})
 	if err != nil {
@@ -75,12 +80,13 @@ func (e *Engine) loop(ctx context.Context) {
 
 func (e *Engine) round(ctx context.Context) {
 	peers := e.Membership.Snapshot()
-	msg := Message{
-		NodeID:          e.NodeID,
-		Round:           e.State.Round,
-		AggregationType: e.State.AggregationType,
-		Value:           e.State.Value,
-		SentAt:          time.Now().UTC(),
+	msg := shared.GossipMessage{
+		Envelope: shared.MessageEnvelope{
+			MessageID:    shared.MessageID(fmt.Sprintf("%s-%d", e.NodeID, e.State.Round)),
+			SenderNodeID: e.NodeID,
+			SentAt:       time.Now().UTC(),
+		},
+		State: e.State,
 	}
 	raw, _ := json.Marshal(msg)
 
