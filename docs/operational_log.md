@@ -93,3 +93,8 @@
 - **Descrizione task**: Nota correttiva dell'entry precedente per ripristinare l'elenco completo dei file modificati e il riferimento al documento di architettura.
 - **File modificati**: README.md, docs/operational_log.md.
 - **Reasoning summary**: Correzione append-only dopo espansione indesiderata dei backtick nella shell; il contenuto corretto conferma l'aggiunta della sezione "Protocollo gossip (M01)" e del link a docs/architecture.md.
+
+## 2026-03-05 17:33:25 UTC
+- **Descrizione task**: Allineamento semantica di avanzamento nel round gossip per eliminare disallineamenti tra `message_id`, `state_version` e `state` serializzato; verifica convergenza del cluster residuo.
+- **File modificati**: `internal/gossip/engine.go`, `internal/gossip/engine_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho anticipato l'avanzamento di `round/version_counter` prima della costruzione del messaggio e ho usato una singola versione coerente per stato locale e payload inviato, aggiungendo un test dedicato all'allineamento versione/stato e rieseguendo i test gossip focali (merge rules + crash residual convergence) per confermare che il caso `same_version_different_payload` resti eccezionale.
