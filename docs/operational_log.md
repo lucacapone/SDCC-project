@@ -98,3 +98,8 @@
 - **Descrizione task**: Allineamento semantica di avanzamento nel round gossip per eliminare disallineamenti tra `message_id`, `state_version` e `state` serializzato; verifica convergenza del cluster residuo.
 - **File modificati**: `internal/gossip/engine.go`, `internal/gossip/engine_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho anticipato l'avanzamento di `round/version_counter` prima della costruzione del messaggio e ho usato una singola versione coerente per stato locale e payload inviato, aggiungendo un test dedicato all'allineamento versione/stato e rieseguendo i test gossip focali (merge rules + crash residual convergence) per confermare che il caso `same_version_different_payload` resti eccezionale.
+
+## 2026-03-05 17:57:23 UTC
+- **Descrizione task**: Refactor del modulo membership con modello peer esteso (`NodeID`, `Addr`, `Status`, `Incarnation`, `LastSeen`), stati espliciti `Alive/Suspect/Dead`, timeout configurabili e transizioni deterministiche con priorità su incarnation.
+- **File modificati**: `internal/membership/membership.go`, `internal/membership/membership_test.go`, `internal/gossip/engine.go`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito il booleano `Suspected` con una macchina a stati deterministica basata su timeout (`SuspectTimeout`/`DeadTimeout`), introdotto merge locale coerente con regola "incarnation maggiore vince", aggiornato i test unitari per coprire transizioni e precedence, e allineato l'engine gossip al nuovo campo indirizzo `Addr`.
