@@ -35,7 +35,7 @@ func Default() Config {
 		GossipIntervalMS:    1000,
 		Fanout:              2,
 		MembershipTimeoutMS: 5000,
-		EnabledAggregations: []string{"sum", "average"},
+		EnabledAggregations: []string{"sum", "average", "min", "max"},
 		Aggregation:         "sum",
 		LogLevel:            "info",
 	}
