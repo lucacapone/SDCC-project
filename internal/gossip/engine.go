@@ -65,8 +65,9 @@ func (e *Engine) Start(ctx context.Context) error {
 		merge := applyRemote(e.State, msg)
 		e.State = merge.State
 		e.mu.Unlock()
+		mergeMembership(e.Membership, msg.Membership)
 		if e.Logger != nil {
-			e.Logger.Debug("merge remoto", "status", merge.Status, "reason", merge.Reason, "from", msg.OriginNode, "message_id", msg.MessageID)
+			e.Logger.Debug("merge remoto", "status", merge.Status, "reason", merge.Reason, "from", msg.OriginNode, "message_id", msg.MessageID, "membership_entries", len(msg.Membership))
 		}
 		return nil
 	})
@@ -90,7 +91,8 @@ func (e *Engine) loop(ctx context.Context) {
 }
 
 func (e *Engine) round(ctx context.Context) {
-	peers := e.Membership.Snapshot()
+	membershipSnapshot := e.Membership.Snapshot()
+	peers := selectGossipTargets(membershipSnapshot)
 	sentAt := time.Now().UTC()
 
 	e.mu.Lock()
@@ -112,6 +114,7 @@ func (e *Engine) round(ctx context.Context) {
 		Version:      currentMessageVersion,
 		StateVersion: stateVersion,
 		State:        stateSnapshot,
+		Membership:   serializeMembershipDigest(membershipSnapshot),
 	}
 	e.mu.Unlock()
 
@@ -121,7 +124,54 @@ func (e *Engine) round(ctx context.Context) {
 	}
 
 	if e.Logger != nil {
-		e.Logger.Debug("gossip round eseguito", "peers", len(peers), "round", msg.State.Round)
+		e.Logger.Debug("gossip round eseguito", "peers", len(peers), "round", msg.State.Round, "membership_entries", len(msg.Membership))
+	}
+}
+
+func selectGossipTargets(peers []membership.Peer) []membership.Peer {
+	out := make([]membership.Peer, 0, len(peers))
+	for _, p := range peers {
+		if p.Status == membership.Dead || p.Status == membership.Left {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func serializeMembershipDigest(peers []membership.Peer) []shared.MembershipEntry {
+	entries := make([]shared.MembershipEntry, 0, len(peers))
+	for _, p := range peers {
+		entries = append(entries, shared.MembershipEntry{
+			NodeID:      shared.NodeID(p.NodeID),
+			Addr:        p.Addr,
+			Status:      string(p.Status),
+			Incarnation: p.Incarnation,
+			LastSeen:    p.LastSeen,
+		})
+	}
+	return entries
+}
+
+func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
+	if set == nil {
+		return
+	}
+	for _, entry := range remote {
+		if entry.NodeID == "" && entry.Addr == "" {
+			continue
+		}
+		st := membership.Status(entry.Status)
+		if st == "" {
+			st = membership.Alive
+		}
+		set.Upsert(membership.Peer{
+			NodeID:      string(entry.NodeID),
+			Addr:        entry.Addr,
+			Status:      st,
+			Incarnation: entry.Incarnation,
+			LastSeen:    entry.LastSeen,
+		})
 	}
 }
 

@@ -6,7 +6,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 ## Componenti principali
 - `cmd/node`: bootstrap del nodo (configurazione, membership, engine gossip).
 - `internal/config`: parsing/validazione configurazione YAML/JSON + override env (inclusi `join_endpoint`, `bootstrap_peers`, `seed_peers`).
-- `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
+- `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`/`leave`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
 - `internal/transport`: astrazione trasporto (implementazioni concrete e test in-memory).
@@ -23,6 +23,7 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 6. `state.round` (`uint64`): versione logica locale del mittente al momento dell'invio.
 7. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
 8. `state.value` (`float64`): valore numerico corrente del nodo.
+9. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
 
 ### Campi opzionali
 - `metadata` (`map[string]string`, omesso se vuoto): estensioni non critiche per compatibilità futura.
@@ -31,7 +32,7 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 - Il messaggio rappresenta uno snapshot parziale dello stato locale del mittente.
 - `state_version` deve rappresentare esattamente la versione dello `state` serializzato nello stesso messaggio (nessun disallineamento temporale tra metadata e payload).
 - `message_id`, `state.round` e `state.version_counter` condividono la stessa semantica di avanzamento del round locale per evitare off-by-one.
-- Il ricevente applica merge locale con regole deterministiche (vedi sezione merge).
+- Il ricevente applica merge locale con regole deterministiche sullo stato applicativo e merge membership idempotente basato su `(incarnation, status_priority)`.
 - Il formato resta *forward-compatible* tramite `metadata` opzionale.
 
 ### Serializzazione
@@ -74,6 +75,15 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 ### Risoluzione conflitti
 - `aggregation_type` differente: conflitto e scarto update;
 - stessa versione ma payload differente: conflitto con tie-break deterministico (timestamp più recente, poi `sender_node_id`, poi `message_id`).
+
+
+## Regole merge membership
+Il digest `membership` viene unito localmente entry-per-entry con proprietà di convergenza in presenza di duplicati e out-of-order:
+
+1. `incarnation` maggiore vince sempre (update obsoleto ignorato).
+2. A parità di `incarnation`, prevale lo stato a priorità maggiore (`alive < suspect < dead < leave`).
+3. `last_seen` e `addr` vengono aggiornati solo se il nuovo dato è più recente/non vuoto.
+4. L'operazione è idempotente: riapplicare lo stesso digest non altera lo stato.
 
 ## Proprietà attese di convergenza e limiti
 

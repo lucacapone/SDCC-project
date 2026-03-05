@@ -46,7 +46,17 @@ type GossipMessage struct {
 	Version      MessageVersion    `json:"version"`
 	StateVersion StateVersionStamp `json:"state_version"`
 	State        GossipState       `json:"state"`
+	Membership   []MembershipEntry `json:"membership,omitempty"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
+}
+
+// MembershipEntry rappresenta una vista serializzabile di un peer membership.
+type MembershipEntry struct {
+	NodeID      NodeID    `json:"node_id"`
+	Addr        string    `json:"addr"`
+	Status      string    `json:"status"`
+	Incarnation uint64    `json:"incarnation"`
+	LastSeen    time.Time `json:"last_seen"`
 }
 
 // EnsureMergeMetadata inizializza i campi locali non serializzati necessari al merge.
