@@ -6,7 +6,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 ## Componenti principali
 - `cmd/node`: bootstrap del nodo (configurazione, membership, engine gossip).
 - `internal/config`: parsing/validazione configurazione YAML/JSON + override env.
-- `internal/membership`: vista locale dei peer e timeout di sospetto.
+- `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
 - `internal/transport`: astrazione trasporto (implementazioni concrete e test in-memory).
