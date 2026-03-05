@@ -17,6 +17,8 @@ type Config struct {
 	NodeID              string   `json:"node_id"`
 	BindAddress         string   `json:"bind_address"`
 	NodePort            int      `json:"node_port"`
+	JoinEndpoint        string   `json:"join_endpoint"`
+	BootstrapPeers      []string `json:"bootstrap_peers"`
 	SeedPeers           []string `json:"seed_peers"`
 	GossipIntervalMS    int      `json:"gossip_interval_ms"`
 	Fanout              int      `json:"fanout"`
@@ -31,6 +33,8 @@ func Default() Config {
 		NodeID:              "node-1",
 		BindAddress:         "0.0.0.0",
 		NodePort:            7001,
+		JoinEndpoint:        "",
+		BootstrapPeers:      nil,
 		SeedPeers:           nil,
 		GossipIntervalMS:    1000,
 		Fanout:              2,
@@ -79,6 +83,8 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 		if strings.HasPrefix(line, "- ") {
 			item := strings.TrimSpace(strings.TrimPrefix(line, "- "))
 			switch currentList {
+			case "bootstrap_peers":
+				cfg.BootstrapPeers = append(cfg.BootstrapPeers, item)
 			case "seed_peers":
 				cfg.SeedPeers = append(cfg.SeedPeers, item)
 			case "enabled_aggregations":
@@ -94,7 +100,7 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 		value := strings.TrimSpace(parts[1])
 		currentList = ""
 		if value == "" {
-			if key == "seed_peers" || key == "enabled_aggregations" {
+			if key == "bootstrap_peers" || key == "seed_peers" || key == "enabled_aggregations" {
 				currentList = key
 			}
 			continue
@@ -109,6 +115,10 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 			cfg.NodePort = atoiDefault(value, cfg.NodePort)
 		case "gossip_interval_ms":
 			cfg.GossipIntervalMS = atoiDefault(value, cfg.GossipIntervalMS)
+		case "join_endpoint":
+			cfg.JoinEndpoint = value
+		case "bootstrap_peers":
+			cfg.BootstrapPeers = parseInlineList(value)
 		case "fanout":
 			cfg.Fanout = atoiDefault(value, cfg.Fanout)
 		case "membership_timeout_ms":
@@ -156,6 +166,8 @@ func overrideFromEnv(cfg *Config) {
 	overrideString("NODE_ID", &cfg.NodeID)
 	overrideString("BIND_ADDRESS", &cfg.BindAddress)
 	overrideInt("NODE_PORT", &cfg.NodePort)
+	overrideString("JOIN_ENDPOINT", &cfg.JoinEndpoint)
+	overrideCSV("BOOTSTRAP_PEERS", &cfg.BootstrapPeers)
 	overrideCSV("SEED_PEERS", &cfg.SeedPeers)
 	overrideInt("GOSSIP_INTERVAL_MS", &cfg.GossipIntervalMS)
 	overrideInt("FANOUT", &cfg.Fanout)
@@ -163,6 +175,13 @@ func overrideFromEnv(cfg *Config) {
 	overrideCSV("ENABLED_AGGREGATIONS", &cfg.EnabledAggregations)
 	overrideString("AGGREGATION", &cfg.Aggregation)
 	overrideString("LOG_LEVEL", &cfg.LogLevel)
+}
+
+func (c Config) DiscoveryPeers() []string {
+	if len(c.BootstrapPeers) > 0 {
+		return append([]string(nil), c.BootstrapPeers...)
+	}
+	return append([]string(nil), c.SeedPeers...)
 }
 
 func overrideString(name string, target *string) {

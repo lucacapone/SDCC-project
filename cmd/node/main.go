@@ -27,9 +27,21 @@ func main() {
 
 	logger := observability.NewLogger(cfg.LogLevel, nil)
 	mset := membership.NewSet()
-	for _, p := range cfg.SeedPeers {
-		mset.Join(p, time.Now().UTC())
-	}
+	bootstrapRes := membership.Bootstrap(
+		context.Background(),
+		mset,
+		membership.JoinRequest{NodeID: cfg.NodeID, Addr: cfg.NodeID},
+		cfg.JoinEndpoint,
+		cfg.DiscoveryPeers(),
+		membership.NoopJoinClient{},
+		time.Now().UTC(),
+	)
+	logger.Info("bootstrap membership completato",
+		"used_join_endpoint", bootstrapRes.UsedJoinEndpoint,
+		"join_endpoint", bootstrapRes.JoinEndpoint,
+		"fallback_used", bootstrapRes.FallbackUsed,
+		"known_peers", bootstrapRes.KnownPeers,
+	)
 
 	eng := gossip.NewEngine(
 		cfg.NodeID,

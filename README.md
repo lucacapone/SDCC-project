@@ -71,6 +71,8 @@ File di esempio:
 - `configs/example.yaml`
 
 Parametri esterni principali:
+- `join_endpoint`
+- `bootstrap_peers`
 - `gossip_interval_ms`
 - `fanout`
 - `node_port`
@@ -87,6 +89,8 @@ Override via variabili ambiente (precedenza sull'YAML):
 ```bash
 NODE_ID=node-custom \
 NODE_PORT=7100 \
+JOIN_ENDPOINT=bootstrap:9000 \
+BOOTSTRAP_PEERS=node-1:7001,node-2:7002 \
 SEED_PEERS=node-1:7001,node-2:7002 \
 GOSSIP_INTERVAL_MS=500 \
 FANOUT=1 \
@@ -95,6 +99,11 @@ ENABLED_AGGREGATIONS=sum,average,min,max \
 AGGREGATION=min \
 go run ./cmd/node --config configs/example.yaml
 ```
+
+Flusso bootstrap all'avvio:
+- il nodo prova `join_endpoint` per ottenere snapshot/delta membership iniziale;
+- se il join non è disponibile, usa `bootstrap_peers` (o `seed_peers` come fallback compatibile) per seed discovery locale;
+- il bootstrap non è autoritativo: dopo discovery iniziale la membership evolve solo via gossip peer-to-peer.
 
 ## Avvio locale con Docker Compose
 Compose multi-nodo:
