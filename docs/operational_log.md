@@ -53,3 +53,8 @@
 - **Descrizione task**: Introduzione versioning composto dello stato gossip, merge remoto idempotente con deduplica/out-of-order handling, gestione esplicita conflitti e nuovi esiti merge per metriche/debug.
 - **File modificati**: `internal/types/types.go`, `internal/gossip/state.go`, `internal/gossip/engine.go`, `internal/gossip/state_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho sostituito il merge best-effort con un flusso deterministico basato su `version_epoch + version_counter`, aggiungendo metadati locali allo stato (`SeenMessageIDs`, `LastSeenVersionByNode`) per deduplica e filtro aggiornamenti obsoleti, includendo il caso no-op su stessa versione+payload e tie-break riproducibile sui conflitti stessa versione payload diverso, con test dedicati sugli esiti `applied/skipped/conflict`.
+
+## 2026-03-05 16:49:10 UTC
+- **Descrizione task**: Standardizzazione del contratto messaggio gossip con ID univoco, versione messaggio esplicita e campi di tracciamento (`origin_node`, `state_version`, `sent_at`), con aggiornamento serializzazione engine e test associati.
+- **File modificati**: `internal/types/types.go`, `internal/gossip/engine.go`, `internal/gossip/state.go`, `internal/gossip/state_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito il vecchio envelope con campi top-level nel `GossipMessage`, aggiunto fallback di normalizzazione in deserializzazione per compatibilità con payload legacy e introdotto sincronizzazione/serializzazione sicura dello stato nel loop gossip per evitare condivisione concorrente delle mappe di merge durante i test di integrazione.

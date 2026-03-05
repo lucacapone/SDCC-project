@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"sdcc-project/internal/membership"
 	"sdcc-project/internal/transport"
 	shared "sdcc-project/internal/types"
 )
+
+var currentMessageVersion = shared.MessageVersion{Major: 1, Minor: 0}
 
 // Engine coordina il ciclo gossip locale.
 type Engine struct {
@@ -20,6 +23,7 @@ type Engine struct {
 	Transport   transport.Transport
 	Logger      *slog.Logger
 	RoundTicker *time.Ticker
+	mu          sync.Mutex
 }
 
 // NewEngine costruisce un engine con dipendenze minime.
@@ -56,10 +60,13 @@ func (e *Engine) Start(ctx context.Context) error {
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			return err
 		}
+		normalizeIncomingMessage(&msg)
+		e.mu.Lock()
 		merge := applyRemote(e.State, msg)
 		e.State = merge.State
+		e.mu.Unlock()
 		if e.Logger != nil {
-			e.Logger.Debug("merge remoto", "status", merge.Status, "reason", merge.Reason, "from", msg.Envelope.SenderNodeID, "message_id", msg.Envelope.MessageID)
+			e.Logger.Debug("merge remoto", "status", merge.Status, "reason", merge.Reason, "from", msg.OriginNode, "message_id", msg.MessageID)
 		}
 		return nil
 	})
@@ -84,25 +91,54 @@ func (e *Engine) loop(ctx context.Context) {
 
 func (e *Engine) round(ctx context.Context) {
 	peers := e.Membership.Snapshot()
-	msg := shared.GossipMessage{
-		Envelope: shared.MessageEnvelope{
-			MessageID:    shared.MessageID(fmt.Sprintf("%s-%d", e.NodeID, e.State.Round)),
-			SenderNodeID: e.NodeID,
-			SentAt:       time.Now().UTC(),
-		},
-		State: e.State,
-	}
-	raw, _ := json.Marshal(msg)
+	sentAt := time.Now().UTC()
 
+	e.mu.Lock()
+	stateSnapshot := sanitizedStateForMessage(e.State)
+	msg := shared.GossipMessage{
+		MessageID:    shared.MessageID(fmt.Sprintf("%s-%d-%d", e.NodeID, e.State.VersionCounter+1, sentAt.UnixNano())),
+		OriginNode:   e.NodeID,
+		SentAt:       sentAt,
+		Version:      currentMessageVersion,
+		StateVersion: normalizeVersion(e.State),
+		State:        stateSnapshot,
+	}
+	e.State.Round++
+	e.State.VersionCounter++
+	e.mu.Unlock()
+
+	raw, _ := json.Marshal(msg)
 	for _, p := range peers {
 		_ = e.Transport.Send(ctx, p.Address, raw)
 	}
 
 	if e.Logger != nil {
-		e.Logger.Debug("gossip round eseguito", "peers", len(peers), "round", e.State.Round)
+		e.Logger.Debug("gossip round eseguito", "peers", len(peers), "round", msg.State.Round)
 	}
-	e.State.Round++
-	e.State.VersionCounter++
+}
+
+func sanitizedStateForMessage(state shared.GossipState) shared.GossipState {
+	state.SeenMessageIDs = nil
+	state.LastSeenVersionByNode = nil
+	return state
+}
+
+func normalizeIncomingMessage(msg *shared.GossipMessage) {
+	if msg.OriginNode == "" {
+		msg.OriginNode = msg.State.NodeID
+	}
+	if msg.SentAt.IsZero() {
+		msg.SentAt = msg.State.UpdatedAt
+	}
+	if msg.MessageID == "" {
+		msg.MessageID = shared.MessageID(fmt.Sprintf("legacy-%s-%d", msg.OriginNode, msg.SentAt.UnixNano()))
+	}
+	if msg.Version == (shared.MessageVersion{}) {
+		msg.Version = currentMessageVersion
+	}
+	if msg.StateVersion == (shared.StateVersionStamp{}) {
+		msg.StateVersion = normalizeVersion(msg.State)
+	}
 }
 
 // Stop ferma ticker e transport.

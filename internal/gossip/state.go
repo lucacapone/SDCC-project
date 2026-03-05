@@ -27,20 +27,20 @@ type MergeResult struct {
 func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult {
 	local.EnsureMergeMetadata()
 
-	if _, seen := local.SeenMessageIDs[msg.Envelope.MessageID]; seen {
+	if _, seen := local.SeenMessageIDs[msg.MessageID]; seen {
 		return MergeResult{State: local, Status: MergeSkipped, Reason: "duplicate_message_id"}
 	}
 
 	if local.AggregationType != "" && msg.State.AggregationType != "" && local.AggregationType != msg.State.AggregationType {
-		local.SeenMessageIDs[msg.Envelope.MessageID] = struct{}{}
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		return MergeResult{State: local, Status: MergeConflict, Reason: "aggregation_type_mismatch"}
 	}
 
-	remoteVersion := normalizeVersion(msg.State)
+	remoteVersion := normalizeMessageVersion(msg)
 	localVersion := normalizeVersion(local)
-	lastSeen, ok := local.LastSeenVersionByNode[msg.Envelope.SenderNodeID]
+	lastSeen, ok := local.LastSeenVersionByNode[msg.OriginNode]
 	if ok && compareVersion(remoteVersion, lastSeen) < 0 {
-		local.SeenMessageIDs[msg.Envelope.MessageID] = struct{}{}
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		return MergeResult{State: local, Status: MergeSkipped, Reason: "out_of_order_stale"}
 	}
 
@@ -49,31 +49,31 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 
 	switch {
 	case cmp < 0:
-		local.SeenMessageIDs[msg.Envelope.MessageID] = struct{}{}
-		local.LastSeenVersionByNode[msg.Envelope.SenderNodeID] = maxVersion(local.LastSeenVersionByNode[msg.Envelope.SenderNodeID], remoteVersion)
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
+		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
 		return MergeResult{State: local, Status: MergeSkipped, Reason: "older_version"}
 	case cmp == 0 && samePayload:
-		local.SeenMessageIDs[msg.Envelope.MessageID] = struct{}{}
-		local.LastSeenVersionByNode[msg.Envelope.SenderNodeID] = maxVersion(local.LastSeenVersionByNode[msg.Envelope.SenderNodeID], remoteVersion)
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
+		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
 		return MergeResult{State: local, Status: MergeSkipped, Reason: "same_version_same_payload"}
 	case cmp == 0 && !samePayload:
-		local.SeenMessageIDs[msg.Envelope.MessageID] = struct{}{}
-		local.LastSeenVersionByNode[msg.Envelope.SenderNodeID] = maxVersion(local.LastSeenVersionByNode[msg.Envelope.SenderNodeID], remoteVersion)
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
+		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
 		if preferRemoteOnConflict(msg, local) {
 			local = adoptRemote(local, msg)
 		}
 		return MergeResult{State: local, Status: MergeConflict, Reason: "same_version_different_payload"}
 	}
 
-	local.SeenMessageIDs[msg.Envelope.MessageID] = struct{}{}
-	local.LastSeenVersionByNode[msg.Envelope.SenderNodeID] = maxVersion(local.LastSeenVersionByNode[msg.Envelope.SenderNodeID], remoteVersion)
+	local.SeenMessageIDs[msg.MessageID] = struct{}{}
+	local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
 	local.Value = (local.Value + msg.State.Value) / 2
 	local.UpdatedAt = time.Now().UTC()
 	local.Round = maxCounter(local.Round, msg.State.Round) + 1
 	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
 	local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
-	local.LastMessageID = msg.Envelope.MessageID
-	local.LastSenderNodeID = msg.Envelope.SenderNodeID
+	local.LastMessageID = msg.MessageID
+	local.LastSenderNodeID = msg.OriginNode
 	return MergeResult{State: local, Status: MergeApplied, Reason: "remote_newer_version"}
 }
 
@@ -83,8 +83,8 @@ func adoptRemote(local shared.GossipState, msg shared.GossipMessage) shared.Goss
 	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
 	local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter)
 	local.UpdatedAt = msg.State.UpdatedAt
-	local.LastMessageID = msg.Envelope.MessageID
-	local.LastSenderNodeID = msg.Envelope.SenderNodeID
+	local.LastMessageID = msg.MessageID
+	local.LastSenderNodeID = msg.OriginNode
 	return local
 }
 
@@ -99,13 +99,13 @@ func preferRemoteOnConflict(msg shared.GossipMessage, local shared.GossipState) 
 	if msg.State.UpdatedAt.Before(local.UpdatedAt) {
 		return false
 	}
-	if msg.Envelope.SenderNodeID > local.NodeID {
+	if msg.OriginNode > local.NodeID {
 		return true
 	}
-	if msg.Envelope.SenderNodeID < local.NodeID {
+	if msg.OriginNode < local.NodeID {
 		return false
 	}
-	return msg.Envelope.MessageID > local.LastMessageID
+	return msg.MessageID > local.LastMessageID
 }
 
 func normalizeVersion(state shared.GossipState) shared.StateVersionStamp {
@@ -115,6 +115,13 @@ func normalizeVersion(state shared.GossipState) shared.StateVersionStamp {
 		counter = state.Round
 	}
 	return shared.StateVersionStamp{Epoch: epoch, Counter: counter}
+}
+
+func normalizeMessageVersion(msg shared.GossipMessage) shared.StateVersionStamp {
+	if msg.StateVersion != (shared.StateVersionStamp{}) {
+		return msg.StateVersion
+	}
+	return normalizeVersion(msg.State)
 }
 
 func compareVersion(a, b shared.StateVersionStamp) int {
