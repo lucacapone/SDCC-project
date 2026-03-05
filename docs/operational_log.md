@@ -128,3 +128,8 @@
   - `README.md`
   - `docs/operational_log.md`
 - **Sintesi reasoning:** scelta di digest full membership per ridurre complessità di ordering degli eventi mantenendo merge deterministico (incarnation + status priority), così da garantire convergenza anche con duplicati e riordino dei messaggi.
+
+## 2026-03-05 18:21:18 UTC
+- **Descrizione task**: Estensione suite `internal/membership` per coprire flusso M02 `JoinLeave` (bootstrap join, inattività con transizioni `Suspect`/`Dead`, cleanup con tombstone `leave`) e casi deterministici di rejoin/falso positivo senza sleep lunghi.
+- **File modificati**: `internal/membership/membership_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho riscritto `TestJoinLeave` usando timestamp fissi e transizioni pilotate via `ApplyTimeoutTransitions` per verificare il percorso completo B join da bootstrap A -> suspect -> dead -> leave tombstone persistente; ho aggiunto test deterministici su rejoin con `Incarnation` maggiore e mitigazione false positive tramite gossip update `Alive`, mantenendo sincronizzazione esplicita e timeout piccoli.
