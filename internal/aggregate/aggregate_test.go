@@ -2,12 +2,45 @@ package aggregate
 
 import "testing"
 
-func TestFactoryPlaceholder(t *testing.T) {
-	algo, err := Factory("sum")
-	if err != nil {
-		t.Fatalf("factory sum errore: %v", err)
+func TestFactory(t *testing.T) {
+	tests := []struct {
+		kind       string
+		expectType string
+		expectErr  bool
+	}{
+		{kind: "sum", expectType: "sum", expectErr: false},
+		{kind: "average", expectType: "average", expectErr: false},
+		{kind: "median", expectErr: true},
 	}
-	if algo.Type() != "sum" {
-		t.Fatalf("tipo inatteso: %s", algo.Type())
+
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			algo, err := Factory(tt.kind)
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("atteso errore per kind=%s", tt.kind)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("errore inatteso: %v", err)
+			}
+			if algo.Type() != tt.expectType {
+				t.Fatalf("tipo inatteso: got=%s want=%s", algo.Type(), tt.expectType)
+			}
+		})
+	}
+}
+
+func TestMergeRules(t *testing.T) {
+	sum := SumPlaceholder{}
+	if got := sum.Merge(10, 3); got != 13 {
+		t.Fatalf("merge sum inatteso: got=%v want=13", got)
+	}
+
+	avg := AveragePlaceholder{}
+	if got := avg.Merge(10, 4); got != 7 {
+		t.Fatalf("merge average inatteso: got=%v want=7", got)
 	}
 }

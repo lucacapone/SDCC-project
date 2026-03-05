@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,35 @@ log_level: debug
 	}
 }
 
+func TestLoadJSON(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "config.json")
+	content := []byte(`{
+  "node_id": "json-node",
+  "bind_address": "127.0.0.1",
+  "node_port": 7020,
+  "seed_peers": ["node-1:7001"],
+  "gossip_interval_ms": 900,
+  "fanout": 1,
+  "membership_timeout_ms": 5000,
+  "enabled_aggregations": ["sum", "average"],
+  "aggregation": "sum",
+  "log_level": "info"
+}`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load json config: %v", err)
+	}
+
+	if cfg.NodeID != "json-node" || cfg.NodePort != 7020 || cfg.Aggregation != "sum" {
+		t.Fatalf("config json inattesa: %+v", cfg)
+	}
+}
+
 func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("NODE_ID", "env-node")
 	t.Setenv("AGGREGATION", "average")
@@ -55,5 +85,36 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 	if cfg.Aggregation != "average" {
 		t.Fatalf("override AGGREGATION non applicato: %+v", cfg)
+	}
+}
+
+func TestValidateFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		errPart string
+	}{
+		{name: "node_id mancante", mutate: func(c *Config) { c.NodeID = "" }, errPart: "node_id obbligatorio"},
+		{name: "porta non valida", mutate: func(c *Config) { c.NodePort = 0 }, errPart: "node_port"},
+		{name: "interval non valido", mutate: func(c *Config) { c.GossipIntervalMS = 0 }, errPart: "gossip_interval_ms"},
+		{name: "fanout non valido", mutate: func(c *Config) { c.Fanout = 0 }, errPart: "fanout"},
+		{name: "timeout non valido", mutate: func(c *Config) { c.MembershipTimeoutMS = 0 }, errPart: "membership_timeout_ms"},
+		{name: "aggregazioni vuote", mutate: func(c *Config) { c.EnabledAggregations = nil }, errPart: "enabled_aggregations"},
+		{name: "aggregation vuota", mutate: func(c *Config) { c.Aggregation = "" }, errPart: "aggregation obbligatoria"},
+		{name: "aggregation non abilitata", mutate: func(c *Config) { c.Aggregation = "median" }, errPart: "non presente"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Default()
+			tt.mutate(&cfg)
+			err := Validate(cfg)
+			if err == nil {
+				t.Fatalf("atteso errore per caso %q", tt.name)
+			}
+			if !strings.Contains(err.Error(), tt.errPart) {
+				t.Fatalf("errore inatteso: %v", err)
+			}
+		})
 	}
 }

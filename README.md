@@ -9,6 +9,8 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Configurazione esterna](#configurazione-esterna)
 - [Avvio locale con Docker Compose](#avvio-locale-con-docker-compose)
 - [Esecuzione test](#esecuzione-test)
+- [Script/comandi standard](#scriptcomandi-standard)
+- [Criteri di successo misurabili](#criteri-di-successo-misurabili)
 - [Demo rapida](#demo-rapida)
 - [Nota deploy EC2 essenziale](#nota-deploy-ec2-essenziale)
 
@@ -78,6 +80,42 @@ Per passare configurazioni personalizzate basta cambiare i file montati o impost
 ```bash
 go test ./...
 ```
+
+## Script/comandi standard
+È disponibile `Makefile` con target per esecuzioni riproducibili locali e Docker:
+
+```bash
+# Suite completa
+make test
+
+# Solo unit test (config + aggregate + membership)
+make test-unit
+
+# Integrazione convergenza gossip in-memory
+make test-integration
+
+# Robustezza crash/rejoin in-memory
+make test-crash
+
+# Esecuzione test completa dentro container Go
+make docker-test
+```
+
+## Criteri di successo misurabili
+I test introdotti in repository usano i seguenti criteri quantitativi:
+
+1. **Convergenza gossip (3 nodi, transport in-memory)**:
+   - differenza massima tra stati `< 0.05`
+   - timeout massimo `2s`.
+2. **Tolleranza a crash singolo**:
+   - con `1` nodo down su `3`, il cluster residuo (`2/3`) converge con soglia `< 0.05`
+   - timeout massimo `2s`.
+3. **Restart/Rejoin opzionale**:
+   - nodo riavviato rientra e il cluster torna a convergere con soglia `< 0.08`
+   - timeout massimo `2s`.
+4. **Validazione configurazione**:
+   - parsing YAML/JSON corretto
+   - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, ecc.).
 
 ## Demo rapida
 ```bash
