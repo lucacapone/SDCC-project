@@ -23,8 +23,8 @@ Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da reco
 Transizioni principali implementate:
 
 1. `Join`/`Upsert` inseriscono o aggiornano un peer in stato `alive`.
-2. `ApplyTimeouts` degrada `alive -> suspect -> dead` in base a timeout configurabili.
-3. `MarkLeave` pubblica tombstone `leave` per preservare convergenza e prevenire resurrect implicite.
+2. `ApplyTimeoutTransitions` degrada `alive -> suspect -> dead` in base a timeout configurabili.
+3. `Leave` pubblica tombstone `leave` per preservare convergenza e prevenire resurrect implicite.
 4. aggiornamenti con `incarnation` più alta riattivano il peer e sovrascrivono stati precedenti.
 
 ## Formato messaggio gossip
