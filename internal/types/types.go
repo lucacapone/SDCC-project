@@ -17,11 +17,10 @@ type StateVersionStamp struct {
 	Counter StateVersion `json:"counter"`
 }
 
-// MessageEnvelope contiene metadati trasversali del messaggio.
-type MessageEnvelope struct {
-	MessageID    MessageID `json:"message_id"`
-	SenderNodeID NodeID    `json:"sender_node_id"`
-	SentAt       time.Time `json:"sent_at"`
+// MessageVersion descrive in modo esplicito la versione del contratto messaggio.
+type MessageVersion struct {
+	Major uint16 `json:"major"`
+	Minor uint16 `json:"minor"`
 }
 
 // GossipState rappresenta lo stato serializzabile condiviso tra package.
@@ -41,9 +40,13 @@ type GossipState struct {
 
 // GossipMessage è il payload gossip con envelope e stato.
 type GossipMessage struct {
-	Envelope MessageEnvelope   `json:"envelope"`
-	State    GossipState       `json:"state"`
-	Metadata map[string]string `json:"metadata,omitempty"`
+	MessageID    MessageID         `json:"message_id"`
+	OriginNode   NodeID            `json:"origin_node"`
+	SentAt       time.Time         `json:"sent_at"`
+	Version      MessageVersion    `json:"version"`
+	StateVersion StateVersionStamp `json:"state_version"`
+	State        GossipState       `json:"state"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 // EnsureMergeMetadata inizializza i campi locali non serializzati necessari al merge.

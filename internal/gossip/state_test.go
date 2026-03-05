@@ -17,7 +17,11 @@ func TestApplyRemote_DeduplicaMessageID(t *testing.T) {
 		UpdatedAt:       time.Now().UTC(),
 	}
 	msg := shared.GossipMessage{
-		Envelope: shared.MessageEnvelope{MessageID: "node-2-2", SenderNodeID: "node-2"},
+		MessageID:    "node-2-2",
+		OriginNode:   "node-2",
+		SentAt:       time.Now().UTC(),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
 		State: shared.GossipState{
 			NodeID:          "node-2",
 			AggregationType: "average",
@@ -49,7 +53,11 @@ func TestApplyRemote_SameVersionSamePayloadNoOp(t *testing.T) {
 		UpdatedAt:       now,
 	}
 	msg := shared.GossipMessage{
-		Envelope: shared.MessageEnvelope{MessageID: "node-2-4", SenderNodeID: "node-2"},
+		MessageID:    "node-2-4",
+		OriginNode:   "node-2",
+		SentAt:       now,
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 4},
 		State: shared.GossipState{
 			NodeID:          "node-2",
 			AggregationType: "average",
@@ -76,7 +84,11 @@ func TestApplyRemote_OlderVersionDrop(t *testing.T) {
 		UpdatedAt:       time.Now().UTC(),
 	}
 	msg := shared.GossipMessage{
-		Envelope: shared.MessageEnvelope{MessageID: "node-2-3", SenderNodeID: "node-2"},
+		MessageID:    "node-2-3",
+		OriginNode:   "node-2",
+		SentAt:       time.Now().UTC(),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
 		State: shared.GossipState{
 			NodeID:          "node-2",
 			AggregationType: "average",
@@ -105,7 +117,11 @@ func TestApplyRemote_ConflictSameVersionDifferentPayload(t *testing.T) {
 		UpdatedAt:       time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC),
 	}
 	msg := shared.GossipMessage{
-		Envelope: shared.MessageEnvelope{MessageID: "node-2-5", SenderNodeID: "node-2"},
+		MessageID:    "node-2-5",
+		OriginNode:   "node-2",
+		SentAt:       time.Date(2026, 3, 5, 11, 0, 0, 0, time.UTC),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 5},
 		State: shared.GossipState{
 			NodeID:          "node-2",
 			AggregationType: "average",

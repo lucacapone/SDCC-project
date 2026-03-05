@@ -7,7 +7,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `cmd/node`: bootstrap del nodo (configurazione, membership, engine gossip).
 - `internal/config`: parsing/validazione configurazione YAML/JSON + override env.
 - `internal/membership`: vista locale dei peer e timeout di sospetto.
-- `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageEnvelope`, `GossipMessage`).
+- `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
 - `internal/transport`: astrazione trasporto (implementazioni concrete e test in-memory).
 
@@ -15,12 +15,14 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in JSON.
 
 ### Campi obbligatori
-1. `envelope.message_id` (`string`): identificativo univoco del messaggio gossip.
-2. `envelope.sender_node_id` (`string`): identificativo univoco del nodo mittente.
-3. `envelope.sent_at` (`timestamp`): timestamp UTC di emissione.
-4. `state.round` (`uint64`): versione logica locale del mittente al momento dell'invio.
-5. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
-6. `state.value` (`float64`): valore numerico corrente del nodo.
+1. `message_id` (`string`): identificativo univoco del messaggio gossip.
+2. `origin_node` (`string`): identificativo univoco del nodo mittente.
+3. `sent_at` (`timestamp`): timestamp UTC di emissione.
+4. `version` (`object`): versione esplicita del contratto messaggio (`major`, `minor`).
+5. `state_version` (`object`): versione dello stato (`epoch`, `counter`) usata dal merge.
+6. `state.round` (`uint64`): versione logica locale del mittente al momento dell'invio.
+7. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
+8. `state.value` (`float64`): valore numerico corrente del nodo.
 
 ### Campi opzionali
 - `metadata` (`map[string]string`, omesso se vuoto): estensioni non critiche per compatibilità futura.
@@ -58,7 +60,7 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 - `new_value = (local.value + remote.value) / 2` quando `remote_version > local_version`;
 - `new_round = max(local.round, remote.round) + 1`;
 - `updated_at = now_utc`;
-- tracciamento `last_message_id` e `last_sender_node_id`;
+- tracciamento `last_message_id` e `last_sender_node_id` (derivati da `message_id`/`origin_node`);
 - metadati locali non serializzati: `SeenMessageIDs`, `LastSeenVersionByNode`.
 
 ### Esiti merge esposti
