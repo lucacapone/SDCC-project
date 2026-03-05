@@ -53,9 +53,9 @@ Possibili estensioni future: `min`, `max`, `count`, combinazioni pesate.
 Il repository include un file di esempio:
 - `configs/example.yaml`
 
-Esempio utilizzo (quando sarà disponibile un binario avviabile):
+Esempio utilizzo (bootstrap attuale):
 ```bash
-./bin/node --config configs/example.yaml
+go run ./cmd/node --config configs/example.yaml
 ```
 
 ## Avvio locale con Docker Compose
@@ -70,7 +70,7 @@ docker compose down
 ```
 
 ## Esecuzione test
-Comando standard Go (da usare quando il modulo Go sarà presente):
+Comando standard Go:
 ```bash
 go test ./...
 ```
