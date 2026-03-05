@@ -29,6 +29,24 @@ Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisc
 
 Queste scelte sono definitive per il progetto corrente e sostituiscono la precedente matrice comparativa.
 
+## Decisioni confermate (2026-03-05)
+- **Transport**: A — HTTP+JSON.
+- **Strategia gossip**: C — Push-pull con fanout variabile.
+- **Aggregazioni richieste**: **sum + average + min/max**.
+
+## Raccomandazione membership / discovery
+Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
+
+Perché questa scelta è la più equilibrata per il progetto:
+- mantiene il sistema decentralizzato per il calcolo degli aggregati;
+- consente join dinamici (elasticità) senza aggiornare manualmente tutti i file di configurazione;
+- resta semplice da testare in locale e su EC2 perché i seed rimangono piano B operativo.
+
+Impatto pratico previsto:
+- aggiungiamo `join_endpoint` opzionale in configurazione;
+- all'avvio il nodo prova prima il join endpoint, in fallback usa la seed list;
+- nei test crash/restart validiamo esplicitamente il rientro nodo via join endpoint.
+
 ## Sezione aggregazioni
 Aggregazioni abilitate via configurazione:
 - `sum`
