@@ -122,3 +122,131 @@ func fixtureMessage(id shared.MessageID, origin shared.NodeID, value float64, ve
 		},
 	}
 }
+
+func TestMergeSumIdempotenteConContributiPerNodo(t *testing.T) {
+	base := time.Date(2026, 3, 16, 18, 0, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "sum",
+		Value:           10,
+		Round:           2,
+		VersionCounter:  2,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Sum: &shared.SumState{
+			Contributions: map[shared.NodeID]float64{"node-1": 10},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-1": {Counter: 2}},
+		}},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "sum-msg-1",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           20,
+			Round:           3,
+			VersionCounter:  3,
+			UpdatedAt:       base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{Sum: &shared.SumState{
+				Contributions: map[shared.NodeID]float64{"node-2": 20},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-2": {Counter: 3}},
+			}},
+		},
+	}
+
+	first := applyRemote(local, msg)
+	second := applyRemote(first.State, msg)
+	if first.State.Value != 30 {
+		t.Fatalf("somma inattesa dopo merge: got=%v want=30", first.State.Value)
+	}
+	if second.State.Value != 30 {
+		t.Fatalf("somma non idempotente su duplicato: got=%v want=30", second.State.Value)
+	}
+}
+
+func TestMergeSumOutOfOrderNonRegredisceContributo(t *testing.T) {
+	base := time.Date(2026, 3, 16, 18, 10, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "sum",
+		Value:           35,
+		Round:           5,
+		VersionCounter:  5,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Sum: &shared.SumState{
+			Contributions: map[shared.NodeID]float64{"node-1": 10, "node-2": 25},
+			Versions: map[shared.NodeID]shared.StateVersionStamp{
+				"node-1": {Counter: 2},
+				"node-2": {Counter: 5},
+			},
+		}},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "sum-stale-node2",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(2 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 4},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           5,
+			Round:           4,
+			VersionCounter:  4,
+			UpdatedAt:       base.Add(2 * time.Minute),
+			AggregationData: shared.AggregationState{Sum: &shared.SumState{
+				Contributions: map[shared.NodeID]float64{"node-2": 5},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-2": {Counter: 4}},
+			}},
+		},
+	}
+	res := applyRemote(local, msg)
+	if res.State.Value != 35 {
+		t.Fatalf("contributo stale ha regredito somma: got=%v want=35", res.State.Value)
+	}
+}
+
+func TestMergeSumOverflowSaturazione(t *testing.T) {
+	base := time.Date(2026, 3, 16, 18, 20, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "sum",
+		Value:           math.MaxFloat64,
+		Round:           2,
+		VersionCounter:  2,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Sum: &shared.SumState{
+			Contributions: map[shared.NodeID]float64{"node-1": math.MaxFloat64},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-1": {Counter: 2}},
+		}},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "sum-overflow",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           42,
+			Round:           3,
+			VersionCounter:  3,
+			UpdatedAt:       base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{Sum: &shared.SumState{
+				Contributions: map[shared.NodeID]float64{"node-2": math.MaxFloat64},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-2": {Counter: 3}},
+			}},
+		},
+	}
+	res := applyRemote(local, msg)
+	if res.State.Value != math.MaxFloat64 {
+		t.Fatalf("saturazione overflow non applicata: got=%v want=%v", res.State.Value, math.MaxFloat64)
+	}
+	if res.State.AggregationData.Sum == nil || !res.State.AggregationData.Sum.Overflowed {
+		t.Fatalf("flag overflow non impostato")
+	}
+}

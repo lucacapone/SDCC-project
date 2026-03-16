@@ -60,7 +60,8 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 6. `state.round` (`uint64`): versione logica locale del mittente al momento dell'invio.
 7. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
 8. `state.value` (`float64`): valore numerico corrente del nodo.
-9. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
+9. `state.aggregation_data.sum` (`object`, opzionale): metadati minimali per `sum` idempotente (`contributions`, `versions`, `overflowed`).
+10. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
 
 ### Payload gossip membership (dettaglio)
 Il campo `membership` è un array di `MembershipEntry` serializzato integralmente ad ogni messaggio:
@@ -114,7 +115,9 @@ Implementazione attuale:
 Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramite `applyRemote` in `internal/gossip/state.go`.
 
 ### Regola di merge implementata
-- `new_value = aggregation.Merge(local.value, remote.value)` quando `remote_version > local_version`, con implementazione risolta dalla factory in base a `aggregation_type` (es. `sum` => somma aritmetica);
+- per `sum`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.sum.versions[node_id]`) e ricostruzione deterministica tramite somma dei contributi;
+- in overflow numerico della `sum` viene applicata saturazione a `±math.MaxFloat64` e il flag `aggregation_data.sum.overflowed=true`;
+- per aggregazioni non `sum`: `new_value = aggregation.Merge(local.value, remote.value)` quando `remote_version > local_version`, con implementazione risolta dalla factory in base a `aggregation_type`;
 - `new_round = max(local.round, remote.round) + 1`;
 - `updated_at = now_utc`;
 - tracciamento `last_message_id` e `last_sender_node_id` (derivati da `message_id`/`origin_node`);
