@@ -158,3 +158,8 @@
 - **Descrizione task**: Redazione milestone M03 e riallineamento README/architettura sul layer transport astratto (confine gossip↔adapter), regole timeout/retry/lifecycle e verifica assenza claim non implementati.
 - **File modificati**: `docs/task/M03.md`, `README.md`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho documentato esplicitamente che il contratto transport è astratto e validato da test dedicato, separando comportamento implementato (UDP Start/Send/Close con context e close idempotente) da funzionalità pianificate (fanout/retry), così da eliminare divergenze testo↔codice nella milestone M03.
+
+## 2026-03-16 17:48:55 UTC
+- **Descrizione task**: Migrazione del layer aggregazioni da `internal/aggregate` a `internal/aggregation`, introduzione implementazione concreta `sum` e aggiornamento integrazione runtime/factory per risoluzione `cfg.Aggregation == "sum"`.
+- **File modificati**: `internal/aggregation/aggregation.go`, `internal/aggregation/aggregation_test.go`, `internal/aggregation/sum/algorithm.go`, `internal/gossip/state.go`, `cmd/node/main.go`, `Makefile`, `README.md`, `docs/architecture.md`, `docs/operational_log.md`, `internal/aggregate/aggregate.go` (rimosso), `internal/aggregate/aggregate_test.go` (rimosso).
+- **Reasoning summary**: Ho creato un package comune con contratto `Algorithm` e factory unica, spostando `sum` in un modulo concreto dedicato e mantenendo la compatibilità runtime tramite istanziazione della factory in bootstrap nodo e merge dinamico nel dominio gossip; gli stub legacy `SumPlaceholder` e correlati sono stati eliminati con la rimozione del vecchio package per evitare duplicazioni tra path nuovo/vecchio.

@@ -80,6 +80,7 @@ Aggregazioni abilitate via configurazione:
 - `max`
 
 La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contro `enabled_aggregations`.
+Il layer comune risiede in `internal/aggregation` e la prima implementazione concreta globale è `internal/aggregation/sum`.
 
 ## Configurazione esterna
 File di esempio:
@@ -160,7 +161,7 @@ go test ./internal/gossip -run TestRoundSerializzaMembershipConIncarnation
 # Suite completa
 make test
 
-# Solo unit test (config + aggregate + membership)
+# Solo unit test (config + aggregation + membership)
 make test-unit
 
 # Integrazione convergenza gossip in-memory

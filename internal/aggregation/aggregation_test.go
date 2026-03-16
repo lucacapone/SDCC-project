@@ -1,4 +1,4 @@
-package aggregate
+package aggregation
 
 import "testing"
 
@@ -36,23 +36,23 @@ func TestFactory(t *testing.T) {
 }
 
 func TestMergeRules(t *testing.T) {
-	sum := SumPlaceholder{}
-	if got := sum.Merge(10, 3); got != 13 {
+	sumAlgo, _ := Factory("sum")
+	if got := sumAlgo.Merge(10, 3); got != 13 {
 		t.Fatalf("merge sum inatteso: got=%v want=13", got)
 	}
 
-	avg := AveragePlaceholder{}
-	if got := avg.Merge(10, 4); got != 7 {
+	avgAlgo, _ := Factory("average")
+	if got := avgAlgo.Merge(10, 4); got != 7 {
 		t.Fatalf("merge average inatteso: got=%v want=7", got)
 	}
 
-	min := MinPlaceholder{}
-	if got := min.Merge(10, 4); got != 4 {
+	minAlgo, _ := Factory("min")
+	if got := minAlgo.Merge(10, 4); got != 4 {
 		t.Fatalf("merge min inatteso: got=%v want=4", got)
 	}
 
-	max := MaxPlaceholder{}
-	if got := max.Merge(10, 4); got != 10 {
+	maxAlgo, _ := Factory("max")
+	if got := maxAlgo.Merge(10, 4); got != 10 {
 		t.Fatalf("merge max inatteso: got=%v want=10", got)
 	}
 }
