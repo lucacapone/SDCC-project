@@ -41,7 +41,8 @@ type GossipState struct {
 
 // AggregationState contiene metadati opzionali e specifici per aggregazione.
 type AggregationState struct {
-	Sum *SumState `json:"sum,omitempty"`
+	Sum     *SumState     `json:"sum,omitempty"`
+	Average *AverageState `json:"average,omitempty"`
 }
 
 // SumState rappresenta lo stato minimo per una somma idempotente per-contributo.
@@ -49,6 +50,18 @@ type SumState struct {
 	Contributions map[NodeID]float64           `json:"contributions,omitempty"`
 	Versions      map[NodeID]StateVersionStamp `json:"versions,omitempty"`
 	Overflowed    bool                         `json:"overflowed,omitempty"`
+}
+
+// AverageContribution rappresenta il contributo locale di un nodo per la media convergente.
+type AverageContribution struct {
+	Sum   float64 `json:"sum"`
+	Count uint64  `json:"count"`
+}
+
+// AverageState rappresenta metadati CRDT-like per la media convergente.
+type AverageState struct {
+	Contributions map[NodeID]AverageContribution `json:"contributions,omitempty"`
+	Versions      map[NodeID]StateVersionStamp   `json:"versions,omitempty"`
 }
 
 // GossipMessage è il payload gossip con envelope e stato.
@@ -92,5 +105,18 @@ func (s *GossipState) EnsureSumMetadata() {
 	}
 	if s.AggregationData.Sum.Versions == nil {
 		s.AggregationData.Sum.Versions = make(map[NodeID]StateVersionStamp)
+	}
+}
+
+// EnsureAverageMetadata inizializza le mappe per la media convergente per-contributo.
+func (s *GossipState) EnsureAverageMetadata() {
+	if s.AggregationData.Average == nil {
+		s.AggregationData.Average = &AverageState{}
+	}
+	if s.AggregationData.Average.Contributions == nil {
+		s.AggregationData.Average.Contributions = make(map[NodeID]AverageContribution)
+	}
+	if s.AggregationData.Average.Versions == nil {
+		s.AggregationData.Average.Versions = make(map[NodeID]StateVersionStamp)
 	}
 }

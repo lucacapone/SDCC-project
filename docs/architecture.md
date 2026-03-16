@@ -9,7 +9,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`/`leave`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
-- `internal/aggregation`: contratti comuni delle aggregazioni + factory runtime (`sum` concreta in `internal/aggregation/sum`).
+- `internal/aggregation`: contratti comuni delle aggregazioni + factory runtime con implementazioni dedicate (`sum`, `average`, `min`, `max`).
 - `internal/transport`: astrazione trasporto + adapter UDP concreto con lifecycle (`Start`/`Send`/`Close`) e rispetto di `context.Context`.
 
 
@@ -61,6 +61,7 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 7. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
 8. `state.value` (`float64`): valore numerico corrente del nodo.
 9. `state.aggregation_data.sum` (`object`, opzionale): metadati minimali per `sum` idempotente (`contributions`, `versions`, `overflowed`).
+10. `state.aggregation_data.average` (`object`, opzionale): metadati per `average` convergente (`contributions` con `sum/count` per nodo + `versions`).
 10. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
 
 ### Payload gossip membership (dettaglio)
@@ -117,7 +118,8 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 ### Regola di merge implementata
 - per `sum`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.sum.versions[node_id]`) e ricostruzione deterministica tramite somma dei contributi;
 - in overflow numerico della `sum` viene applicata saturazione a `±math.MaxFloat64` e il flag `aggregation_data.sum.overflowed=true`;
-- per aggregazioni non `sum`: `new_value = aggregation.Merge(local.value, remote.value)` quando `remote_version > local_version`, con implementazione risolta dalla factory in base a `aggregation_type`;
+- per `average`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.average.versions[node_id]`) e ricostruzione deterministica della media su `sum/count` totali;
+- per aggregazioni non specializzate (`min`/`max`): `new_value = aggregation.Merge(local.value, remote.value)` quando `remote_version > local_version`, con implementazione risolta dalla factory in base a `aggregation_type`;
 - `new_round = max(local.round, remote.round) + 1`;
 - `updated_at = now_utc`;
 - tracciamento `last_message_id` e `last_sender_node_id` (derivati da `message_id`/`origin_node`);

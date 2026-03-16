@@ -177,15 +177,23 @@ func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
 }
 
 func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
-	if state.AggregationType != "sum" {
+	localVersion := normalizeVersion(state)
+	switch state.AggregationType {
+	case "sum":
+		state.EnsureSumMetadata()
+		state.AggregationData.Sum.Versions[state.NodeID] = localVersion
+		state.AggregationData.Sum.Contributions[state.NodeID] = state.Value
+		state.Value, state.AggregationData.Sum.Overflowed = sumWithSaturation(state.AggregationData.Sum.Contributions, state.AggregationData.Sum.Overflowed)
+		return state
+	case "average":
+		state.EnsureAverageMetadata()
+		state.AggregationData.Average.Versions[state.NodeID] = localVersion
+		state.AggregationData.Average.Contributions[state.NodeID] = shared.AverageContribution{Sum: state.Value, Count: 1}
+		state.Value = averageFromContributions(state.AggregationData.Average.Contributions)
+		return state
+	default:
 		return state
 	}
-	state.EnsureSumMetadata()
-	localVersion := normalizeVersion(state)
-	state.AggregationData.Sum.Versions[state.NodeID] = localVersion
-	state.AggregationData.Sum.Contributions[state.NodeID] = state.Value
-	state.Value, state.AggregationData.Sum.Overflowed = sumWithSaturation(state.AggregationData.Sum.Contributions, state.AggregationData.Sum.Overflowed)
-	return state
 }
 
 func sanitizedStateForMessage(state shared.GossipState) shared.GossipState {
