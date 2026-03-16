@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -43,10 +46,21 @@ func main() {
 		"known_peers", bootstrapRes.KnownPeers,
 	)
 
+	listenAddress := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(cfg.NodePort))
+	var gossipTransport transport.Transport
+	udpTransport, err := transport.NewUDPTransport(listenAddress)
+	if err != nil {
+		logger.Warn("inizializzazione UDP transport fallita, fallback a NoopTransport", "listen_address", listenAddress, "error", err)
+		gossipTransport = transport.NoopTransport{}
+	} else {
+		gossipTransport = udpTransport
+		logger.Info("transport inizializzato", "type", "udp", "listen_address", fmt.Sprintf("udp://%s", listenAddress))
+	}
+
 	eng := gossip.NewEngine(
 		cfg.NodeID,
 		cfg.Aggregation,
-		transport.NoopTransport{},
+		gossipTransport,
 		mset,
 		logger,
 		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,

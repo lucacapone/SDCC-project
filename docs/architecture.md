@@ -9,7 +9,16 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`/`leave`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
-- `internal/transport`: astrazione trasporto (implementazioni concrete e test in-memory).
+- `internal/transport`: astrazione trasporto + adapter UDP concreto con lifecycle (`Start`/`Send`/`Close`) e rispetto di `context.Context`.
+
+
+## Transport runtime
+L'engine gossip resta disaccoppiato dai dettagli di protocollo: interagisce solo tramite `Transport` con `[]byte` + indirizzo stringa.
+
+Implementazione concreta corrente:
+- `UDPTransport` (`internal/transport/udp_transport.go`) apre una socket locale in `Start`, riceve datagrammi e invoca `MessageHandler`;
+- `Send` usa `DialContext` UDP e rispetta deadline/cancellazione del `context.Context`;
+- `Close` esegue shutdown idempotente, chiude la socket e attende la terminazione delle goroutine senza deadlock.
 
 ## Modello membership locale
 Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da record `Peer` con:
