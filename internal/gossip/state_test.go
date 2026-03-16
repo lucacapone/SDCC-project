@@ -310,3 +310,130 @@ func TestMergeAverageContributiConvergentiPerNodo(t *testing.T) {
 		t.Fatalf("media non idempotente su duplicato: got=%v want=20", second.State.Value)
 	}
 }
+
+func TestMergeAverageLegacySenzaMetadataCompatibile(t *testing.T) {
+	base := time.Date(2026, 3, 16, 19, 0, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "average",
+		Value:           10,
+		Round:           2,
+		VersionCounter:  2,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Average: &shared.AverageState{
+			Contributions: map[shared.NodeID]shared.AverageContribution{"node-1": {Sum: 10, Count: 1}},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-1": {Counter: 2}},
+		}},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "avg-legacy",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "average",
+			Value:           30,
+			Round:           3,
+			VersionCounter:  3,
+			UpdatedAt:       base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{},
+		},
+	}
+
+	res := applyRemote(local, msg)
+	if res.State.Value != 20 {
+		t.Fatalf("media legacy non ricostruita: got=%v want=20", res.State.Value)
+	}
+}
+
+func TestMergeMinMonotonoGestisceStatoVuotoELegacy(t *testing.T) {
+	base := time.Date(2026, 3, 16, 19, 10, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "min",
+		Value:           0,
+		Round:           0,
+		VersionCounter:  0,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "min-legacy",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 1},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "min",
+			Value:           7,
+			Round:           1,
+			VersionCounter:  1,
+			UpdatedAt:       base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{},
+		},
+	}
+
+	first := applyRemote(local, msg)
+	if first.State.Value != 7 {
+		t.Fatalf("merge min da stato vuoto inatteso: got=%v want=7", first.State.Value)
+	}
+
+	newer := msg
+	newer.MessageID = "min-newer"
+	newer.State.Value = 5
+	newer.State.Round = 3
+	newer.State.VersionCounter = 3
+	newer.StateVersion = shared.StateVersionStamp{Counter: 3}
+	second := applyRemote(first.State, newer)
+	if second.State.Value != 5 {
+		t.Fatalf("merge min monotono non aggiornato: got=%v want=5", second.State.Value)
+	}
+}
+
+func TestMergeMaxMonotonoGestisceStatoVuotoELegacy(t *testing.T) {
+	base := time.Date(2026, 3, 16, 19, 20, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "max",
+		Value:           0,
+		Round:           0,
+		VersionCounter:  0,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "max-legacy",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 1},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "max",
+			Value:           7,
+			Round:           1,
+			VersionCounter:  1,
+			UpdatedAt:       base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{},
+		},
+	}
+
+	first := applyRemote(local, msg)
+	if first.State.Value != 7 {
+		t.Fatalf("merge max da stato vuoto inatteso: got=%v want=7", first.State.Value)
+	}
+
+	newer := msg
+	newer.MessageID = "max-newer"
+	newer.State.Value = 9
+	newer.State.Round = 3
+	newer.State.VersionCounter = 3
+	newer.StateVersion = shared.StateVersionStamp{Counter: 3}
+	second := applyRemote(first.State, newer)
+	if second.State.Value != 9 {
+		t.Fatalf("merge max monotono non aggiornato: got=%v want=9", second.State.Value)
+	}
+}

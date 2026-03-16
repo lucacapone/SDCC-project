@@ -62,6 +62,8 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 8. `state.value` (`float64`): valore numerico corrente del nodo.
 9. `state.aggregation_data.sum` (`object`, opzionale): metadati minimali per `sum` idempotente (`contributions`, `versions`, `overflowed`).
 10. `state.aggregation_data.average` (`object`, opzionale): metadati per `average` convergente (`contributions` con `sum/count` per nodo + `versions`).
+11. `state.aggregation_data.min` (`object`, opzionale): metadati monotoni per `min` (versioni per nodo) usati per merge robusto e retrocompatibile.
+12. `state.aggregation_data.max` (`object`, opzionale): metadati monotoni per `max` (versioni per nodo) usati per merge robusto e retrocompatibile.
 10. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
 
 ### Payload gossip membership (dettaglio)
@@ -119,7 +121,8 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 - per `sum`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.sum.versions[node_id]`) e ricostruzione deterministica tramite somma dei contributi;
 - in overflow numerico della `sum` viene applicata saturazione a `±math.MaxFloat64` e il flag `aggregation_data.sum.overflowed=true`;
 - per `average`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.average.versions[node_id]`) e ricostruzione deterministica della media su `sum/count` totali;
-- per aggregazioni non specializzate (`min`/`max`): `new_value = aggregation.Merge(local.value, remote.value)` quando `remote_version > local_version`, con implementazione risolta dalla factory in base a `aggregation_type`;
+- per `min`: merge monotono robusto con metadati `aggregation_data.min.versions` per nodo; in caso di stato locale non inizializzato il valore remoto viene adottato deterministicamente (compatibilità messaggi legacy senza metadati);
+- per `max`: merge monotono robusto con metadati `aggregation_data.max.versions` per nodo; in caso di stato locale non inizializzato il valore remoto viene adottato deterministicamente (compatibilità messaggi legacy senza metadati);
 - `new_round = max(local.round, remote.round) + 1`;
 - `updated_at = now_utc`;
 - tracciamento `last_message_id` e `last_sender_node_id` (derivati da `message_id`/`origin_node`);
