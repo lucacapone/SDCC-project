@@ -173,3 +173,8 @@
 - **Descrizione task**: Aggiunta suite deterministica `TestSumConvergence` per aggregazione `sum` con copertura di convergenza multi-nodo, duplicate update, out-of-order, nodo lento e overflow con policy di saturazione.
 - **File modificati**: `internal/aggregation/sum/sum_convergence_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho implementato un harness con transport stub sincrono per evitare flakiness e rete reale, usando timestamp/versioni controllati e senza sleep casuali, così da verificare in modo ripetibile le proprietà di convergenza e idempotenza del merge `sum`, includendo assert espliciti su saturazione a `math.MaxFloat64` e flag overflow.
+
+## 2026-03-16 18:13:50 UTC
+- **Descrizione task**: Redazione milestone M04 su aggregazione `sum`, aggiornamento README con stato reale post-patch e inserimento comando operativo di verifica `TestSumConvergence`.
+- **File modificati**: `docs/task/M04.md`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho consolidato la documentazione M04 con stato iniziale/gap/regole merge-update/duplicati-overflow/test, esplicitando in README che `sum` è implementata con payload `aggregation_data.sum`, deduplica idempotente e convergenza verificabile via comando mirato; l'allineamento resta coerente con `docs/architecture.md` su payload e regole di convergenza.

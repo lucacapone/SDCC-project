@@ -50,14 +50,17 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M01**: completata (contratto messaggio gossip, versioning `epoch+counter`, merge deterministico e test di convergenza base).
 - **M02**: completata a livello repository su modello membership locale + propagazione digest gossip + merge `incarnation/status` + test dedicati.
 - **M03**: completata lato documentazione del transport astratto/concreto, confini gossip↔adapter e contratto verificato da suite dedicata.
+- **M04**: completata lato repository per `sum` (merge idempotente con contributi/versioni per nodo, gestione duplicati/out-of-order, saturazione overflow e test di convergenza dedicati).
 
-Comando di verifica M03:
-- `go test ./internal/... -run TestTransportContract`
+Comandi di verifica milestone:
+- M03 → `go test ./internal/... -run TestTransportContract`
+- M04 → `go test ./internal/aggregation/sum -run TestSumConvergence`
 
 Documento task:
 - `docs/task/M01.md`
 - `docs/task/M02.md`
 - `docs/task/M03.md`
+- `docs/task/M04.md`
 
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
@@ -81,7 +84,7 @@ Aggregazioni abilitate via configurazione:
 
 La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contro `enabled_aggregations`.
 Il layer comune risiede in `internal/aggregation` e la prima implementazione concreta globale è `internal/aggregation/sum`.
-- Per `sum`, il payload gossip include `state.aggregation_data.sum` con contributi/versioni per nodo per garantire merge idempotente con duplicati/out-of-order.
+- **Stato reale `sum` dopo patch M04**: implementazione attiva e verificata; il merge gossip usa `state.aggregation_data.sum` con contributi/versioni per nodo, è idempotente su duplicati/out-of-order e converge con test dedicato `TestSumConvergence`.
 - Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 
 ## Configurazione esterna
@@ -154,6 +157,11 @@ go test ./internal/membership -run TestJoinLeave
 go test ./internal/membership -run TestTimeoutTransitions
 go test ./internal/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder
 go test ./internal/gossip -run TestRoundSerializzaMembershipConIncarnation
+```
+
+Comando operativo M04 (verifica convergenza `sum`):
+```bash
+go test ./internal/aggregation/sum -run TestSumConvergence
 ```
 
 ## Script/comandi standard
