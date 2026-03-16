@@ -1,6 +1,13 @@
 package aggregation
 
-import "testing"
+import (
+	"testing"
+
+	"sdcc-project/internal/aggregation/average"
+	"sdcc-project/internal/aggregation/max"
+	"sdcc-project/internal/aggregation/min"
+	"sdcc-project/internal/aggregation/sum"
+)
 
 func TestFactory(t *testing.T) {
 	tests := []struct {
@@ -30,6 +37,25 @@ func TestFactory(t *testing.T) {
 			}
 			if algo.Type() != tt.expectType {
 				t.Fatalf("tipo inatteso: got=%s want=%s", algo.Type(), tt.expectType)
+			}
+
+			switch tt.kind {
+			case "sum":
+				if _, ok := algo.(sum.Algorithm); !ok {
+					t.Fatalf("factory non ha restituito sum.Algorithm: %T", algo)
+				}
+			case "average":
+				if _, ok := algo.(average.Algorithm); !ok {
+					t.Fatalf("factory non ha restituito average.Algorithm: %T", algo)
+				}
+			case "min":
+				if _, ok := algo.(min.Algorithm); !ok {
+					t.Fatalf("factory non ha restituito min.Algorithm: %T", algo)
+				}
+			case "max":
+				if _, ok := algo.(max.Algorithm); !ok {
+					t.Fatalf("factory non ha restituito max.Algorithm: %T", algo)
+				}
 			}
 		})
 	}
