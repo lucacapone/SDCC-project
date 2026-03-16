@@ -148,3 +148,8 @@
 - **Descrizione task**: Implementazione adapter `Transport` concreto su UDP con lifecycle sicuro (`Start`/`Send`/`Close`), aggiornamento wiring del nodo e allineamento documentazione.
 - **File modificati**: `internal/transport/udp_transport.go`, `internal/transport/udp_transport_test.go`, `internal/transport/transport.go`, `cmd/node/main.go`, `README.md`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto `UDPTransport` per mantenere `engine` disaccoppiato dal protocollo (solo `[]byte` + indirizzo), con loop ricezione cancellabile via `context`, invio con `DialContext` e shutdown idempotente senza deadlock; ho aggiornato il bootstrap runtime per usare UDP con fallback esplicito a `NoopTransport` solo in caso di errore di inizializzazione e riallineato i documenti al comportamento reale.
+
+## 2026-03-16 16:37:21 UTC
+- **Descrizione task**: Aggiunta suite contrattuale `TestTransportContract` con fake deterministic transport e nuovi test `Engine` per verificare interazione esclusiva via interfaccia `Transport` senza dipendenza da HTTP/UDP reali.
+- **File modificati**: `internal/transport/contract_test.go`, `internal/gossip/engine_transport_contract_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho modellato un transport fake in-memory deterministico per coprire scenari richiesti (delivery, context cancel/timeout, close idempotente, send-after-close) senza rete reale; lato gossip ho introdotto uno spy transport che cattura handler/start/close e consente delivery manuale del payload per verificare il wiring dell'`Engine` solo contro il contratto astratto `Transport`, evitando timing flaky.
