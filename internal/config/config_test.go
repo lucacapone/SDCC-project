@@ -14,6 +14,30 @@ func TestDefaultValidate(t *testing.T) {
 	}
 }
 
+func TestDefaultEnabledAggregationsIncludeConcretePackages(t *testing.T) {
+	cfg := Default()
+	expected := map[string]bool{"sum": true, "average": true, "min": true, "max": true}
+	for _, kind := range cfg.EnabledAggregations {
+		delete(expected, kind)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("enabled_aggregations di default incompleto: mancanti=%v", expected)
+	}
+}
+
+func TestValidateAcceptsMinAndMaxSemantics(t *testing.T) {
+	for _, aggregationKind := range []string{"min", "max"} {
+		t.Run(aggregationKind, func(t *testing.T) {
+			cfg := Default()
+			cfg.EnabledAggregations = []string{"sum", "average", "min", "max"}
+			cfg.Aggregation = aggregationKind
+			if err := Validate(cfg); err != nil {
+				t.Fatalf("config con aggregazione %s dovrebbe essere valida: %v", aggregationKind, err)
+			}
+		})
+	}
+}
+
 func TestLoadYAML(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "config.yaml")
