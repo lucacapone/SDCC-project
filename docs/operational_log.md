@@ -178,3 +178,22 @@
 - **Descrizione task**: Redazione milestone M04 su aggregazione `sum`, aggiornamento README con stato reale post-patch e inserimento comando operativo di verifica `TestSumConvergence`.
 - **File modificati**: `docs/task/M04.md`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho consolidato la documentazione M04 con stato iniziale/gap/regole merge-update/duplicati-overflow/test, esplicitando in README che `sum` è implementata con payload `aggregation_data.sum`, deduplica idempotente e convergenza verificabile via comando mirato; l'allineamento resta coerente con `docs/architecture.md` su payload e regole di convergenza.
+
+## 2026-03-16 19:32:34 UTC
+- **Task:** Introduzione package aggregazione dedicati (`average`, `min`, `max`) e semantica gossip convergente reale per `average`.
+- **Files modified:**
+  - `internal/aggregation/aggregation.go`
+  - `internal/aggregation/average/algorithm.go`
+  - `internal/aggregation/min/algorithm.go`
+  - `internal/aggregation/max/algorithm.go`
+  - `internal/types/types.go`
+  - `internal/gossip/engine.go`
+  - `internal/gossip/state.go`
+  - `internal/gossip/state_test.go`
+  - `README.md`
+  - `docs/architecture.md`
+- **Reasoning summary:**
+  - Rimossi gli stub dal factory runtime e sostituiti con package dedicati che mantengono la stessa API `Type()/Merge(...)`.
+  - Per `average` è stata introdotta una semantica convergente basata su contributi per nodo (`sum/count`) con versioning per-contributo, deduplica e merge idempotente/out-of-order-safe nel layer gossip.
+  - Mantenuta la compatibilità dell'interfaccia aggregazione e della selezione runtime via configurazione.
+  - Aggiornati test e documentazione per riflettere la nuova semantica distribuita dell'average.

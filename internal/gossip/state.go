@@ -84,11 +84,15 @@ func mergeAggregationState(local, remote shared.GossipState) shared.GossipState 
 	if aggregationType == "" {
 		aggregationType = remote.AggregationType
 	}
-	if aggregationType == "sum" {
+	switch aggregationType {
+	case "sum":
 		return mergeSumState(local, remote)
+	case "average":
+		return mergeAverageState(local, remote)
+	default:
+		local.Value = mergeAggregationValue(local, remote)
+		return local
 	}
-	local.Value = mergeAggregationValue(local, remote)
-	return local
 }
 
 // mergeAggregationValue fonde valori numerici per aggregazioni non specializzate.
@@ -151,6 +155,70 @@ func ensureIncomingSumMetadata(state *shared.GossipState) {
 	}
 }
 
+// mergeAverageState implementa merge convergente per media via contributi per nodo (sum/count).
+func mergeAverageState(local, remote shared.GossipState) shared.GossipState {
+	local.EnsureAverageMetadata()
+	ensureIncomingAverageMetadata(&remote)
+
+	for nodeID, remoteVersion := range remote.AggregationData.Average.Versions {
+		localVersion, exists := local.AggregationData.Average.Versions[nodeID]
+		if exists && compareVersion(remoteVersion, localVersion) <= 0 {
+			continue
+		}
+		local.AggregationData.Average.Versions[nodeID] = remoteVersion
+		local.AggregationData.Average.Contributions[nodeID] = remote.AggregationData.Average.Contributions[nodeID]
+	}
+
+	if remote.NodeID != "" {
+		remoteContributionVersion := normalizeVersion(remote)
+		localContributionVersion := local.AggregationData.Average.Versions[remote.NodeID]
+		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
+			local.AggregationData.Average.Versions[remote.NodeID] = remoteContributionVersion
+			local.AggregationData.Average.Contributions[remote.NodeID] = shared.AverageContribution{Sum: remote.Value, Count: 1}
+		}
+	}
+
+	local.Value = averageFromContributions(local.AggregationData.Average.Contributions)
+	return local
+}
+
+// ensureIncomingAverageMetadata rende compatibili i messaggi legacy senza metadati average.
+func ensureIncomingAverageMetadata(state *shared.GossipState) {
+	if state.AggregationType != "average" {
+		return
+	}
+	state.EnsureAverageMetadata()
+	if state.NodeID == "" {
+		return
+	}
+	version := normalizeVersion(*state)
+	knownVersion, ok := state.AggregationData.Average.Versions[state.NodeID]
+	if !ok || compareVersion(version, knownVersion) > 0 {
+		state.AggregationData.Average.Versions[state.NodeID] = version
+		state.AggregationData.Average.Contributions[state.NodeID] = shared.AverageContribution{Sum: state.Value, Count: 1}
+	}
+}
+
+// averageFromContributions calcola la media aggregando i contributi noti e ignorando count zero.
+func averageFromContributions(contributions map[shared.NodeID]shared.AverageContribution) float64 {
+	if len(contributions) == 0 {
+		return 0
+	}
+	totalSum := 0.0
+	var totalCount uint64
+	for _, contribution := range contributions {
+		if contribution.Count == 0 {
+			continue
+		}
+		totalSum += contribution.Sum
+		totalCount += contribution.Count
+	}
+	if totalCount == 0 {
+		return 0
+	}
+	return totalSum / float64(totalCount)
+}
+
 // sumWithSaturation somma i contributi saturando a +/- MaxFloat64 in caso di overflow.
 func sumWithSaturation(contributions map[shared.NodeID]float64, alreadyOverflowed bool) (float64, bool) {
 	total := 0.0
@@ -196,10 +264,14 @@ func samePayload(local, remote shared.GossipState) bool {
 	if local.AggregationType != remote.AggregationType {
 		return false
 	}
-	if local.AggregationType == "sum" {
+	switch local.AggregationType {
+	case "sum":
 		return sameSumPayload(local, remote)
+	case "average":
+		return sameAveragePayload(local, remote)
+	default:
+		return math.Abs(local.Value-remote.Value) < 1e-9
 	}
-	return math.Abs(local.Value-remote.Value) < 1e-9
 }
 
 func sameSumPayload(local, remote shared.GossipState) bool {
@@ -217,6 +289,27 @@ func sameSumPayload(local, remote shared.GossipState) bool {
 			return false
 		}
 		if compareVersion(local.AggregationData.Sum.Versions[nodeID], remote.AggregationData.Sum.Versions[nodeID]) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func sameAveragePayload(local, remote shared.GossipState) bool {
+	local.EnsureAverageMetadata()
+	ensureIncomingAverageMetadata(&remote)
+	if len(local.AggregationData.Average.Contributions) != len(remote.AggregationData.Average.Contributions) {
+		return false
+	}
+	for nodeID, localValue := range local.AggregationData.Average.Contributions {
+		remoteValue, ok := remote.AggregationData.Average.Contributions[nodeID]
+		if !ok {
+			return false
+		}
+		if math.Abs(localValue.Sum-remoteValue.Sum) > 1e-9 || localValue.Count != remoteValue.Count {
+			return false
+		}
+		if compareVersion(local.AggregationData.Average.Versions[nodeID], remote.AggregationData.Average.Versions[nodeID]) != 0 {
 			return false
 		}
 	}

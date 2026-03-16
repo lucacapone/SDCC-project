@@ -102,6 +102,10 @@ func fixtureState(node shared.NodeID, value float64, version shared.StateVersion
 		Round:           version,
 		VersionCounter:  version,
 		UpdatedAt:       updatedAt,
+		AggregationData: shared.AggregationState{Average: &shared.AverageState{
+			Contributions: map[shared.NodeID]shared.AverageContribution{node: {Sum: value, Count: 1}},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{node: {Counter: version}},
+		}},
 	}
 }
 
@@ -119,6 +123,10 @@ func fixtureMessage(id shared.MessageID, origin shared.NodeID, value float64, ve
 			Round:           version,
 			VersionCounter:  version,
 			UpdatedAt:       sentAt,
+			AggregationData: shared.AggregationState{Average: &shared.AverageState{
+				Contributions: map[shared.NodeID]shared.AverageContribution{origin: {Sum: value, Count: 1}},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{origin: {Counter: version}},
+			}},
 		},
 	}
 }
@@ -248,5 +256,57 @@ func TestMergeSumOverflowSaturazione(t *testing.T) {
 	}
 	if res.State.AggregationData.Sum == nil || !res.State.AggregationData.Sum.Overflowed {
 		t.Fatalf("flag overflow non impostato")
+	}
+}
+
+func TestMergeAverageContributiConvergentiPerNodo(t *testing.T) {
+	base := time.Date(2026, 3, 16, 18, 30, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "average",
+		Value:           10,
+		Round:           2,
+		VersionCounter:  2,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Average: &shared.AverageState{
+			Contributions: map[shared.NodeID]shared.AverageContribution{
+				"node-1": {Sum: 10, Count: 1},
+			},
+			Versions: map[shared.NodeID]shared.StateVersionStamp{
+				"node-1": {Counter: 2},
+			},
+		}},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "avg-msg-1",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "average",
+			Value:           30,
+			Round:           3,
+			VersionCounter:  3,
+			UpdatedAt:       base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{Average: &shared.AverageState{
+				Contributions: map[shared.NodeID]shared.AverageContribution{
+					"node-2": {Sum: 30, Count: 1},
+				},
+				Versions: map[shared.NodeID]shared.StateVersionStamp{
+					"node-2": {Counter: 3},
+				},
+			}},
+		},
+	}
+
+	first := applyRemote(local, msg)
+	second := applyRemote(first.State, msg)
+	if first.State.Value != 20 {
+		t.Fatalf("media inattesa dopo merge: got=%v want=20", first.State.Value)
+	}
+	if second.State.Value != 20 {
+		t.Fatalf("media non idempotente su duplicato: got=%v want=20", second.State.Value)
 	}
 }
