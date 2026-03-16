@@ -12,13 +12,24 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/transport`: astrazione trasporto + adapter UDP concreto con lifecycle (`Start`/`Send`/`Close`) e rispetto di `context.Context`.
 
 
-## Transport runtime
-L'engine gossip resta disaccoppiato dai dettagli di protocollo: interagisce solo tramite `Transport` con `[]byte` + indirizzo stringa.
+## Layer transport astratto e confini con gossip
+L'engine gossip è isolato dal protocollo di rete concreto: usa solo l'interfaccia `Transport` (`Start`, `Send`, `Close`) con payload `[]byte` e destinazione `string`.
 
-Implementazione concreta corrente:
-- `UDPTransport` (`internal/transport/udp_transport.go`) apre una socket locale in `Start`, riceve datagrammi e invoca `MessageHandler`;
-- `Send` usa `DialContext` UDP e rispetta deadline/cancellazione del `context.Context`;
-- `Close` esegue shutdown idempotente, chiude la socket e attende la terminazione delle goroutine senza deadlock.
+Confine architetturale implementato:
+- **Dentro `internal/gossip`**: serializzazione/deserializzazione `GossipMessage`, merge stato e membership, scheduling dei round.
+- **Dentro adapter `internal/transport`**: I/O rete, gestione socket e semantica lifecycle del canale di trasporto.
+- **Contratto tra i due layer**: `MessageHandler` riceve solo bytes già consegnati dal transport; gossip non accede a dettagli UDP (`net.PacketConn`, dial/listen, deadline dirette).
+
+Adapter concreto corrente (`UDPTransport`):
+- `Start(ctx, handler)` apre `ListenPacket` UDP una sola volta, valida `ctx`/`handler` e avvia un read loop cancellabile.
+- `Send(ctx, addr, payload)` usa `DialContext` UDP per invio best-effort per messaggio, propagando errori di `context` o dial/write.
+- `Close()` è idempotente (`sync.Once`), chiude la socket e aspetta la fine delle goroutine (`WaitGroup`).
+
+Regole timeout/retry/lifecycle effettivamente implementate:
+- **Timeout ricezione**: read loop con `SetReadDeadline(250ms)` per poter verificare periodicamente `ctx.Done()`/stato `closed`.
+- **Timeout invio**: se il `context` ha deadline, viene applicata su `SetWriteDeadline`; senza deadline non esiste timeout applicativo aggiuntivo.
+- **Retry**: nessun retry automatico nel transport o nell'engine (`Send` viene invocato una volta per peer nel round corrente).
+- **Lifecycle**: `Start` non può essere chiamato due volte; `Close` può essere chiamato più volte; `Send` su transport chiuso restituisce errore.
 
 ## Modello membership locale
 Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da record `Peer` con:
@@ -143,7 +154,7 @@ Trade-off principali:
 
 - timeout più bassi: rilevazione guasti più rapida, ma rischio maggiore di false positive su jitter/latency.
 - timeout più alti: maggiore stabilità della vista membership, ma tempi più lunghi per isolare nodi realmente down.
-- fanout/intervallo gossip influenzano indirettamente la bontà della detection: round più radi aumentano la probabilità di transizioni conservative verso `suspect`/`dead`.
+- intervallo gossip influenza indirettamente la bontà della detection: round più radi aumentano la probabilità di transizioni conservative verso `suspect`/`dead` (fanout configurabile previsto ma non ancora applicato nel loop runtime).
 
 Per questo i timeout devono essere calibrati in base al profilo rete e al target operativo (reattività vs stabilità).
 
@@ -155,7 +166,7 @@ Per questo i timeout devono essere calibrati in base al profilo rete e al target
 
 ### Limiti noti
 - **Peer instabili/down**: partizioni temporanee riducono velocità/accuratezza della convergenza globale.
-- **Convergenza lenta**: fanout basso, alta latenza o ritardi nel loop aumentano il tempo di stabilizzazione.
+- **Convergenza lenta**: intervallo gossip alto, latenza elevata o ritardi nel loop aumentano il tempo di stabilizzazione (fanout basso diventerà rilevante quando la selezione fanout sarà attivata).
 - **Duplicati/out-of-order**: con merge attuale possono introdurre oscillazioni o drift temporaneo.
 - **Assenza di anti-entropy strutturata**: in scenari avversi possono restare differenze residuali più a lungo.
 

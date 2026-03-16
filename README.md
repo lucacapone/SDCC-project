@@ -21,11 +21,11 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 Il sistema è pensato per nodi indipendenti che scambiano periodicamente informazioni in modalità peer-to-peer.
 
 ## Architettura ad alto livello
-Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo e fanout configurabili.
+Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo configurabile. Il parametro `fanout` è già in configurazione ma nel runtime corrente non è ancora applicato alla selezione peer (invio verso tutti i peer non `dead/leave`).
 
 ## Scelte architetturali confermate
 - **Transport tra nodi**: UDP + payload JSON (`[]byte`) su adapter `Transport`.
-- **Strategia gossip**: push-pull con fanout variabile.
+- **Strategia gossip (implementata oggi)**: push verso peer attivi (`alive`/`suspect`) con payload completo stato+membership; fanout variabile pianificato ma non ancora attivo nel loop runtime.
 - **Aggregazioni richieste**: `sum`, `average`, `min`, `max`.
 - **Membership/discovery**: join endpoint con fallback su seed statici da configurazione.
 
@@ -33,7 +33,7 @@ Queste scelte sono definitive per il progetto corrente e sostituiscono la preced
 
 ## Decisioni confermate (2026-03-05)
 - **Transport**: UDP adapter concreto (`internal/transport/udp_transport.go`) con fallback esplicito a `NoopTransport` solo in caso di errore di init.
-- **Strategia gossip**: C — Push-pull con fanout variabile.
+- **Strategia gossip**: round periodici push su `Transport` astratto; selezione fanout/retry non ancora implementata (presente TODO tecnico nel codice engine).
 - **Aggregazioni richieste**: **sum + average + min/max**.
 
 ## Protocollo gossip (M01)
@@ -49,10 +49,15 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 ## Stato avanzamento milestone
 - **M01**: completata (contratto messaggio gossip, versioning `epoch+counter`, merge deterministico e test di convergenza base).
 - **M02**: completata a livello repository su modello membership locale + propagazione digest gossip + merge `incarnation/status` + test dedicati.
+- **M03**: completata lato documentazione del transport astratto/concreto, confini gossip↔adapter e contratto verificato da suite dedicata.
+
+Comando di verifica M03:
+- `go test ./internal/... -run TestTransportContract`
 
 Documento task:
 - `docs/task/M01.md`
 - `docs/task/M02.md`
+- `docs/task/M03.md`
 
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
