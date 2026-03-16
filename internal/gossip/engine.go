@@ -101,6 +101,7 @@ func (e *Engine) round(ctx context.Context) {
 	e.State.Round = nextRound
 	e.State.VersionCounter = nextVersion
 	e.State.UpdatedAt = sentAt
+	e.State = prepareLocalStateForRound(e.State)
 
 	stateSnapshot := sanitizedStateForMessage(e.State)
 	stateVersion := normalizeVersion(stateSnapshot)
@@ -173,6 +174,18 @@ func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
 			LastSeen:    entry.LastSeen,
 		})
 	}
+}
+
+func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
+	if state.AggregationType != "sum" {
+		return state
+	}
+	state.EnsureSumMetadata()
+	localVersion := normalizeVersion(state)
+	state.AggregationData.Sum.Versions[state.NodeID] = localVersion
+	state.AggregationData.Sum.Contributions[state.NodeID] = state.Value
+	state.Value, state.AggregationData.Sum.Overflowed = sumWithSaturation(state.AggregationData.Sum.Contributions, state.AggregationData.Sum.Overflowed)
+	return state
 }
 
 func sanitizedStateForMessage(state shared.GossipState) shared.GossipState {

@@ -68,7 +68,7 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 
 	local.SeenMessageIDs[msg.MessageID] = struct{}{}
 	local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-	local.Value = mergeAggregationValue(local, msg.State)
+	local = mergeAggregationState(local, msg.State)
 	local.UpdatedAt = time.Now().UTC()
 	local.Round = maxCounter(local.Round, msg.State.Round) + 1
 	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
@@ -78,6 +78,20 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	return MergeResult{State: local, Status: MergeApplied, Reason: "remote_newer_version"}
 }
 
+// mergeAggregationState applica la strategia di merge in base al tipo aggregazione.
+func mergeAggregationState(local, remote shared.GossipState) shared.GossipState {
+	aggregationType := local.AggregationType
+	if aggregationType == "" {
+		aggregationType = remote.AggregationType
+	}
+	if aggregationType == "sum" {
+		return mergeSumState(local, remote)
+	}
+	local.Value = mergeAggregationValue(local, remote)
+	return local
+}
+
+// mergeAggregationValue fonde valori numerici per aggregazioni non specializzate.
 func mergeAggregationValue(local, remote shared.GossipState) float64 {
 	aggregationType := local.AggregationType
 	if aggregationType == "" {
@@ -90,8 +104,85 @@ func mergeAggregationValue(local, remote shared.GossipState) float64 {
 	return algo.Merge(local.Value, remote.Value)
 }
 
+// mergeSumState implementa merge deterministico e idempotente su contributi per nodo.
+func mergeSumState(local, remote shared.GossipState) shared.GossipState {
+	local.EnsureSumMetadata()
+	ensureIncomingSumMetadata(&remote)
+
+	for nodeID, remoteVersion := range remote.AggregationData.Sum.Versions {
+		localVersion, exists := local.AggregationData.Sum.Versions[nodeID]
+		if exists && compareVersion(remoteVersion, localVersion) <= 0 {
+			continue
+		}
+		local.AggregationData.Sum.Versions[nodeID] = remoteVersion
+		local.AggregationData.Sum.Contributions[nodeID] = remote.AggregationData.Sum.Contributions[nodeID]
+	}
+
+	if remote.NodeID != "" {
+		remoteContributionVersion := normalizeVersion(remote)
+		localContributionVersion := local.AggregationData.Sum.Versions[remote.NodeID]
+		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
+			local.AggregationData.Sum.Versions[remote.NodeID] = remoteContributionVersion
+			local.AggregationData.Sum.Contributions[remote.NodeID] = remote.Value
+		}
+	}
+
+	if remote.AggregationData.Sum.Overflowed {
+		local.AggregationData.Sum.Overflowed = true
+	}
+	local.Value, local.AggregationData.Sum.Overflowed = sumWithSaturation(local.AggregationData.Sum.Contributions, local.AggregationData.Sum.Overflowed)
+	return local
+}
+
+// ensureIncomingSumMetadata rende compatibili i messaggi legacy senza metadati sum.
+func ensureIncomingSumMetadata(state *shared.GossipState) {
+	if state.AggregationType != "sum" {
+		return
+	}
+	state.EnsureSumMetadata()
+	if state.NodeID == "" {
+		return
+	}
+	version := normalizeVersion(*state)
+	knownVersion, ok := state.AggregationData.Sum.Versions[state.NodeID]
+	if !ok || compareVersion(version, knownVersion) > 0 {
+		state.AggregationData.Sum.Versions[state.NodeID] = version
+		state.AggregationData.Sum.Contributions[state.NodeID] = state.Value
+	}
+}
+
+// sumWithSaturation somma i contributi saturando a +/- MaxFloat64 in caso di overflow.
+func sumWithSaturation(contributions map[shared.NodeID]float64, alreadyOverflowed bool) (float64, bool) {
+	total := 0.0
+	overflowed := alreadyOverflowed
+	for _, value := range contributions {
+		if value > 0 && total > math.MaxFloat64-value {
+			return math.MaxFloat64, true
+		}
+		if value < 0 && total < -math.MaxFloat64-value {
+			return -math.MaxFloat64, true
+		}
+		next := total + value
+		if math.IsInf(next, 1) || next > math.MaxFloat64 {
+			return math.MaxFloat64, true
+		}
+		if math.IsInf(next, -1) || next < -math.MaxFloat64 {
+			return -math.MaxFloat64, true
+		}
+		total = next
+	}
+	if overflowed && total > 0 {
+		return math.MaxFloat64, true
+	}
+	if overflowed && total < 0 {
+		return -math.MaxFloat64, true
+	}
+	return total, overflowed
+}
+
 func adoptRemote(local shared.GossipState, msg shared.GossipMessage) shared.GossipState {
 	local.Value = msg.State.Value
+	local.AggregationData = msg.State.AggregationData
 	local.Round = maxCounter(local.Round, msg.State.Round)
 	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
 	local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter)
@@ -102,7 +193,34 @@ func adoptRemote(local shared.GossipState, msg shared.GossipMessage) shared.Goss
 }
 
 func samePayload(local, remote shared.GossipState) bool {
-	return local.AggregationType == remote.AggregationType && math.Abs(local.Value-remote.Value) < 1e-9
+	if local.AggregationType != remote.AggregationType {
+		return false
+	}
+	if local.AggregationType == "sum" {
+		return sameSumPayload(local, remote)
+	}
+	return math.Abs(local.Value-remote.Value) < 1e-9
+}
+
+func sameSumPayload(local, remote shared.GossipState) bool {
+	local.EnsureSumMetadata()
+	ensureIncomingSumMetadata(&remote)
+	if local.AggregationData.Sum.Overflowed != remote.AggregationData.Sum.Overflowed {
+		return false
+	}
+	if len(local.AggregationData.Sum.Contributions) != len(remote.AggregationData.Sum.Contributions) {
+		return false
+	}
+	for nodeID, localValue := range local.AggregationData.Sum.Contributions {
+		remoteValue, ok := remote.AggregationData.Sum.Contributions[nodeID]
+		if !ok || math.Abs(localValue-remoteValue) > 1e-9 {
+			return false
+		}
+		if compareVersion(local.AggregationData.Sum.Versions[nodeID], remote.AggregationData.Sum.Versions[nodeID]) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func preferRemoteOnConflict(msg shared.GossipMessage, local shared.GossipState) bool {

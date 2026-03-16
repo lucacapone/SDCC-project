@@ -81,6 +81,8 @@ Aggregazioni abilitate via configurazione:
 
 La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contro `enabled_aggregations`.
 Il layer comune risiede in `internal/aggregation` e la prima implementazione concreta globale è `internal/aggregation/sum`.
+- Per `sum`, il payload gossip include `state.aggregation_data.sum` con contributi/versioni per nodo per garantire merge idempotente con duplicati/out-of-order.
+- Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 
 ## Configurazione esterna
 File di esempio:

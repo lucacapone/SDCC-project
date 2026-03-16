@@ -31,11 +31,24 @@ type GossipState struct {
 	VersionCounter        StateVersion                 `json:"version_counter"`
 	AggregationType       string                       `json:"aggregation_type"`
 	Value                 float64                      `json:"value"`
+	AggregationData       AggregationState             `json:"aggregation_data,omitempty"`
 	UpdatedAt             time.Time                    `json:"updated_at"`
 	LastMessageID         MessageID                    `json:"last_message_id,omitempty"`
 	LastSenderNodeID      NodeID                       `json:"last_sender_node_id,omitempty"`
 	SeenMessageIDs        map[MessageID]struct{}       `json:"-"`
 	LastSeenVersionByNode map[NodeID]StateVersionStamp `json:"-"`
+}
+
+// AggregationState contiene metadati opzionali e specifici per aggregazione.
+type AggregationState struct {
+	Sum *SumState `json:"sum,omitempty"`
+}
+
+// SumState rappresenta lo stato minimo per una somma idempotente per-contributo.
+type SumState struct {
+	Contributions map[NodeID]float64           `json:"contributions,omitempty"`
+	Versions      map[NodeID]StateVersionStamp `json:"versions,omitempty"`
+	Overflowed    bool                         `json:"overflowed,omitempty"`
 }
 
 // GossipMessage è il payload gossip con envelope e stato.
@@ -66,5 +79,18 @@ func (s *GossipState) EnsureMergeMetadata() {
 	}
 	if s.LastSeenVersionByNode == nil {
 		s.LastSeenVersionByNode = make(map[NodeID]StateVersionStamp)
+	}
+}
+
+// EnsureSumMetadata inizializza le mappe per la semantica di somma idempotente.
+func (s *GossipState) EnsureSumMetadata() {
+	if s.AggregationData.Sum == nil {
+		s.AggregationData.Sum = &SumState{}
+	}
+	if s.AggregationData.Sum.Contributions == nil {
+		s.AggregationData.Sum.Contributions = make(map[NodeID]float64)
+	}
+	if s.AggregationData.Sum.Versions == nil {
+		s.AggregationData.Sum.Versions = make(map[NodeID]StateVersionStamp)
 	}
 }
