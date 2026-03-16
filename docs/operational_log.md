@@ -153,3 +153,8 @@
 - **Descrizione task**: Aggiunta suite contrattuale `TestTransportContract` con fake deterministic transport e nuovi test `Engine` per verificare interazione esclusiva via interfaccia `Transport` senza dipendenza da HTTP/UDP reali.
 - **File modificati**: `internal/transport/contract_test.go`, `internal/gossip/engine_transport_contract_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho modellato un transport fake in-memory deterministico per coprire scenari richiesti (delivery, context cancel/timeout, close idempotente, send-after-close) senza rete reale; lato gossip ho introdotto uno spy transport che cattura handler/start/close e consente delivery manuale del payload per verificare il wiring dell'`Engine` solo contro il contratto astratto `Transport`, evitando timing flaky.
+
+## 2026-03-16 16:46:25 UTC
+- **Descrizione task**: Redazione milestone M03 e riallineamento README/architettura sul layer transport astratto (confine gossip↔adapter), regole timeout/retry/lifecycle e verifica assenza claim non implementati.
+- **File modificati**: `docs/task/M03.md`, `README.md`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho documentato esplicitamente che il contratto transport è astratto e validato da test dedicato, separando comportamento implementato (UDP Start/Send/Close con context e close idempotente) da funzionalità pianificate (fanout/retry), così da eliminare divergenze testo↔codice nella milestone M03.
