@@ -51,16 +51,19 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M02**: completata a livello repository su modello membership locale + propagazione digest gossip + merge `incarnation/status` + test dedicati.
 - **M03**: completata lato documentazione del transport astratto/concreto, confini gossip↔adapter e contratto verificato da suite dedicata.
 - **M04**: completata lato repository per `sum` (merge idempotente con contributi/versioni per nodo, gestione duplicati/out-of-order, saturazione overflow e test di convergenza dedicati).
+- **M05**: completata lato repository/documentazione per estensione e consolidamento `average`/`min`/`max`, regressione multi-aggregazione e verifica coerenza architetturale.
 
 Comandi di verifica milestone:
 - M03 → `go test ./internal/... -run TestTransportContract`
 - M04 → `go test ./internal/aggregation/sum -run TestSumConvergence`
+- M05 → test merge `average`/`min`/`max` + regressione multi-aggregazione (vedi sezione test M05).
 
 Documento task:
 - `docs/task/M01.md`
 - `docs/task/M02.md`
 - `docs/task/M03.md`
 - `docs/task/M04.md`
+- `docs/task/M05.md`
 
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
@@ -83,6 +86,10 @@ Aggregazioni abilitate via configurazione:
 - `max`
 
 La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contro `enabled_aggregations`.
+La configurazione segue due livelli:
+- `enabled_aggregations`: insieme delle aggregazioni consentite per il nodo (whitelist runtime);
+- `aggregation`: aggregazione effettivamente attiva nel nodo e usata dal gossip locale.
+La validazione fallisce se `aggregation` non appartiene a `enabled_aggregations`.
 Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate in `sum`, `average`, `min` e `max`.
 - **Stato reale `sum`**: implementazione attiva e verificata; il merge gossip usa `state.aggregation_data.sum` con contributi/versioni per nodo, è idempotente su duplicati/out-of-order e converge con test dedicato `TestSumConvergence`.
 - **Stato reale `average`**: merge gossip convergente con metadati `state.aggregation_data.average` (`contributions.sum/count` + `versions` per nodo), evitando la deriva della media pairwise.
@@ -164,6 +171,18 @@ go test ./internal/gossip -run TestRoundSerializzaMembershipConIncarnation
 Comando operativo M04 (verifica convergenza `sum`):
 ```bash
 go test ./internal/aggregation/sum -run TestSumConvergence
+```
+
+Comandi operativi M05:
+```bash
+# average: merge convergente per contributi/versioni per nodo
+go test ./internal/gossip -run TestMergeAverageContributiConvergentiPerNodo
+
+# min/max: merge monotono robusto e compatibilità payload legacy
+go test ./internal/gossip -run 'TestMergeMinMonotonoGestisceStatoVuotoELegacy|TestMergeMaxMonotonoGestisceStatoVuotoELegacy'
+
+# regressione multi-aggregazione: sum invariata con nuove aggregazioni abilitate
+go test ./internal/gossip -run TestSumRegressionConNuoveAggregazioni
 ```
 
 ## Script/comandi standard

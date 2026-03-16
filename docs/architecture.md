@@ -176,7 +176,7 @@ Per questo i timeout devono essere calibrati in base al profilo rete e al target
 ### Limiti noti
 - **Peer instabili/down**: partizioni temporanee riducono velocità/accuratezza della convergenza globale.
 - **Convergenza lenta**: intervallo gossip alto, latenza elevata o ritardi nel loop aumentano il tempo di stabilizzazione (fanout basso diventerà rilevante quando la selezione fanout sarà attivata).
-- **Duplicati/out-of-order**: con merge attuale possono introdurre oscillazioni o drift temporaneo.
+- **Duplicati/out-of-order**: per le aggregazioni supportate (`sum`, `average`, `min`, `max`) sono mitigati da deduplica/versioning e merge monotoni per nodo; restano comunque possibili ritardi temporanei di riallineamento in reti degradate.
 - **Assenza di anti-entropy strutturata**: in scenari avversi possono restare differenze residuali più a lungo.
 
 ## Verifica assenza coordinatore centrale
