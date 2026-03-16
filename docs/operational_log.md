@@ -168,3 +168,8 @@
 - **Descrizione task**: Estensione del merge gossip per `sum` idempotente con metadati per-contributo, gestione deduplica robusta su duplicati/out-of-order, saturazione overflow numerico e aggiornamento documentazione tecnica.
 - **File modificati**: `internal/types/types.go`, `internal/gossip/state.go`, `internal/gossip/engine.go`, `internal/gossip/state_test.go`, `docs/architecture.md`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto nel payload stato un blocco dominio-specifico `aggregation_data.sum` (contributi e versioni per nodo) per separare transport e logica aggregativa, mantenendo il transport byte-oriented; il merge `sum` ora è deterministico/idempotente perché aggiorna un contributo solo se la versione remota è più recente, scarta implicitamente duplicati e messaggi riordinati, e ricostruisce il totale da mappa contributi. Ho inoltre documentato e testato il comportamento di overflow con saturazione a `±MaxFloat64` e flag di overflow propagato.
+
+## 2026-03-16 18:08:13 UTC
+- **Descrizione task**: Aggiunta suite deterministica `TestSumConvergence` per aggregazione `sum` con copertura di convergenza multi-nodo, duplicate update, out-of-order, nodo lento e overflow con policy di saturazione.
+- **File modificati**: `internal/aggregation/sum/sum_convergence_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho implementato un harness con transport stub sincrono per evitare flakiness e rete reale, usando timestamp/versioni controllati e senza sleep casuali, così da verificare in modo ripetibile le proprietà di convergenza e idempotenza del merge `sum`, includendo assert espliciti su saturazione a `math.MaxFloat64` e flag overflow.
