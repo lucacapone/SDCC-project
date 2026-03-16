@@ -332,3 +332,13 @@ Whenever architectural ambiguity or trade-offs exist, GPT should:
 * describe implications
 * provide a reasoned recommendation
 * clearly indicate what decision is required from the human.
+
+---
+
+# 8) Completion Checklist
+
+Before finalizing generated project instructions, GPT must verify that generated project files explicitly include the following mandatory Codex code-quality constraint for every code change:
+
+* all Codex-written code must be fully commented;
+* all Codex-written code must be code-smell-free to the extent reasonably achievable;
+* all Codex-written code must follow clean-code principles and good coding practices.
