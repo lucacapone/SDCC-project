@@ -284,7 +284,19 @@ All modifications performed by Codex must:
 
 ---
 
-# 10) Codex ↔ GPT Handoff Protocol
+# 10) Mandatory Code Quality Constraints
+
+For every code change, Codex **must** ensure that all Codex-written code:
+
+* is fully commented;
+* is code-smell-free to the extent reasonably achievable;
+* follows clean-code principles and good coding practices.
+
+Codex **must not** intentionally introduce avoidable code smells or violations of clean-code principles in Codex-written code.
+
+---
+
+# 11) Codex ↔ GPT Handoff Protocol
 
 When Codex needs a **capability that only GPT can provide** (for example web research):
 
