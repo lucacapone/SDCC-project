@@ -9,6 +9,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`/`leave`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
+- `internal/aggregation`: contratti comuni delle aggregazioni + factory runtime (`sum` concreta in `internal/aggregation/sum`).
 - `internal/transport`: astrazione trasporto + adapter UDP concreto con lifecycle (`Start`/`Send`/`Close`) e rispetto di `context.Context`.
 
 
@@ -113,7 +114,7 @@ Implementazione attuale:
 Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramite `applyRemote` in `internal/gossip/state.go`.
 
 ### Regola di merge implementata
-- `new_value = (local.value + remote.value) / 2` quando `remote_version > local_version`;
+- `new_value = aggregation.Merge(local.value, remote.value)` quando `remote_version > local_version`, con implementazione risolta dalla factory in base a `aggregation_type` (es. `sum` => somma aritmetica);
 - `new_round = max(local.round, remote.round) + 1`;
 - `updated_at = now_utc`;
 - tracciamento `last_message_id` e `last_sender_node_id` (derivati da `message_id`/`origin_node`);

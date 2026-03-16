@@ -4,7 +4,7 @@ test:
 	go test ./... -count=1
 
 test-unit:
-	go test ./internal/config ./internal/aggregate ./internal/membership -count=1
+	go test ./internal/config ./internal/aggregation ./internal/membership -count=1
 
 test-integration:
 	go test ./internal/gossip -run TestIntegration -count=1

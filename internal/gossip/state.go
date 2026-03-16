@@ -4,6 +4,7 @@ import (
 	"math"
 	"time"
 
+	"sdcc-project/internal/aggregation"
 	shared "sdcc-project/internal/types"
 )
 
@@ -67,7 +68,7 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 
 	local.SeenMessageIDs[msg.MessageID] = struct{}{}
 	local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-	local.Value = (local.Value + msg.State.Value) / 2
+	local.Value = mergeAggregationValue(local, msg.State)
 	local.UpdatedAt = time.Now().UTC()
 	local.Round = maxCounter(local.Round, msg.State.Round) + 1
 	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
@@ -75,6 +76,18 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	local.LastMessageID = msg.MessageID
 	local.LastSenderNodeID = msg.OriginNode
 	return MergeResult{State: local, Status: MergeApplied, Reason: "remote_newer_version"}
+}
+
+func mergeAggregationValue(local, remote shared.GossipState) float64 {
+	aggregationType := local.AggregationType
+	if aggregationType == "" {
+		aggregationType = remote.AggregationType
+	}
+	algo, err := aggregation.Factory(aggregationType)
+	if err != nil {
+		return (local.Value + remote.Value) / 2
+	}
+	return algo.Merge(local.Value, remote.Value)
 }
 
 func adoptRemote(local shared.GossipState, msg shared.GossipMessage) shared.GossipState {

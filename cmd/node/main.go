@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"sdcc-project/internal/aggregation"
 	"sdcc-project/internal/config"
 	"sdcc-project/internal/gossip"
 	"sdcc-project/internal/membership"
@@ -57,9 +58,14 @@ func main() {
 		logger.Info("transport inizializzato", "type", "udp", "listen_address", fmt.Sprintf("udp://%s", listenAddress))
 	}
 
+	aggAlgo, err := aggregation.Factory(cfg.Aggregation)
+	if err != nil {
+		log.Fatalf("errore inizializzazione aggregazione: %v", err)
+	}
+
 	eng := gossip.NewEngine(
 		cfg.NodeID,
-		cfg.Aggregation,
+		aggAlgo.Type(),
 		gossipTransport,
 		mset,
 		logger,
