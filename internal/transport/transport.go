@@ -12,8 +12,7 @@ type Transport interface {
 	Close() error
 }
 
-// NoopTransport è uno stub per permettere wiring e test senza rete reale.
-// TODO(tecnico): implementare adapter concreto (HTTP o UDP) con retry/backoff.
+// NoopTransport è uno stub per wiring e test senza rete reale.
 type NoopTransport struct{}
 
 func (NoopTransport) Start(context.Context, MessageHandler) error { return nil }

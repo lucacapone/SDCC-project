@@ -24,7 +24,7 @@ Il sistema è pensato per nodi indipendenti che scambiano periodicamente informa
 Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo e fanout configurabili.
 
 ## Scelte architetturali confermate
-- **Transport tra nodi**: HTTP + JSON.
+- **Transport tra nodi**: UDP + payload JSON (`[]byte`) su adapter `Transport`.
 - **Strategia gossip**: push-pull con fanout variabile.
 - **Aggregazioni richieste**: `sum`, `average`, `min`, `max`.
 - **Membership/discovery**: join endpoint con fallback su seed statici da configurazione.
@@ -32,7 +32,7 @@ Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisc
 Queste scelte sono definitive per il progetto corrente e sostituiscono la precedente matrice comparativa.
 
 ## Decisioni confermate (2026-03-05)
-- **Transport**: A — HTTP+JSON.
+- **Transport**: UDP adapter concreto (`internal/transport/udp_transport.go`) con fallback esplicito a `NoopTransport` solo in caso di errore di init.
 - **Strategia gossip**: C — Push-pull con fanout variabile.
 - **Aggregazioni richieste**: **sum + average + min/max**.
 
@@ -135,6 +135,7 @@ Ogni servizio monta una config esterna dedicata:
 Per passare configurazioni personalizzate basta cambiare i file montati o impostare env nel servizio desiderato.
 
 ## Esecuzione test
+- Test transport (UDP + contratto): `go test ./internal/transport -count=1`
 ```bash
 go test ./...
 ```
