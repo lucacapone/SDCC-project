@@ -86,6 +86,7 @@ La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contr
 Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate in `sum`, `average`, `min` e `max`.
 - **Stato reale `sum`**: implementazione attiva e verificata; il merge gossip usa `state.aggregation_data.sum` con contributi/versioni per nodo, è idempotente su duplicati/out-of-order e converge con test dedicato `TestSumConvergence`.
 - **Stato reale `average`**: merge gossip convergente con metadati `state.aggregation_data.average` (`contributions.sum/count` + `versions` per nodo), evitando la deriva della media pairwise.
+- **Stato reale `min`/`max`**: merge gossip monotono robusto con metadati opzionali `state.aggregation_data.min/max.versions` per nodo e fallback retrocompatibile su payload legacy senza metadati.
 - Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 
 ## Configurazione esterna

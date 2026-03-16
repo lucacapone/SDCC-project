@@ -197,3 +197,8 @@
   - Per `average` è stata introdotta una semantica convergente basata su contributi per nodo (`sum/count`) con versioning per-contributo, deduplica e merge idempotente/out-of-order-safe nel layer gossip.
   - Mantenuta la compatibilità dell'interfaccia aggregazione e della selezione runtime via configurazione.
   - Aggiornati test e documentazione per riflettere la nuova semantica distribuita dell'average.
+
+## 2026-03-16 19:43:22 UTC
+- **Descrizione task**: Estensione merge gossip per metadati opzionali `average/min/max` con retrocompatibilità completa dei messaggi legacy e robustezza monotona per `min`/`max`.
+- **File modificati**: `internal/types/types.go`, `internal/gossip/state.go`, `internal/gossip/state_test.go`, `docs/architecture.md`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho esteso il modello `AggregationState` con stati opzionali `Min/Max` (mappe versioni per nodo), mantenendo `Average` convergente e implementando rami espliciti in `mergeAggregationState` per `average/min/max`. Per `min`/`max` il merge ora gestisce in modo deterministico i casi di stato locale vuoto/peer legacy non inizializzati e usa metadati monotoni per evitare regressioni su update vecchi. Ho inoltre allineato le funzioni di normalizzazione `ensureIncoming...Metadata` e aggiunto test mirati per validare compatibilità backward con messaggi senza nuovi metadati.

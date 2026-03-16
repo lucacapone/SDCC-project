@@ -89,6 +89,10 @@ func mergeAggregationState(local, remote shared.GossipState) shared.GossipState 
 		return mergeSumState(local, remote)
 	case "average":
 		return mergeAverageState(local, remote)
+	case "min":
+		return mergeMinState(local, remote)
+	case "max":
+		return mergeMaxState(local, remote)
 	default:
 		local.Value = mergeAggregationValue(local, remote)
 		return local
@@ -199,6 +203,98 @@ func ensureIncomingAverageMetadata(state *shared.GossipState) {
 	}
 }
 
+// mergeMinState implementa merge monotono robusto per minimo con gestione stati legacy/vuoti.
+func mergeMinState(local, remote shared.GossipState) shared.GossipState {
+	local.EnsureMinMetadata()
+	localInitialized := len(local.AggregationData.Min.Versions) > 0
+	ensureIncomingMinMetadata(&remote)
+
+	for nodeID, remoteVersion := range remote.AggregationData.Min.Versions {
+		localVersion, exists := local.AggregationData.Min.Versions[nodeID]
+		if exists && compareVersion(remoteVersion, localVersion) <= 0 {
+			continue
+		}
+		local.AggregationData.Min.Versions[nodeID] = remoteVersion
+	}
+
+	if remote.NodeID != "" {
+		remoteContributionVersion := normalizeVersion(remote)
+		localContributionVersion := local.AggregationData.Min.Versions[remote.NodeID]
+		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
+			local.AggregationData.Min.Versions[remote.NodeID] = remoteContributionVersion
+		}
+	}
+
+	if localInitialized {
+		local.Value = math.Min(local.Value, remote.Value)
+	} else {
+		local.Value = remote.Value
+	}
+	return local
+}
+
+// ensureIncomingMinMetadata rende compatibili i messaggi legacy senza metadati min.
+func ensureIncomingMinMetadata(state *shared.GossipState) {
+	if state.AggregationType != "min" {
+		return
+	}
+	state.EnsureMinMetadata()
+	if state.NodeID == "" {
+		return
+	}
+	version := normalizeVersion(*state)
+	knownVersion, ok := state.AggregationData.Min.Versions[state.NodeID]
+	if !ok || compareVersion(version, knownVersion) > 0 {
+		state.AggregationData.Min.Versions[state.NodeID] = version
+	}
+}
+
+// mergeMaxState implementa merge monotono robusto per massimo con gestione stati legacy/vuoti.
+func mergeMaxState(local, remote shared.GossipState) shared.GossipState {
+	local.EnsureMaxMetadata()
+	localInitialized := len(local.AggregationData.Max.Versions) > 0
+	ensureIncomingMaxMetadata(&remote)
+
+	for nodeID, remoteVersion := range remote.AggregationData.Max.Versions {
+		localVersion, exists := local.AggregationData.Max.Versions[nodeID]
+		if exists && compareVersion(remoteVersion, localVersion) <= 0 {
+			continue
+		}
+		local.AggregationData.Max.Versions[nodeID] = remoteVersion
+	}
+
+	if remote.NodeID != "" {
+		remoteContributionVersion := normalizeVersion(remote)
+		localContributionVersion := local.AggregationData.Max.Versions[remote.NodeID]
+		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
+			local.AggregationData.Max.Versions[remote.NodeID] = remoteContributionVersion
+		}
+	}
+
+	if localInitialized {
+		local.Value = math.Max(local.Value, remote.Value)
+	} else {
+		local.Value = remote.Value
+	}
+	return local
+}
+
+// ensureIncomingMaxMetadata rende compatibili i messaggi legacy senza metadati max.
+func ensureIncomingMaxMetadata(state *shared.GossipState) {
+	if state.AggregationType != "max" {
+		return
+	}
+	state.EnsureMaxMetadata()
+	if state.NodeID == "" {
+		return
+	}
+	version := normalizeVersion(*state)
+	knownVersion, ok := state.AggregationData.Max.Versions[state.NodeID]
+	if !ok || compareVersion(version, knownVersion) > 0 {
+		state.AggregationData.Max.Versions[state.NodeID] = version
+	}
+}
+
 // averageFromContributions calcola la media aggregando i contributi noti e ignorando count zero.
 func averageFromContributions(contributions map[shared.NodeID]shared.AverageContribution) float64 {
 	if len(contributions) == 0 {
@@ -269,6 +365,10 @@ func samePayload(local, remote shared.GossipState) bool {
 		return sameSumPayload(local, remote)
 	case "average":
 		return sameAveragePayload(local, remote)
+	case "min":
+		return sameMinPayload(local, remote)
+	case "max":
+		return sameMaxPayload(local, remote)
 	default:
 		return math.Abs(local.Value-remote.Value) < 1e-9
 	}
@@ -310,6 +410,40 @@ func sameAveragePayload(local, remote shared.GossipState) bool {
 			return false
 		}
 		if compareVersion(local.AggregationData.Average.Versions[nodeID], remote.AggregationData.Average.Versions[nodeID]) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func sameMinPayload(local, remote shared.GossipState) bool {
+	local.EnsureMinMetadata()
+	ensureIncomingMinMetadata(&remote)
+	if math.Abs(local.Value-remote.Value) > 1e-9 {
+		return false
+	}
+	if len(local.AggregationData.Min.Versions) != len(remote.AggregationData.Min.Versions) {
+		return false
+	}
+	for nodeID, localVersion := range local.AggregationData.Min.Versions {
+		if compareVersion(localVersion, remote.AggregationData.Min.Versions[nodeID]) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func sameMaxPayload(local, remote shared.GossipState) bool {
+	local.EnsureMaxMetadata()
+	ensureIncomingMaxMetadata(&remote)
+	if math.Abs(local.Value-remote.Value) > 1e-9 {
+		return false
+	}
+	if len(local.AggregationData.Max.Versions) != len(remote.AggregationData.Max.Versions) {
+		return false
+	}
+	for nodeID, localVersion := range local.AggregationData.Max.Versions {
+		if compareVersion(localVersion, remote.AggregationData.Max.Versions[nodeID]) != 0 {
 			return false
 		}
 	}
