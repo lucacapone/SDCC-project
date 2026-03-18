@@ -212,3 +212,8 @@
 - **Descrizione task**: Chiusura documentale milestone M05 con nuovo task file, aggiornamento README (stato milestone, aggregazioni supportate, configurazione e comandi test M05) e verifica/allineamento coerenza architetturale su merge, serializzazione stato e convergenza.
 - **File modificati**: `docs/task/M05.md`, `README.md`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho effettuato un consolidamento documentale senza toccare il runtime perché le implementazioni `average/min/max` e la regressione multi-aggregazione erano già presenti e testate; ho esplicitato i comandi di validazione M05 richiesti e corretto la sezione limiti in architettura per riflettere che duplicati/out-of-order sono gestiti in modo robusto per le aggregazioni effettivamente supportate, preservando comunque i limiti di convergenza in reti degradate.
+
+## 2026-03-18 00:00:00 UTC
+- **Descrizione task**: Rafforzamento parsing configurazione file per distinguere default coperti, valori presenti ma invalidi e formati non supportati; aggiunta test regressione su YAML/JSON malformati.
+- **File modificati**: `internal/config/config.go`, `internal/config/config_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho reso esplicita la precedence `Default() -> file -> env -> Validate()` durante il caricamento, eliminando i fallback silenziosi dei campi numerici da file e propagando errori chiari su interi non validi, liste YAML malformate/item vuoti e formati file non supportati. Ho inoltre esteso la suite `internal/config` con casi mirati per `node_port: abc`, liste peer YAML malformate, estensioni non supportate e tipi JSON incompatibili, preservando la compatibilità degli override via environment.
