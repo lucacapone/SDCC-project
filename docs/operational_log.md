@@ -232,3 +232,8 @@
 - **Descrizione task**: Allineamento README al nuovo documento canonico della configurazione runtime.
 - **File modificati**: `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiunto nel README un riferimento esplicito a `docs/configuration.md` per evitare divergenze tra documentazione introduttiva e documento canonico, mantenendo invariato il comportamento del runtime.
+
+## 2026-03-18 17:20:00 UTC
+- **Descrizione task**: Estensione esplicita della suite `internal/config/config_test.go` per copertura M06 su parsing, default, override env, errori bloccanti e validazione principale con `TestValidateConfig`.
+- **File modificati**: `internal/config/config_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho riorganizzato la suite dei test di configurazione introducendo casi espliciti per parsing YAML/JSON validi, configurazioni parziali con default, mismatch di tipo bloccanti, override via environment, messaggi d’errore leggibili con riferimento al campo, edge case su peer list e aggregazioni non supportate. Ho inoltre mantenuto `TestValidateConfig` come entry point principale per la validazione richiesta dal task, così che il comando mirato `go test ./internal/config -run TestValidateConfig` eserciti davvero i controlli bloccanti principali.
