@@ -161,6 +161,67 @@ func TestLoadJSONRejectsIncompatibleType(t *testing.T) {
 	assertErrorContains(t, err, "node_port")
 }
 
+func TestValidateRejectsNodePortAboveRange(t *testing.T) {
+	cfg := Default()
+	cfg.NodePort = 70000
+
+	err := Validate(cfg)
+	assertErrorContains(t, err, "node_port deve essere compreso tra 1 e 65535")
+}
+
+func TestValidateRejectsPeerWithoutPort(t *testing.T) {
+	cfg := Default()
+	cfg.BootstrapPeers = []string{"node-1"}
+
+	err := Validate(cfg)
+	assertErrorContains(t, err, "bootstrap_peers[0]")
+	assertErrorContains(t, err, "atteso formato host:porta valido")
+}
+
+func TestValidateRejectsPeerWithNonNumericPort(t *testing.T) {
+	cfg := Default()
+	cfg.SeedPeers = []string{"node-1:abc"}
+
+	err := Validate(cfg)
+	assertErrorContains(t, err, "seed_peers[0]")
+	assertErrorContains(t, err, "porta \"abc\" non numerica")
+}
+
+func TestValidateRejectsUnsupportedEnabledAggregation(t *testing.T) {
+	cfg := Default()
+	cfg.EnabledAggregations = []string{"sum", "median"}
+
+	err := Validate(cfg)
+	assertErrorContains(t, err, "enabled_aggregations[1]")
+	assertErrorContains(t, err, "non supportata")
+}
+
+func TestValidateRejectsEmptyAndDuplicateListEntries(t *testing.T) {
+	t.Run("bootstrap peer vuoto", func(t *testing.T) {
+		cfg := Default()
+		cfg.BootstrapPeers = []string{"node-1:7001", "   "}
+
+		err := Validate(cfg)
+		assertErrorContains(t, err, "bootstrap_peers contiene un valore vuoto")
+	})
+
+	t.Run("seed peer duplicato", func(t *testing.T) {
+		cfg := Default()
+		cfg.SeedPeers = []string{"node-1:7001", "node-1:7001"}
+
+		err := Validate(cfg)
+		assertErrorContains(t, err, "seed_peers contiene un duplicato inutile")
+	})
+
+	t.Run("aggregazioni duplicate", func(t *testing.T) {
+		cfg := Default()
+		cfg.EnabledAggregations = []string{"sum", "sum"}
+
+		err := Validate(cfg)
+		assertErrorContains(t, err, "enabled_aggregations contiene un duplicato inutile")
+	})
+}
+
 func TestDiscoveryPeersPreferBootstrapPeers(t *testing.T) {
 	cfg := Default()
 	cfg.SeedPeers = []string{"seed-1", "seed-2"}
@@ -185,7 +246,8 @@ func TestValidateFailures(t *testing.T) {
 		{name: "timeout non valido", mutate: func(c *Config) { c.MembershipTimeoutMS = 0 }, errPart: "membership_timeout_ms"},
 		{name: "aggregazioni vuote", mutate: func(c *Config) { c.EnabledAggregations = nil }, errPart: "enabled_aggregations"},
 		{name: "aggregation vuota", mutate: func(c *Config) { c.Aggregation = "" }, errPart: "aggregation obbligatoria"},
-		{name: "aggregation non abilitata", mutate: func(c *Config) { c.Aggregation = "median" }, errPart: "non presente"},
+		{name: "aggregation non supportata", mutate: func(c *Config) { c.Aggregation = "median" }, errPart: "non supportata"},
+		{name: "aggregation non presente tra le abilitate", mutate: func(c *Config) { c.EnabledAggregations = []string{"sum"}; c.Aggregation = "average" }, errPart: "non presente"},
 	}
 
 	for _, tt := range tests {
