@@ -241,3 +241,8 @@
 - **Descrizione task**: Riorganizzazione della suite di validazione configurazione per esporre il punto d’ingresso richiesto `TestValidateConfig` con copertura esplicita dei casi principali.
 - **File modificati**: `internal/config/config_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho consolidato la validazione in una singola suite `TestValidateConfig` strutturata a subtest, includendo default validi, campi obbligatori mancanti, valori numerici pericolosi, aggregazioni non supportate o non abilitate e verifiche sui messaggi d’errore leggibili; ho inoltre rimosso la duplicazione coperta dalla vecchia suite `TestValidateFailures`.
+
+## 2026-03-18 17:33:11 UTC
+- **Task**: Creazione del documento milestone M06 sulla configurazione esterna e validazione robusta.
+- **File modificati**: `docs/task/M06.md`, `docs/operational_log.md`.
+- **Sintesi**: Analizzato lo stato reale di `internal/config/config.go`, `internal/config/config_test.go`, `cmd/node/main.go`, `docs/configuration.md` e `README.md`; aggiunto il documento `docs/task/M06.md` per consolidare strategia di configurazione, validazioni, test eseguiti e limiti residui senza alterare il comportamento runtime.
