@@ -10,7 +10,7 @@ import (
 func TestDefaultValidate(t *testing.T) {
 	cfg := Default()
 	if err := Validate(cfg); err != nil {
-		t.Fatalf("default config non valida: %v", err)
+		fatalfWithConfig(t, "default config non valida", cfg, err)
 	}
 }
 
@@ -32,7 +32,7 @@ func TestValidateAcceptsMinAndMaxSemantics(t *testing.T) {
 			cfg.EnabledAggregations = []string{"sum", "average", "min", "max"}
 			cfg.Aggregation = aggregationKind
 			if err := Validate(cfg); err != nil {
-				t.Fatalf("config con aggregazione %s dovrebbe essere valida: %v", aggregationKind, err)
+				fatalfWithConfig(t, "config con aggregazione valida", cfg, err)
 			}
 		})
 	}
@@ -128,6 +128,39 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 }
 
+func TestLoadYAMLRejectsInvalidNodePort(t *testing.T) {
+	path := writeTempConfig(t, "invalid-node-port.yaml", "node_port: abc\n")
+
+	_, err := Load(path)
+	assertErrorContains(t, err, "node_port")
+	assertErrorContains(t, err, "atteso intero")
+}
+
+func TestLoadYAMLRejectsMalformedPeerList(t *testing.T) {
+	path := writeTempConfig(t, "malformed-peers.yaml", "bootstrap_peers:\n  - node-1:7001\n  - \n")
+
+	_, err := Load(path)
+	assertErrorContains(t, err, "lista yaml malformata")
+	assertErrorContains(t, err, "item vuoto")
+}
+
+func TestLoadRejectsUnsupportedExtension(t *testing.T) {
+	path := writeTempConfig(t, "config.toml", "node_id = 'node-1'\n")
+
+	_, err := Load(path)
+	assertErrorContains(t, err, "formato file config non supportato")
+}
+
+func TestLoadJSONRejectsIncompatibleType(t *testing.T) {
+	path := writeTempConfig(t, "invalid.json", `{
+  "node_port": "abc"
+}`)
+
+	_, err := Load(path)
+	assertErrorContains(t, err, "parse json config")
+	assertErrorContains(t, err, "node_port")
+}
+
 func TestDiscoveryPeersPreferBootstrapPeers(t *testing.T) {
 	cfg := Default()
 	cfg.SeedPeers = []string{"seed-1", "seed-2"}
@@ -167,5 +200,32 @@ func TestValidateFailures(t *testing.T) {
 				t.Fatalf("errore inatteso: %v", err)
 			}
 		})
+	}
+}
+
+// fatalfWithConfig centralizza il messaggio di errore dei test di validazione configurazione.
+func fatalfWithConfig(t *testing.T, message string, cfg Config, err error) {
+	t.Helper()
+	t.Fatalf("%s: %v, cfg=%+v", message, err, cfg)
+}
+
+// writeTempConfig scrive un file temporaneo di configurazione per i test di caricamento.
+func writeTempConfig(t *testing.T, name string, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+	return path
+}
+
+// assertErrorContains verifica che l'errore esista e contenga il frammento atteso.
+func assertErrorContains(t *testing.T, err error, expected string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("atteso errore contenente %q, ottenuto nil", expected)
+	}
+	if !strings.Contains(err.Error(), expected) {
+		t.Fatalf("errore inatteso: %v", err)
 	}
 }

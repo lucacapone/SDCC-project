@@ -54,17 +54,20 @@ func Load(path string) (Config, error) {
 		}
 		switch strings.ToLower(filepath.Ext(path)) {
 		case ".json":
+			// La precedence resta esplicita: si parte da Default(), poi si applica il file JSON.
 			if err := json.Unmarshal(raw, &cfg); err != nil {
 				return Config{}, fmt.Errorf("parse json config: %w", err)
 			}
 		case ".yaml", ".yml":
+			// La precedence resta esplicita: si parte da Default(), poi si applica il file YAML.
 			if err := parseSimpleYAML(raw, &cfg); err != nil {
 				return Config{}, fmt.Errorf("parse yaml config: %w", err)
 			}
 		default:
-			return Config{}, fmt.Errorf("estensione config non supportata: %s", filepath.Ext(path))
+			return Config{}, fmt.Errorf("formato file config non supportato: %s", filepath.Ext(path))
 		}
 	}
+	// Gli override ambiente vengono applicati solo dopo il file per preservare Default() -> file -> env -> Validate().
 	overrideFromEnv(&cfg)
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
@@ -73,15 +76,23 @@ func Load(path string) (Config, error) {
 }
 
 func parseSimpleYAML(raw []byte, cfg *Config) error {
-	s := bufio.NewScanner(strings.NewReader(string(raw)))
+	scanner := bufio.NewScanner(strings.NewReader(string(raw)))
 	currentList := ""
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(line, "- ") {
-			item := strings.TrimSpace(strings.TrimPrefix(line, "- "))
+
+		if strings.HasPrefix(line, "- ") || line == "-" {
+			if currentList == "" {
+				return fmt.Errorf("lista yaml malformata alla riga %d: item fuori da una lista supportata", lineNumber)
+			}
+			itemText := strings.TrimPrefix(line, "-")
+			item := strings.Trim(strings.TrimSpace(itemText), `"'`)
+			if item == "" {
+				return fmt.Errorf("lista yaml malformata alla riga %d: item vuoto in %s", lineNumber, currentList)
+			}
 			switch currentList {
 			case "bootstrap_peers":
 				cfg.BootstrapPeers = append(cfg.BootstrapPeers, item)
@@ -89,22 +100,30 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 				cfg.SeedPeers = append(cfg.SeedPeers, item)
 			case "enabled_aggregations":
 				cfg.EnabledAggregations = append(cfg.EnabledAggregations, item)
+			default:
+				return fmt.Errorf("lista yaml malformata alla riga %d: chiave lista non supportata %q", lineNumber, currentList)
 			}
 			continue
 		}
+
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) != 2 {
-			continue
+			return fmt.Errorf("yaml non supportato alla riga %d: atteso formato chiave: valore", lineNumber)
 		}
+
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
 		currentList = ""
 		if value == "" {
 			if key == "bootstrap_peers" || key == "seed_peers" || key == "enabled_aggregations" {
 				currentList = key
+				// L'assenza di elementi sulla stessa riga è valida solo per liste multilinea supportate.
+				clearConfigList(key, cfg)
+				continue
 			}
 			continue
 		}
+
 		value = strings.Trim(value, `"'`)
 		switch key {
 		case "node_id":
@@ -112,54 +131,105 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 		case "bind_address":
 			cfg.BindAddress = value
 		case "node_port":
-			cfg.NodePort = atoiDefault(value, cfg.NodePort)
+			parsed, err := atoiDefault(value, cfg.NodePort)
+			if err != nil {
+				return fmt.Errorf("campo node_port non valido alla riga %d: %w", lineNumber, err)
+			}
+			cfg.NodePort = parsed
 		case "gossip_interval_ms":
-			cfg.GossipIntervalMS = atoiDefault(value, cfg.GossipIntervalMS)
+			parsed, err := atoiDefault(value, cfg.GossipIntervalMS)
+			if err != nil {
+				return fmt.Errorf("campo gossip_interval_ms non valido alla riga %d: %w", lineNumber, err)
+			}
+			cfg.GossipIntervalMS = parsed
 		case "join_endpoint":
 			cfg.JoinEndpoint = value
 		case "bootstrap_peers":
-			cfg.BootstrapPeers = parseInlineList(value)
+			parsed, err := parseInlineList(value)
+			if err != nil {
+				return fmt.Errorf("campo bootstrap_peers non valido alla riga %d: %w", lineNumber, err)
+			}
+			cfg.BootstrapPeers = parsed
 		case "fanout":
-			cfg.Fanout = atoiDefault(value, cfg.Fanout)
+			parsed, err := atoiDefault(value, cfg.Fanout)
+			if err != nil {
+				return fmt.Errorf("campo fanout non valido alla riga %d: %w", lineNumber, err)
+			}
+			cfg.Fanout = parsed
 		case "membership_timeout_ms":
-			cfg.MembershipTimeoutMS = atoiDefault(value, cfg.MembershipTimeoutMS)
+			parsed, err := atoiDefault(value, cfg.MembershipTimeoutMS)
+			if err != nil {
+				return fmt.Errorf("campo membership_timeout_ms non valido alla riga %d: %w", lineNumber, err)
+			}
+			cfg.MembershipTimeoutMS = parsed
 		case "aggregation":
 			cfg.Aggregation = value
 		case "log_level":
 			cfg.LogLevel = value
 		case "seed_peers":
-			cfg.SeedPeers = parseInlineList(value)
+			parsed, err := parseInlineList(value)
+			if err != nil {
+				return fmt.Errorf("campo seed_peers non valido alla riga %d: %w", lineNumber, err)
+			}
+			cfg.SeedPeers = parsed
 		case "enabled_aggregations":
-			cfg.EnabledAggregations = parseInlineList(value)
+			parsed, err := parseInlineList(value)
+			if err != nil {
+				return fmt.Errorf("campo enabled_aggregations non valido alla riga %d: %w", lineNumber, err)
+			}
+			cfg.EnabledAggregations = parsed
 		}
 	}
-	if err := s.Err(); err != nil {
+	if err := scanner.Err(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func parseInlineList(value string) []string {
-	trim := strings.TrimSpace(value)
-	trim = strings.TrimPrefix(trim, "[")
-	trim = strings.TrimSuffix(trim, "]")
-	parts := strings.Split(trim, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		item := strings.Trim(strings.TrimSpace(p), `"'`)
-		if item != "" {
-			out = append(out, item)
-		}
+// clearConfigList azzera la lista target quando il file dichiara esplicitamente una lista multilinea.
+func clearConfigList(key string, cfg *Config) {
+	switch key {
+	case "bootstrap_peers":
+		cfg.BootstrapPeers = nil
+	case "seed_peers":
+		cfg.SeedPeers = nil
+	case "enabled_aggregations":
+		cfg.EnabledAggregations = nil
 	}
-	return out
 }
 
-func atoiDefault(value string, fallback int) int {
+func parseInlineList(value string) ([]string, error) {
+	trim := strings.TrimSpace(value)
+	if !strings.HasPrefix(trim, "[") || !strings.HasSuffix(trim, "]") {
+		return nil, fmt.Errorf("atteso formato lista [a,b,c]")
+	}
+	trim = strings.TrimPrefix(trim, "[")
+	trim = strings.TrimSuffix(trim, "]")
+	if strings.TrimSpace(trim) == "" {
+		return []string{}, nil
+	}
+	parts := strings.Split(trim, ",")
+	out := make([]string, 0, len(parts))
+	for index, part := range parts {
+		item := strings.Trim(strings.TrimSpace(part), `"'`)
+		if item == "" {
+			return nil, fmt.Errorf("item vuoto in posizione %d", index)
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// atoiDefault distingue tra valore assente/coperto dal default e valore presente ma non numerico.
+func atoiDefault(value string, fallback int) (int, error) {
+	if strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return fallback
+		return 0, fmt.Errorf("atteso intero, ottenuto %q", value)
 	}
-	return parsed
+	return parsed, nil
 }
 
 func overrideFromEnv(cfg *Config) {
@@ -206,7 +276,10 @@ func overrideCSV(name string, target *[]string) {
 	if !ok || strings.TrimSpace(value) == "" {
 		return
 	}
-	*target = parseInlineList(value)
+	parsed, err := parseInlineList("[" + value + "]")
+	if err == nil {
+		*target = parsed
+	}
 }
 
 func (c Config) MembershipTimeout() time.Duration {
