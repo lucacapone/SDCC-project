@@ -97,6 +97,9 @@ Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate 
 - Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 
 ## Configurazione esterna
+Documento canonico della configurazione runtime:
+- `docs/configuration.md`
+
 File di esempio:
 - `configs/example.yaml`
 

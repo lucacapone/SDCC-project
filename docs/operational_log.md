@@ -222,3 +222,13 @@
 - **File modificati**: `internal/config/config.go`, `internal/config/config_test.go`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho esteso `Validate` per rifiutare porte fuori range, `bind_address` vuoti o malformati, endpoint peer non conformi a `host:porta`, liste con valori vuoti/duplicati e aggregazioni fuori dal set supportato, mantenendo messaggi d’errore espliciti e copertura test focalizzata sui nuovi edge case.
 
+
+## 2026-03-18 17:11:57 UTC
+- **Descrizione task**: Creazione di `docs/configuration.md` come documento canonico della configurazione runtime, allineato a codice e file di esempio.
+- **File modificati**: `docs/configuration.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho documentato il comportamento reale del loader di configurazione usando come fonti `internal/config/config.go`, `cmd/node/main.go` e `configs/*.yaml`, esplicitando formati supportati, precedence `Default() -> file -> env -> Validate()`, campi della struct `Config`, default, variabili ambiente, regole di validazione ed esempi locali/override env senza introdurre divergenze rispetto al runtime implementato.
+
+## 2026-03-18 17:12:20 UTC
+- **Descrizione task**: Allineamento README al nuovo documento canonico della configurazione runtime.
+- **File modificati**: `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho aggiunto nel README un riferimento esplicito a `docs/configuration.md` per evitare divergenze tra documentazione introduttiva e documento canonico, mantenendo invariato il comportamento del runtime.
