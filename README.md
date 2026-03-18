@@ -219,7 +219,7 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
    - timeout massimo `2s`.
 4. **Validazione configurazione**:
    - parsing YAML/JSON corretto
-   - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, ecc.).
+   - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, peer `host:porta` malformati, `node_port` fuori range, duplicati o valori vuoti nelle liste).
 
 ## Demo rapida
 ```bash

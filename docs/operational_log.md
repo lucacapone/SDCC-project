@@ -217,3 +217,8 @@
 - **Descrizione task**: Rafforzamento parsing configurazione file per distinguere default coperti, valori presenti ma invalidi e formati non supportati; aggiunta test regressione su YAML/JSON malformati.
 - **File modificati**: `internal/config/config.go`, `internal/config/config_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho reso esplicita la precedence `Default() -> file -> env -> Validate()` durante il caricamento, eliminando i fallback silenziosi dei campi numerici da file e propagando errori chiari su interi non validi, liste YAML malformate/item vuoti e formati file non supportati. Ho inoltre esteso la suite `internal/config` con casi mirati per `node_port: abc`, liste peer YAML malformate, estensioni non supportate e tipi JSON incompatibili, preservando la compatibilità degli override via environment.
+## 2026-03-18 17:05:57 UTC
+- **Descrizione task**: Rafforzamento della validazione configurazione con controlli espliciti su host/porte, peer list e aggregazioni supportate; aggiunta test mirati per casi invalidi.
+- **File modificati**: `internal/config/config.go`, `internal/config/config_test.go`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho esteso `Validate` per rifiutare porte fuori range, `bind_address` vuoti o malformati, endpoint peer non conformi a `host:porta`, liste con valori vuoti/duplicati e aggregazioni fuori dal set supportato, mantenendo messaggi d’errore espliciti e copertura test focalizzata sui nuovi edge case.
+

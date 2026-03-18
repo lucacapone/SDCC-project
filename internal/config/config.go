@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Config rappresenta la configurazione runtime del nodo.
@@ -287,11 +289,25 @@ func (c Config) MembershipTimeout() time.Duration {
 }
 
 func Validate(cfg Config) error {
-	if cfg.NodeID == "" {
+	supportedAggregations := supportedAggregationSet()
+
+	if strings.TrimSpace(cfg.NodeID) == "" {
 		return errors.New("node_id obbligatorio")
 	}
-	if cfg.NodePort <= 0 {
-		return errors.New("node_port deve essere > 0")
+	if cfg.NodePort < 1 || cfg.NodePort > 65535 {
+		return fmt.Errorf("node_port deve essere compreso tra 1 e 65535, ottenuto %d", cfg.NodePort)
+	}
+	if err := validateBindAddress(cfg.BindAddress, cfg.NodePort); err != nil {
+		return err
+	}
+	if err := validateOptionalPeerEndpoint("join_endpoint", cfg.JoinEndpoint); err != nil {
+		return err
+	}
+	if err := validatePeerList("bootstrap_peers", cfg.BootstrapPeers); err != nil {
+		return err
+	}
+	if err := validatePeerList("seed_peers", cfg.SeedPeers); err != nil {
+		return err
 	}
 	if cfg.GossipIntervalMS <= 0 {
 		return errors.New("gossip_interval_ms deve essere > 0")
@@ -305,11 +321,141 @@ func Validate(cfg Config) error {
 	if len(cfg.EnabledAggregations) == 0 {
 		return errors.New("enabled_aggregations deve contenere almeno un valore")
 	}
-	if cfg.Aggregation == "" {
+	if err := validateEnabledAggregations(cfg.EnabledAggregations, supportedAggregations); err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.Aggregation) == "" {
 		return errors.New("aggregation obbligatoria")
+	}
+	if _, ok := supportedAggregations[cfg.Aggregation]; !ok {
+		return fmt.Errorf("aggregation %q non supportata; valori ammessi: sum, average, min, max", cfg.Aggregation)
 	}
 	if !contains(cfg.EnabledAggregations, cfg.Aggregation) {
 		return fmt.Errorf("aggregation %q non presente in enabled_aggregations", cfg.Aggregation)
+	}
+	return nil
+}
+
+// supportedAggregationSet centralizza l'elenco delle aggregazioni ammesse dalla configurazione.
+func supportedAggregationSet() map[string]struct{} {
+	return map[string]struct{}{
+		"sum":     {},
+		"average": {},
+		"min":     {},
+		"max":     {},
+	}
+}
+
+// validateBindAddress verifica che bind_address sia valorizzato e riutilizzabile con net.JoinHostPort.
+func validateBindAddress(bindAddress string, nodePort int) error {
+	if strings.TrimSpace(bindAddress) == "" {
+		return errors.New("bind_address obbligatorio")
+	}
+	if err := validateHost(bindAddress); err != nil {
+		return fmt.Errorf("bind_address non valido: %w", err)
+	}
+	joined := net.JoinHostPort(bindAddress, strconv.Itoa(nodePort))
+
+	if _, _, err := net.SplitHostPort(joined); err != nil {
+		return fmt.Errorf("bind_address non valido per net.JoinHostPort: %w", err)
+	}
+	return nil
+}
+
+// validateOptionalPeerEndpoint accetta stringa vuota oppure endpoint nel formato host:porta valido.
+func validateOptionalPeerEndpoint(fieldName string, endpoint string) error {
+	if strings.TrimSpace(endpoint) == "" {
+		return nil
+	}
+	if err := validatePeerEndpoint(endpoint); err != nil {
+		return fmt.Errorf("%s non valido: %w", fieldName, err)
+	}
+	return nil
+}
+
+// validatePeerList rifiuta item vuoti, duplicati e endpoint host:porta malformati.
+func validatePeerList(fieldName string, peers []string) error {
+	seen := make(map[string]struct{}, len(peers))
+	for index, peer := range peers {
+		trimmed := strings.TrimSpace(peer)
+		if trimmed == "" {
+			return fmt.Errorf("%s contiene un valore vuoto in posizione %d", fieldName, index)
+		}
+		if _, exists := seen[trimmed]; exists {
+			return fmt.Errorf("%s contiene un duplicato inutile: %q", fieldName, trimmed)
+		}
+		seen[trimmed] = struct{}{}
+		if err := validatePeerEndpoint(trimmed); err != nil {
+			return fmt.Errorf("%s[%d] non valido: %w", fieldName, index, err)
+		}
+	}
+	return nil
+}
+
+// validatePeerEndpoint impone il formato host:porta con porta numerica nel range TCP/UDP valido.
+func validatePeerEndpoint(endpoint string) error {
+	host, portText, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return fmt.Errorf("atteso formato host:porta valido: %w", err)
+	}
+	if err := validateHost(host); err != nil {
+		return fmt.Errorf("host %q non valido: %w", host, err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return fmt.Errorf("porta %q non numerica", portText)
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("porta %d fuori intervallo 1-65535", port)
+	}
+	return nil
+}
+
+// validateEnabledAggregations rifiuta item vuoti, duplicati e valori fuori dal set supportato.
+func validateEnabledAggregations(values []string, supported map[string]struct{}) error {
+	seen := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return fmt.Errorf("enabled_aggregations contiene un valore vuoto in posizione %d", index)
+		}
+		if _, ok := supported[trimmed]; !ok {
+			return fmt.Errorf("enabled_aggregations[%d] contiene %q non supportata; valori ammessi: sum, average, min, max", index, trimmed)
+		}
+		if _, exists := seen[trimmed]; exists {
+			return fmt.Errorf("enabled_aggregations contiene un duplicato inutile: %q", trimmed)
+		}
+		seen[trimmed] = struct{}{}
+	}
+	return nil
+}
+
+// validateHost accetta IPv4, IPv6 e hostname DNS-like senza imporre una risoluzione runtime.
+func validateHost(host string) error {
+	trimmed := strings.TrimSpace(host)
+	if trimmed == "" {
+		return errors.New("host vuoto")
+	}
+	if ip := net.ParseIP(trimmed); ip != nil {
+		return nil
+	}
+	labels := strings.Split(trimmed, ".")
+	for _, label := range labels {
+		if label == "" {
+			return errors.New("hostname con etichetta vuota")
+		}
+		if len(label) > 63 {
+			return fmt.Errorf("hostname con etichetta troppo lunga: %q", label)
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return fmt.Errorf("hostname con trattino in posizione non valida: %q", label)
+		}
+		for _, r := range label {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' {
+				continue
+			}
+			return fmt.Errorf("hostname con carattere non valido %q", r)
+		}
 	}
 	return nil
 }
