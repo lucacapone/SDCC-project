@@ -39,71 +39,86 @@ func TestValidateAcceptsMinAndMaxSemantics(t *testing.T) {
 	}
 }
 
-// TestValidateConfig resta il punto d'ingresso principale richiesto dal task M06
-// e copre la validazione esplicita dei casi bloccanti più rilevanti.
+// TestValidateConfig resta il punto d'ingresso principale richiesto dal task
+// e raccoglie i casi più importanti della validazione con subtest leggibili.
 func TestValidateConfig(t *testing.T) {
-	t.Run("config valida", func(t *testing.T) {
-		cfg := Default()
-		cfg.BootstrapPeers = []string{"node-1:7001"}
-		cfg.SeedPeers = []string{"node-2:7002"}
-		if err := Validate(cfg); err != nil {
-			fatalfWithConfig(t, "config valida rifiutata", cfg, err)
-		}
-	})
-
-	cases := []struct {
+	// Ogni scenario muta una configurazione valida di base per isolare il motivo
+	// dell'errore e verificare che il messaggio rimanga leggibile.
+	type testCase struct {
 		name        string
 		mutate      func(*Config)
 		errContains []string
-	}{
+	}
+
+	validBaseConfig := func() Config {
+		cfg := Default()
+		cfg.BootstrapPeers = []string{"node-1:7001"}
+		cfg.SeedPeers = []string{"node-2:7002"}
+		return cfg
+	}
+
+	cases := []testCase{
 		{
-			name: "interval uguale a zero",
+			name: "default validi",
+			mutate: func(cfg *Config) {
+				*cfg = Default()
+			},
+		},
+		{
+			name: "parametri obbligatori mancanti node_id",
+			mutate: func(cfg *Config) {
+				cfg.NodeID = ""
+			},
+			errContains: []string{"node_id", "obbligatorio"},
+		},
+		{
+			name: "parametri obbligatori mancanti aggregation",
+			mutate: func(cfg *Config) {
+				cfg.Aggregation = ""
+			},
+			errContains: []string{"aggregation", "obbligatoria"},
+		},
+		{
+			name: "valori numerici pericolosi gossip_interval_ms zero",
 			mutate: func(cfg *Config) {
 				cfg.GossipIntervalMS = 0
 			},
 			errContains: []string{"gossip_interval_ms", "> 0"},
 		},
 		{
-			name: "fanout minore o uguale a zero",
+			name: "valori numerici pericolosi fanout zero",
 			mutate: func(cfg *Config) {
 				cfg.Fanout = 0
 			},
 			errContains: []string{"fanout", "> 0"},
 		},
 		{
-			name: "timeout minore o uguale a zero",
+			name: "valori numerici pericolosi membership_timeout_ms zero",
 			mutate: func(cfg *Config) {
 				cfg.MembershipTimeoutMS = 0
 			},
 			errContains: []string{"membership_timeout_ms", "> 0"},
 		},
 		{
-			name: "peer list con item vuoto",
+			name: "valori numerici pericolosi node_port fuori range",
 			mutate: func(cfg *Config) {
-				cfg.BootstrapPeers = []string{"node-1:7001", "   "}
+				cfg.NodePort = 70000
 			},
-			errContains: []string{"bootstrap_peers", "valore vuoto"},
-		},
-		{
-			name: "peer list con duplicato",
-			mutate: func(cfg *Config) {
-				cfg.SeedPeers = []string{"node-1:7001", "node-1:7001"}
-			},
-			errContains: []string{"seed_peers", "duplicato inutile"},
+			errContains: []string{"node_port", "1 e 65535"},
 		},
 		{
 			name: "aggregazione non supportata tra le abilitate",
 			mutate: func(cfg *Config) {
 				cfg.EnabledAggregations = []string{"sum", "median"}
 			},
-			errContains: []string{"enabled_aggregations[1]", "non supportata"},
+			errContains: []string{"enabled_aggregations[1]", "median", "non supportata"},
 		},
 		{
 			name: "aggregazione attiva non supportata",
 			mutate: func(cfg *Config) {
 				cfg.Aggregation = "median"
 			},
-			errContains: []string{"aggregation", "non supportata"},
+			errContains: []string{"aggregation", "median", "non supportata"},
 		},
 		{
 			name: "aggregazione attiva non presente nella whitelist",
@@ -111,15 +126,35 @@ func TestValidateConfig(t *testing.T) {
 				cfg.EnabledAggregations = []string{"sum"}
 				cfg.Aggregation = "average"
 			},
-			errContains: []string{"aggregation", "enabled_aggregations"},
+			errContains: []string{"aggregation", "average", "enabled_aggregations"},
+		},
+		{
+			name: "errori leggibili su peer list con item vuoto",
+			mutate: func(cfg *Config) {
+				cfg.BootstrapPeers = []string{"node-1:7001", "   "}
+			},
+			errContains: []string{"bootstrap_peers", "valore vuoto", "posizione 1"},
+		},
+		{
+			name: "errori leggibili su peer list con duplicato",
+			mutate: func(cfg *Config) {
+				cfg.SeedPeers = []string{"node-1:7001", "node-1:7001"}
+			},
+			errContains: []string{"seed_peers", "duplicato inutile", "node-1:7001"},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := Default()
+			cfg := validBaseConfig()
 			tc.mutate(&cfg)
 			err := Validate(cfg)
+			if len(tc.errContains) == 0 {
+				if err != nil {
+					fatalfWithConfig(t, "config valida rifiutata", cfg, err)
+				}
+				return
+			}
 			for _, fragment := range tc.errContains {
 				assertErrorContains(t, err, fragment)
 			}
@@ -413,38 +448,6 @@ func TestDiscoveryPeersPreferBootstrapPeers(t *testing.T) {
 	got := cfg.DiscoveryPeers()
 	if len(got) != 1 || got[0] != "bootstrap-1" {
 		t.Fatalf("discovery peers inattesi: %+v", got)
-	}
-}
-
-func TestValidateFailures(t *testing.T) {
-	tests := []struct {
-		name    string
-		mutate  func(*Config)
-		errPart string
-	}{
-		{name: "node_id mancante", mutate: func(c *Config) { c.NodeID = "" }, errPart: "node_id obbligatorio"},
-		{name: "porta non valida", mutate: func(c *Config) { c.NodePort = 0 }, errPart: "node_port"},
-		{name: "interval non valido", mutate: func(c *Config) { c.GossipIntervalMS = 0 }, errPart: "gossip_interval_ms"},
-		{name: "fanout non valido", mutate: func(c *Config) { c.Fanout = 0 }, errPart: "fanout"},
-		{name: "timeout non valido", mutate: func(c *Config) { c.MembershipTimeoutMS = 0 }, errPart: "membership_timeout_ms"},
-		{name: "aggregazioni vuote", mutate: func(c *Config) { c.EnabledAggregations = nil }, errPart: "enabled_aggregations"},
-		{name: "aggregation vuota", mutate: func(c *Config) { c.Aggregation = "" }, errPart: "aggregation obbligatoria"},
-		{name: "aggregation non supportata", mutate: func(c *Config) { c.Aggregation = "median" }, errPart: "non supportata"},
-		{name: "aggregation non presente tra le abilitate", mutate: func(c *Config) { c.EnabledAggregations = []string{"sum"}; c.Aggregation = "average" }, errPart: "non presente"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := Default()
-			tt.mutate(&cfg)
-			err := Validate(cfg)
-			if err == nil {
-				t.Fatalf("atteso errore per caso %q", tt.name)
-			}
-			if !strings.Contains(err.Error(), tt.errPart) {
-				t.Fatalf("errore inatteso: %v", err)
-			}
-		})
 	}
 }
 

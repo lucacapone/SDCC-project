@@ -237,3 +237,7 @@
 - **Descrizione task**: Estensione esplicita della suite `internal/config/config_test.go` per copertura M06 su parsing, default, override env, errori bloccanti e validazione principale con `TestValidateConfig`.
 - **File modificati**: `internal/config/config_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho riorganizzato la suite dei test di configurazione introducendo casi espliciti per parsing YAML/JSON validi, configurazioni parziali con default, mismatch di tipo bloccanti, override via environment, messaggi d’errore leggibili con riferimento al campo, edge case su peer list e aggregazioni non supportate. Ho inoltre mantenuto `TestValidateConfig` come entry point principale per la validazione richiesta dal task, così che il comando mirato `go test ./internal/config -run TestValidateConfig` eserciti davvero i controlli bloccanti principali.
+## 2026-03-18 17:35:00 UTC
+- **Descrizione task**: Riorganizzazione della suite di validazione configurazione per esporre il punto d’ingresso richiesto `TestValidateConfig` con copertura esplicita dei casi principali.
+- **File modificati**: `internal/config/config_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho consolidato la validazione in una singola suite `TestValidateConfig` strutturata a subtest, includendo default validi, campi obbligatori mancanti, valori numerici pericolosi, aggregazioni non supportate o non abilitate e verifiche sui messaggi d’errore leggibili; ho inoltre rimosso la duplicazione coperta dalla vecchia suite `TestValidateFailures`.
