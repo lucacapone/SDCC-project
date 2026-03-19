@@ -213,6 +213,14 @@ Test canonico disponibile:
 
 Il target `make test-integration` punta ufficialmente a questa suite M09. Nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
 
+Sintesi criteri M09:
+- scenario congelato a **3 nodi** (`node-1`, `node-2`, `node-3`);
+- aggregazione attiva: `average`;
+- valori iniziali: `10`, `30`, `50`;
+- criterio di successo: banda cluster `max(values) - min(values) <= 0.05`;
+- timeout esplicito: `350ms`, derivato da `gossip_interval = 10ms`, allowance di bootstrap `50ms` e buffer locale/CI `300ms`;
+- report finale per nodo: `node_id`, `observed_value`, `expected_delta`, `common_band`.
+
 Comando ufficiale M09:
 ```bash
 go test ./tests/integration -run TestClusterConvergence -count=1

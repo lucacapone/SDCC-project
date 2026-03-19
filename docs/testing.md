@@ -38,48 +38,58 @@ Il test canonico della milestone M09 è:
 - `tests/integration/cluster_convergence_test.go`
 - test entrypoint: `TestClusterConvergence`
 
-### Obiettivo del test
+### Scenario M09
 
-`TestClusterConvergence` avvia automaticamente un cluster a tre nodi usando la strategia scelta per M09, cioè un **harness in-memory promosso** con trasporto deterministico e membership full-mesh iniziale. Nel repository questa suite viene classificata come **integrazione/end-to-end M09** perché valida il comportamento osservabile del cluster come scenario di milestone, pur senza usare rete reale. Il test verifica quindi la convergenza end-to-end della logica di cluster, ma **non** sostituisce una prova manuale su cluster locale multi-nodo con Docker Compose.
+`TestClusterConvergence` avvia automaticamente lo scenario M09 usando la strategia scelta per la milestone, cioè un **harness in-memory promosso** con trasporto deterministico e membership full-mesh iniziale. Nel repository questa suite viene classificata come **integrazione/end-to-end M09** perché valida il comportamento osservabile del cluster come scenario di milestone, pur senza usare rete reale. Il test verifica quindi la convergenza end-to-end della logica di cluster, ma **non** sostituisce una prova manuale su cluster locale multi-nodo con Docker Compose.
 
-### Criterio di convergenza
+Parametri di scenario congelati:
 
-Il cluster è considerato convergente quando la **banda massima di differenza tra i nodi** risulta:
-
-- `<= 0.05`
-
-La misura è calcolata come:
-
-```text
-max(values) - min(values)
-```
-
-sui valori correnti del cluster al momento del campionamento. Il test continua comunque a riportare anche il riferimento informativo `average(10, 30, 50) = 30.0`, ma senza usarlo come vincolo di pass/fail.
+- **numero di nodi**: `3` (`node-1`, `node-2`, `node-3`);
+- **aggregazione attiva**: `average`;
+- **valori iniziali**: `10`, `30`, `50`;
+- **valore atteso informativo comune**: `30.0`, cioè `average(10, 30, 50)`;
+- **criterio di successo**: la banda `max(values) - min(values)` deve risultare `<= 0.05` entro il timeout M09.
 
 ### Timeout operativo
 
 Il timeout ufficiale del test M09 è:
 
-- `2s`
+- `350ms`
 
 Motivazione operativa:
 
-- mantiene allineamento con i criteri quantitativi già dichiarati nel README;
-- replica il riferimento logico già usato in `internal/gossip/integration_test.go`, cioè round da `10ms` e polling con ticker da `20ms` senza sleep arbitrari;
-- resta abbastanza breve da segnalare regressioni reali senza rallentare inutilmente la suite.
+- il parametro è derivato in modo esplicito da costanti centralizzate in `tests/integration/cluster_convergence_test.go`;
+- con `gossip_interval_ms = 10ms`, il test riserva `50ms` di bootstrap (`5 * gossip_interval`) per dare tempo all’avvio del cluster e ai primi round utili dopo la registrazione dei transport;
+- aggiunge poi un buffer di `300ms` (`15 * poll_interval`, con `poll_interval = 20ms`) per assorbire la variabilità locale e CI senza allungare inutilmente la suite;
+- il totale `350ms` rimane abbastanza stretto da segnalare regressioni reali, ma più motivato e facilmente manutenibile di un valore letterale isolato.
 
-### Parametri congelati dal test
+### Parametri centralizzati nel test
 
-Il test usa i seguenti parametri fissi:
+I parametri M09 sono facilmente rintracciabili perché centralizzati come costanti all’inizio di `tests/integration/cluster_convergence_test.go`:
 
-- 3 nodi (`node-1`, `node-2`, `node-3`)
-- valori iniziali: `10`, `30`, `50`
-- aggregazione: `average`
-- intervallo round gossip: `10ms`
-- soglia di convergenza: `0.05`
-- timeout massimo: `2s`
-- polling di convergenza: `20ms`
-- report finale: emissione via `t.Logf` dei valori per nodo, media iniziale di riferimento, banda cluster e offset massimo dal riferimento
+- `m09NodeCount = 3`;
+- `m09Aggregation = "average"`;
+- `m09GossipInterval = 10ms`;
+- `m09PollInterval = 20ms`;
+- `m09BootstrapAllowance = 50ms`;
+- `m09LocalCIBuffer = 300ms`;
+- `m09Timeout = 350ms`;
+- `m09ConvergenceBand = 0.05`.
+
+### Formato del report finale
+
+Il report finale emesso via `t.Logf` include, per ogni nodo, il formato M09:
+
+```text
+node_id=<id> observed_value=<valore> expected_delta=<differenza_dal_valore_atteso> common_band=<banda_cluster>
+```
+
+Dove:
+
+- `node_id` identifica il nodo osservato;
+- `observed_value` è il valore finale letto nello snapshot;
+- `expected_delta` è la differenza assoluta dal valore atteso comune (`30.0` nello scenario corrente);
+- `common_band` è la banda comune del cluster al momento del report.
 
 ## Comandi operativi canonici
 
