@@ -67,6 +67,13 @@ Il comportamento reale di `overrideFromEnv` non fallisce in anticipo su input en
 
 Quindi un env numerico/CSV malformato non sostituisce il valore precedente; il runtime prosegue con il valore già presente e poi valida il risultato finale.
 
+Casi espliciti fissati anche dai test di regressione:
+
+- `NODE_PORT=abc` su base/file validi: l'override viene ignorato e resta il `node_port` precedente.
+- `FANOUT=abc`: l'override viene ignorato e resta il `fanout` precedente.
+- `ENABLED_AGGREGATIONS=sum,,max`: l'override CSV viene ignorato e resta la lista precedente valida.
+- `BOOTSTRAP_PEERS=node-1:7001,`: l'override CSV viene ignorato e resta la lista precedente valida.
+
 ## Elenco completo dei campi di `internal/config.Config`
 
 La struct `Config` contiene esattamente i seguenti campi:
