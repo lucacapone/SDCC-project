@@ -51,7 +51,7 @@ func TestJoinLeave(t *testing.T) {
 		t.Fatalf("node-b deve passare a dead dopo timeout: got=%s", peers["node-b"].Status)
 	}
 
-	setA.Leave("node-b")
+	setA.LeaveAt("node-b", base.Add(6*time.Second))
 	peers = byNodeID(setA.Snapshot())
 	if peers["node-b"].Status != Left {
 		t.Fatalf("cleanup tombstone non applicato: got=%s", peers["node-b"].Status)
@@ -67,7 +67,7 @@ func TestJoinLeave(t *testing.T) {
 func TestTimeoutTransitions(t *testing.T) {
 	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 5 * time.Second}
 	set := NewSetWithConfig(cfg)
-	base := time.Now().UTC()
+	base := time.Date(2026, time.March, 19, 11, 20, 0, 0, time.UTC)
 
 	set.Upsert(Peer{NodeID: "alive", Addr: "alive:7001", Status: Alive, LastSeen: base.Add(-1 * time.Second)})
 	set.Upsert(Peer{NodeID: "suspect", Addr: "suspect:7002", Status: Alive, LastSeen: base.Add(-3 * time.Second)})
@@ -134,7 +134,7 @@ func TestGossipUpdateMitigatesFalsePositiveToAlive(t *testing.T) {
 
 func TestLowerIncarnationIsIgnored(t *testing.T) {
 	set := NewSet()
-	base := time.Now().UTC()
+	base := time.Date(2026, time.March, 19, 11, 25, 0, 0, time.UTC)
 
 	set.Upsert(Peer{NodeID: "node-2", Addr: "node-2:7002", Status: Suspect, Incarnation: 3, LastSeen: base})
 	set.Upsert(Peer{NodeID: "node-2", Addr: "node-2:7002", Status: Alive, Incarnation: 2, LastSeen: base.Add(5 * time.Second)})
