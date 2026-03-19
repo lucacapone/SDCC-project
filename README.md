@@ -140,14 +140,14 @@ Flusso bootstrap all'avvio:
 
 ## Avvio locale con Docker Compose
 Compose multi-nodo:
-- `deploy/docker-compose.yml`
+- `docker-compose.yml` (file Compose canonico alla root)
 
 Comandi:
 ```bash
-docker compose -f deploy/docker-compose.yml up -d
-docker compose -f deploy/docker-compose.yml ps
-docker compose -f deploy/docker-compose.yml logs -f node1
-docker compose -f deploy/docker-compose.yml down
+docker compose up -d --build
+docker compose ps
+docker compose logs -f node1
+docker compose down
 ```
 
 Ogni servizio monta una config esterna dedicata:
@@ -227,13 +227,13 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
 ## Demo rapida
 ```bash
 # 1) Avvio cluster
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d --build
 
 # 2) Verifica servizi
-docker compose -f deploy/docker-compose.yml ps
+docker compose ps
 
 # 3) Arresto
-docker compose -f deploy/docker-compose.yml down
+docker compose down
 ```
 
 ## Nota deploy EC2 essenziale
