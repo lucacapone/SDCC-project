@@ -11,6 +11,9 @@ type Algorithm struct{}
 func (Algorithm) Type() string { return "average" }
 
 // Merge combina due valori con media aritmetica semplice per compatibilità.
+//
+// Supporta input finiti e ±Inf secondo IEEE-754 del float64. NaN non è un
+// input semantico supportato: se presente viene propagato dall'aritmetica Go.
 func (Algorithm) Merge(local, remote float64) float64 {
 	return (local + remote) / 2
 }
