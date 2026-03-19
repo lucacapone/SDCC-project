@@ -1,5 +1,6 @@
 node_id: node-2
 bind_address: 0.0.0.0
+advertise_addr: node2:7002
 node_port: 7002
 seed_peers:
   - node1:7001

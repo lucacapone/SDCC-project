@@ -75,6 +75,7 @@ La struct `Config` contiene esattamente i seguenti campi:
 |---|---|---|
 | `NodeID` | `string` | Identificativo logico del nodo. |
 | `BindAddress` | `string` | Host/IP usato per il bind UDP locale. |
+| `AdvertiseAddr` | `string` | Endpoint `host:port` pubblicizzato agli altri nodi; se vuoto il runtime deriva un fallback locale da `bind_address:node_port`. |
 | `NodePort` | `int` | Porta UDP del nodo. |
 | `JoinEndpoint` | `string` | Endpoint opzionale di join iniziale nel formato `host:porta`. |
 | `BootstrapPeers` | `[]string` | Peer di bootstrap preferiti per la discovery iniziale. |
@@ -94,6 +95,7 @@ I default reali restituiti da `Default()` sono:
 |---|---|
 | `NodeID` | `node-1` |
 | `BindAddress` | `0.0.0.0` |
+| `AdvertiseAddr` | `""` |
 | `NodePort` | `7001` |
 | `JoinEndpoint` | `""` |
 | `BootstrapPeers` | `nil` |
@@ -113,6 +115,7 @@ Il runtime supporta esattamente queste variabili ambiente:
 |---|---|---|---|
 | `NODE_ID` | `NodeID` | stringa | Ignorata se vuota/spazi. |
 | `BIND_ADDRESS` | `BindAddress` | stringa | Ignorata se vuota/spazi. |
+| `ADVERTISE_ADDR` | `AdvertiseAddr` | stringa | Endpoint `host:porta` pubblicizzato agli altri nodi. |
 | `NODE_PORT` | `NodePort` | intero | Applicata solo se parse intero riuscito. |
 | `JOIN_ENDPOINT` | `JoinEndpoint` | stringa | Ignorata se vuota/spazi. |
 | `BOOTSTRAP_PEERS` | `BootstrapPeers` | CSV | Interpretata come lista `a,b,c`. |
@@ -148,6 +151,7 @@ La validazione finale applica le seguenti regole.
 
 Queste regole si applicano a:
 
+- `advertise_addr` se valorizzato;
 - `join_endpoint` se valorizzato;
 - ogni elemento di `bootstrap_peers`;
 - ogni elemento di `seed_peers`.
@@ -219,6 +223,7 @@ Il file `configs/example.yaml` definisce un nodo locale con:
 
 - `node_id: node-1`
 - `bind_address: 0.0.0.0`
+- `advertise_addr: node1:7001`
 - `node_port: 7001`
 - `join_endpoint: bootstrap:9000`
 - `bootstrap_peers` espliciti
@@ -237,6 +242,7 @@ go run ./cmd/node --config configs/example.yaml
 ```bash
 NODE_ID=node-local-1 \
 BIND_ADDRESS=127.0.0.1 \
+ADVERTISE_ADDR=node-local-1:7101 \
 NODE_PORT=7101 \
 JOIN_ENDPOINT=bootstrap:9000 \
 BOOTSTRAP_PEERS=node-1:7001,node-2:7002 \

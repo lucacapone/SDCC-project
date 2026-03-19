@@ -3,6 +3,7 @@ package membership
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -35,16 +36,16 @@ type BootstrapResult struct {
 	KnownPeers       int
 }
 
-// Bootstrap inizializza la vista membership locale usando discovery seed-only.
-// Il join endpoint è usato esclusivamente per ottenere peer iniziali, senza ruolo autoritativo.
+// Bootstrap inizializza la vista membership locale usando prima il join endpoint
+// e poi, se necessario, i peer statici di fallback.
 func Bootstrap(ctx context.Context, set *Set, req JoinRequest, joinEndpoint string, fallbackPeers []string, client JoinClient, now time.Time) BootstrapResult {
 	result := BootstrapResult{JoinEndpoint: joinEndpoint}
 
 	if joinEndpoint != "" && client != nil {
 		if res, err := client.Join(ctx, joinEndpoint, req); err == nil {
 			result.UsedJoinEndpoint = true
-			applyPeers(set, req.NodeID, now, res.Snapshot)
-			applyPeers(set, req.NodeID, now, res.Delta)
+			applyPeers(set, req, now, res.Snapshot)
+			applyPeers(set, req, now, res.Delta)
 			result.KnownPeers = len(set.Snapshot())
 			return result
 		}
@@ -52,7 +53,7 @@ func Bootstrap(ctx context.Context, set *Set, req JoinRequest, joinEndpoint stri
 
 	result.FallbackUsed = len(fallbackPeers) > 0
 	for _, peer := range fallbackPeers {
-		if peer == "" || peer == req.NodeID || peer == req.Addr {
+		if sameEndpoint(peer, req.Addr) || sameNodeID(peer, req.NodeID) {
 			continue
 		}
 		set.Join(peer, now)
@@ -61,9 +62,9 @@ func Bootstrap(ctx context.Context, set *Set, req JoinRequest, joinEndpoint stri
 	return result
 }
 
-func applyPeers(set *Set, selfNodeID string, now time.Time, peers []Peer) {
+func applyPeers(set *Set, self JoinRequest, now time.Time, peers []Peer) {
 	for _, peer := range peers {
-		if peer.NodeID == selfNodeID || peer.Addr == selfNodeID {
+		if sameNodeID(peer.NodeID, self.NodeID) || sameEndpoint(peer.Addr, self.Addr) {
 			continue
 		}
 		if peer.LastSeen.IsZero() {
@@ -71,4 +72,12 @@ func applyPeers(set *Set, selfNodeID string, now time.Time, peers []Peer) {
 		}
 		set.Upsert(peer)
 	}
+}
+
+func sameNodeID(a, b string) bool {
+	return strings.TrimSpace(a) != "" && strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+func sameEndpoint(a, b string) bool {
+	return strings.TrimSpace(a) != "" && strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }

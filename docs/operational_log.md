@@ -274,3 +274,13 @@
 - **Descrizione task**: Creazione del documento milestone `docs/task/M07.md` per Compose + networking, con stato iniziale, gap rispetto ai done criteria, modifiche introdotte e risultato operativo atteso del flusso Docker Compose.
 - **File modificati**: `docs/task/M07.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho analizzato task M01-M06, README, `docker-compose.yml`, `docs/deployment.md`, roadmap e log operativo per mantenere lo stesso formato documentale; quindi ho consolidato M07 come milestone di deployment locale, esplicitando l'evoluzione dal compose placeholder/root al compose canonico con rete dedicata `sdcc-net` e discovery tramite service name DNS.
+
+## 2026-03-19 10:15:00 UTC
+- **Descrizione task**: Riallineamento del bootstrap membership per separare `node_id` logico e `addr` di rete, introduzione di `advertise_addr`, aggiornamento configurazioni Compose e copertura test su fallback seed/discovery con hostname Compose.
+- **File modificati**: `cmd/node/main.go`, `internal/config/config.go`, `internal/config/config_test.go`, `internal/membership/bootstrap.go`, `internal/membership/bootstrap_test.go`, `internal/membership/membership.go`, `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`, `configs/example.yaml`, `docker-compose.yml`, `README.md`, `docs/deployment.md`, `docs/configuration.md`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho eliminato l'ambiguità precedente in cui il bootstrap inviava `Addr = node_id`, introducendo un endpoint pubblicizzato esplicito `advertise_addr` e usando sempre `host:port` come indirizzo di rete reale. Ho inoltre reso il bootstrap seed-only capace di riconciliare i placeholder iniziali con il vero `node_id` appreso via gossip/join, e ho riallineato file YAML e Compose ai service name DNS (`node1`, `node2`, `node3`) come hostname raggiungibili.
+
+## 2026-03-19 10:28:00 UTC
+- **Descrizione task**: Correzione emersa in validazione sulla semantica di merge `min`/`max`, per preservare l'applicazione degli update lenti per-contributo senza alterare le regole di conflitto globali di `sum`/`average`.
+- **File modificati**: `internal/gossip/state.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Durante l'esecuzione della suite completa ho rilevato che i casi `nodo_lento` per `min`/`max` non venivano applicati correttamente a causa del filtro globale sulle versioni. Ho quindi limitato il merge per-contributo speciale ai soli casi `min`/`max`, mantenendo invariata la semantica storica dei conflitti per `sum` e `average` e ripristinando il passaggio dell'intera suite `go test ./...`.

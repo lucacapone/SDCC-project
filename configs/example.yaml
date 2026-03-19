@@ -1,13 +1,14 @@
 node_id: node-1
 bind_address: 0.0.0.0
+advertise_addr: node1:7001
 node_port: 7001
 join_endpoint: bootstrap:9000
 bootstrap_peers:
-  - node-1:7001
-  - node-2:7002
+  - node1:7001
+  - node2:7002
 seed_peers:
-  - node-2:7002
-  - node-3:7003
+  - node2:7002
+  - node3:7003
 gossip_interval_ms: 1000
 fanout: 2
 membership_timeout_ms: 5000

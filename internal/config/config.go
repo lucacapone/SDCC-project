@@ -18,6 +18,7 @@ import (
 type Config struct {
 	NodeID              string   `json:"node_id"`
 	BindAddress         string   `json:"bind_address"`
+	AdvertiseAddr       string   `json:"advertise_addr"`
 	NodePort            int      `json:"node_port"`
 	JoinEndpoint        string   `json:"join_endpoint"`
 	BootstrapPeers      []string `json:"bootstrap_peers"`
@@ -34,6 +35,7 @@ func Default() Config {
 	return Config{
 		NodeID:              "node-1",
 		BindAddress:         "0.0.0.0",
+		AdvertiseAddr:       "",
 		NodePort:            7001,
 		JoinEndpoint:        "",
 		BootstrapPeers:      nil,
@@ -132,6 +134,8 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 			cfg.NodeID = value
 		case "bind_address":
 			cfg.BindAddress = value
+		case "advertise_addr":
+			cfg.AdvertiseAddr = value
 		case "node_port":
 			parsed, err := atoiDefault(value, cfg.NodePort)
 			if err != nil {
@@ -237,6 +241,7 @@ func atoiDefault(value string, fallback int) (int, error) {
 func overrideFromEnv(cfg *Config) {
 	overrideString("NODE_ID", &cfg.NodeID)
 	overrideString("BIND_ADDRESS", &cfg.BindAddress)
+	overrideString("ADVERTISE_ADDR", &cfg.AdvertiseAddr)
 	overrideInt("NODE_PORT", &cfg.NodePort)
 	overrideString("JOIN_ENDPOINT", &cfg.JoinEndpoint)
 	overrideCSV("BOOTSTRAP_PEERS", &cfg.BootstrapPeers)
@@ -284,6 +289,18 @@ func overrideCSV(name string, target *[]string) {
 	}
 }
 
+func (c Config) AdvertiseEndpoint() string {
+	if strings.TrimSpace(c.AdvertiseAddr) != "" {
+		return strings.TrimSpace(c.AdvertiseAddr)
+	}
+
+	host := strings.TrimSpace(c.BindAddress)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(c.NodePort))
+}
+
 func (c Config) MembershipTimeout() time.Duration {
 	return time.Duration(c.MembershipTimeoutMS) * time.Millisecond
 }
@@ -298,6 +315,9 @@ func Validate(cfg Config) error {
 		return fmt.Errorf("node_port deve essere compreso tra 1 e 65535, ottenuto %d", cfg.NodePort)
 	}
 	if err := validateBindAddress(cfg.BindAddress, cfg.NodePort); err != nil {
+		return err
+	}
+	if err := validateOptionalPeerEndpoint("advertise_addr", cfg.AdvertiseAddr); err != nil {
 		return err
 	}
 	if err := validateOptionalPeerEndpoint("join_endpoint", cfg.JoinEndpoint); err != nil {

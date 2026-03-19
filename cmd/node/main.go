@@ -29,12 +29,13 @@ func main() {
 		log.Fatalf("errore caricamento configurazione: %v", err)
 	}
 
+	selfAdvertiseAddr := cfg.AdvertiseEndpoint()
 	logger := observability.NewLogger(cfg.LogLevel, nil)
 	mset := membership.NewSet()
 	bootstrapRes := membership.Bootstrap(
 		context.Background(),
 		mset,
-		membership.JoinRequest{NodeID: cfg.NodeID, Addr: cfg.NodeID},
+		membership.JoinRequest{NodeID: cfg.NodeID, Addr: selfAdvertiseAddr},
 		cfg.JoinEndpoint,
 		cfg.DiscoveryPeers(),
 		membership.NoopJoinClient{},
@@ -45,6 +46,8 @@ func main() {
 		"join_endpoint", bootstrapRes.JoinEndpoint,
 		"fallback_used", bootstrapRes.FallbackUsed,
 		"known_peers", bootstrapRes.KnownPeers,
+		"self_node_id", cfg.NodeID,
+		"self_addr", selfAdvertiseAddr,
 	)
 
 	listenAddress := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(cfg.NodePort))
@@ -55,7 +58,7 @@ func main() {
 		gossipTransport = transport.NoopTransport{}
 	} else {
 		gossipTransport = udpTransport
-		logger.Info("transport inizializzato", "type", "udp", "listen_address", fmt.Sprintf("udp://%s", listenAddress))
+		logger.Info("transport inizializzato", "type", "udp", "listen_address", fmt.Sprintf("udp://%s", listenAddress), "advertise_address", fmt.Sprintf("udp://%s", selfAdvertiseAddr))
 	}
 
 	aggAlgo, err := aggregation.Factory(cfg.Aggregation)
