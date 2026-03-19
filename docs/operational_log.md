@@ -326,3 +326,8 @@
 - **Descrizione task**: Consolidamento documentale e tecnico dello scenario M09 con timeout esplicito motivato, parametri centralizzati nel test di integrazione e formato report finale per nodo.
 - **File modificati**: `tests/integration/cluster_convergence_test.go`, `docs/testing.md`, `docs/task/M09.md`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho reso i parametri M09 facilmente rintracciabili centralizzandoli in costanti, ho sostituito il timeout letterale con una composizione esplicita coerente con `gossip_interval` e con la variabilità locale/CI, e ho allineato documentazione e report finale del test al formato richiesto per facilitare diagnosi e manutenzione.
+
+## 2026-03-19 16:35:00 UTC
+- **Descrizione task**: Introduzione di helper script idempotenti per bootstrap/attesa/raccolta artefatti/teardown del cluster Docker Compose, con osservabilità dei valori finali in shutdown e documentazione operativa aggiornata.
+- **File modificati**: `scripts/cluster_common.sh`, `scripts/cluster_up.sh`, `scripts/cluster_wait_ready.sh`, `scripts/cluster_collect_results.sh`, `scripts/cluster_down.sh`, `cmd/node/main.go`, `docs/testing.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho aggiunto un set minimo di script Bash per orchestrare esternamente il Compose canonico senza modificarne la struttura, con cleanup preventivo, naming stabile (`sdcc-bootstrap`) e messaggi di errore uniformi. Per permettere la raccolta dei valori finali per nodo senza introdurre endpoint runtime aggiuntivi, ho reso esplicito nel binario il log di shutdown con snapshot finale (`final_value`, round e message id), quindi ho documentato in `docs/testing.md` il flusso operativo consigliato e la directory artefatti generata dagli helper.
