@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration test-crash docker-test
+.PHONY: test test-unit test-integration test-integration-internal test-crash docker-test
 
 test:
 	go test ./... -count=1
@@ -7,7 +7,10 @@ test-unit:
 	go test ./internal/config ./internal/aggregation ./internal/membership -count=1
 
 test-integration:
-	go test ./internal/gossip -run TestIntegration -count=1
+	go test ./tests/integration -run TestClusterConvergence -count=1
+
+test-integration-internal:
+	go test ./internal/gossip -run TestIntegrationGossipConvergence -count=1
 
 test-crash:
 	go test ./internal/gossip -run TestCrash -count=1
