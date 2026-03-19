@@ -157,7 +157,7 @@ Ogni servizio usa la stessa immagine applicativa locale costruita dal `Dockerfil
 
 Per passare configurazioni personalizzate basta cambiare i file montati o impostare env nel servizio desiderato. La build dell'immagine avviene localmente tramite `docker compose up -d --build`, senza più usare `golang:1.22` con `go run` dentro i container.
 
-Dettagli operativi di build/deploy locale:
+Dettagli operativi canonici di build/deploy locale multi-nodo:
 - `docs/deployment.md`
 
 ## Esecuzione test
