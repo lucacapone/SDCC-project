@@ -269,3 +269,8 @@
 - **Descrizione task**: Aggiornamento del README nelle sezioni Docker Compose e demo rapida per chiarire il file Compose canonico M07, i comandi reali di gestione del cluster e l’allineamento tra rete Compose e configurazioni `configs/node*.yaml`.
 - **File modificati**: `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho reso esplicito che il file operativo canonico è `docker-compose.yml` alla root, ho chiarito il ruolo secondario/storico di `deploy/docker-compose.yml`, ho aggiunto i comandi reali `docker compose ...` inclusi i log di `node1` e ho documentato che discovery, porte e peer dei tre file `configs/node*.yaml` coincidono con la rete Compose e con gli override environment del runtime.
+
+## 2026-03-19 09:25:48 UTC
+- **Descrizione task**: Creazione del documento milestone `docs/task/M07.md` per Compose + networking, con stato iniziale, gap rispetto ai done criteria, modifiche introdotte e risultato operativo atteso del flusso Docker Compose.
+- **File modificati**: `docs/task/M07.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho analizzato task M01-M06, README, `docker-compose.yml`, `docs/deployment.md`, roadmap e log operativo per mantenere lo stesso formato documentale; quindi ho consolidato M07 come milestone di deployment locale, esplicitando l'evoluzione dal compose placeholder/root al compose canonico con rete dedicata `sdcc-net` e discovery tramite service name DNS.
