@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,10 @@ import (
 	"sdcc-project/internal/gossip"
 	"sdcc-project/internal/membership"
 	"sdcc-project/internal/transport"
+)
+
+const (
+	clusterBootstrapStrategy = "harness in-memory promosso"
 )
 
 // integrationNetwork modella una rete in-memory deterministicamente controllabile per il cluster di test.
@@ -117,28 +122,50 @@ type clusterNode struct {
 	engine  *gossip.Engine
 }
 
+// clusterObservation rappresenta uno snapshot osservabile della convergenza del cluster.
+type clusterObservation struct {
+	values             map[string]float64
+	referenceValue     float64
+	maxDelta           float64
+	referenceMaxOffset float64
+}
+
 // TestClusterConvergence verifica che un cluster a tre nodi converga entro la banda e il timeout ufficiali M09.
 func TestClusterConvergence(t *testing.T) {
 	const (
 		roundEvery          = 10 * time.Millisecond
+		pollEvery           = 20 * time.Millisecond
 		convergenceDeadline = 2 * time.Second
 		maxDelta            = 0.05
 	)
 
-	network := newIntegrationNetwork()
-	nodes, cancel := startAverageCluster(t, network, []float64{10, 30, 50}, roundEvery)
+	initialValues := []float64{10, 30, 50}
+	expectedValue := averageOf(initialValues)
+
+	t.Logf("bootstrap cluster automatico con strategia %q", clusterBootstrapStrategy)
+
+	nodes, cancel := bootstrapAverageCluster(t, initialValues, roundEvery)
 	defer cancel()
 	defer stopCluster(t, nodes)
 
-	if ok, maxObservedDelta, snapshots := waitClusterConvergence(nodes, convergenceDeadline, maxDelta); !ok {
-		t.Fatalf("cluster non convergente entro %s: delta_max=%0.6f valori=%v", convergenceDeadline, maxObservedDelta, snapshots)
+	observation, converged := waitForClusterConvergence(nodes, convergenceDeadline, pollEvery, expectedValue, maxDelta)
+	t.Logf("report finale convergenza:\n%s", formatClusterObservation(observation))
+
+	if !converged {
+		t.Fatalf(
+			"cluster non convergente entro %s: banda<=%0.6f report=%s",
+			convergenceDeadline,
+			maxDelta,
+			formatClusterObservation(observation),
+		)
 	}
 }
 
-// startAverageCluster avvia un cluster full-mesh con aggregazione average e valori iniziali deterministici.
-func startAverageCluster(t *testing.T, network *integrationNetwork, initialValues []float64, roundEvery time.Duration) ([]*clusterNode, context.CancelFunc) {
+// bootstrapAverageCluster avvia automaticamente un cluster full-mesh con aggregazione average.
+func bootstrapAverageCluster(t *testing.T, initialValues []float64, roundEvery time.Duration) ([]*clusterNode, context.CancelFunc) {
 	t.Helper()
 
+	network := newIntegrationNetwork()
 	ctx, cancel := context.WithCancel(context.Background())
 	addresses := make([]string, 0, len(initialValues))
 	for index := range initialValues {
@@ -183,53 +210,129 @@ func fullMeshMembership(self string, addresses []string) *membership.Set {
 	return set
 }
 
-// waitClusterConvergence campiona il cluster fino a osservare una differenza massima sotto soglia.
-func waitClusterConvergence(nodes []*clusterNode, timeout time.Duration, threshold float64) (bool, float64, []float64) {
-	deadline := time.Now().Add(timeout)
-	bestDelta := math.MaxFloat64
-	bestSnapshot := snapshotValues(nodes)
-
-	for time.Now().Before(deadline) {
-		currentSnapshot := snapshotValues(nodes)
-		currentDelta := maxDelta(currentSnapshot)
-		if currentDelta < bestDelta {
-			bestDelta = currentDelta
-			bestSnapshot = currentSnapshot
-		}
-		if currentDelta <= threshold {
-			return true, currentDelta, currentSnapshot
-		}
-		time.Sleep(10 * time.Millisecond)
+// waitForClusterConvergence effettua polling con deadline esplicita fino a osservare convergenza verificabile.
+func waitForClusterConvergence(nodes []*clusterNode, timeout time.Duration, pollEvery time.Duration, expectedValue float64, threshold float64) (clusterObservation, bool) {
+	observation := observeCluster(nodes, expectedValue)
+	if isClusterConverged(observation, threshold) {
+		return observation, true
 	}
 
-	return false, bestDelta, bestSnapshot
+	ticker := time.NewTicker(pollEvery)
+	defer ticker.Stop()
+	timeoutTimer := time.NewTimer(timeout)
+	defer timeoutTimer.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			observation = observeCluster(nodes, expectedValue)
+			if isClusterConverged(observation, threshold) {
+				return observation, true
+			}
+		case <-timeoutTimer.C:
+			return observation, false
+		}
+	}
 }
 
-// snapshotValues estrae il valore aggregato corrente di tutti i nodi del cluster.
-func snapshotValues(nodes []*clusterNode) []float64 {
-	values := make([]float64, 0, len(nodes))
+// observeCluster estrae lo snapshot corrente e calcola le metriche di convergenza del cluster.
+func observeCluster(nodes []*clusterNode, expectedValue float64) clusterObservation {
+	values := make(map[string]float64, len(nodes))
 	for _, node := range nodes {
-		values = append(values, node.engine.State.Value)
+		values[node.address] = node.engine.State.Value
 	}
-	return values
+
+	return clusterObservation{
+		values:             values,
+		referenceValue:     expectedValue,
+		maxDelta:           observationMaxDelta(values),
+		referenceMaxOffset: observationMaxDistance(values, expectedValue),
+	}
 }
 
-// maxDelta calcola la massima distanza assoluta tra i valori osservati nel cluster.
-func maxDelta(values []float64) float64 {
+// isClusterConverged rende esplicito il criterio di convergenza: banda massima tra i nodi entro soglia.
+func isClusterConverged(observation clusterObservation, threshold float64) bool {
+	return observation.maxDelta <= threshold
+}
+
+// formatClusterObservation produce un report leggibile dei valori finali per nodo.
+func formatClusterObservation(observation clusterObservation) string {
+	if len(observation.values) == 0 {
+		return "cluster vuoto"
+	}
+
+	ordered := []string{"node-1", "node-2", "node-3"}
+	parts := make([]string, 0, len(observation.values)+2)
+	seen := make(map[string]struct{}, len(observation.values))
+	for _, address := range ordered {
+		value, ok := observation.values[address]
+		if !ok {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%0.6f", address, value))
+		seen[address] = struct{}{}
+	}
+	for address, value := range observation.values {
+		if _, ok := seen[address]; ok {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%0.6f", address, value))
+	}
+
+	parts = append(parts,
+		fmt.Sprintf("riferimento_media_iniziale=%0.6f", observation.referenceValue),
+		fmt.Sprintf("banda=%0.6f", observation.maxDelta),
+		fmt.Sprintf("offset_max_riferimento=%0.6f", observation.referenceMaxOffset),
+	)
+
+	return strings.Join(parts, ", ")
+}
+
+// observationMaxDelta calcola la massima distanza assoluta tra i valori osservati nel cluster.
+func observationMaxDelta(values map[string]float64) float64 {
 	if len(values) < 2 {
 		return 0
 	}
-	minValue := values[0]
-	maxValue := values[0]
-	for _, value := range values[1:] {
-		if value < minValue {
+
+	first := true
+	var minValue float64
+	var maxValue float64
+	for _, value := range values {
+		if first {
 			minValue = value
-		}
-		if value > maxValue {
 			maxValue = value
+			first = false
+			continue
+		}
+		minValue = math.Min(minValue, value)
+		maxValue = math.Max(maxValue, value)
+	}
+
+	return math.Abs(maxValue - minValue)
+}
+
+// observationMaxDistance calcola la distanza assoluta massima dal valore atteso comune.
+func observationMaxDistance(values map[string]float64, expectedValue float64) float64 {
+	maxDistance := 0.0
+	for _, value := range values {
+		distance := math.Abs(value - expectedValue)
+		if distance > maxDistance {
+			maxDistance = distance
 		}
 	}
-	return math.Abs(maxValue - minValue)
+	return maxDistance
+}
+
+// averageOf calcola il valore atteso comune del cluster nel caso average.
+func averageOf(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, value := range values {
+		sum += value
+	}
+	return sum / float64(len(values))
 }
 
 // stopCluster arresta tutti gli engine avviati dal test ignorando i nodi nil.

@@ -266,7 +266,8 @@ make docker-test
 I test introdotti in repository usano i seguenti criteri quantitativi:
 
 1. **Convergenza gossip (3 nodi, transport in-memory)**:
-   - differenza massima tra stati `< 0.05`
+   - criterio esplicito di pass/fail: differenza massima tra stati `<= 0.05`
+   - riferimento informativo nel report: media iniziale `30.0` per input `10`, `30`, `50`
    - timeout massimo `2s`.
 2. **Tolleranza a crash singolo**:
    - con `1` nodo down su `3`, il cluster residuo (`2/3`) converge con soglia `< 0.05`
