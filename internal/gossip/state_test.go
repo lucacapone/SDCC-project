@@ -61,6 +61,88 @@ func TestMergeRules(t *testing.T) {
 		}
 	})
 
+	// aggregation_type_mismatch verifica che un payload con aggregazione incompatibile
+	// venga segnalato come conflitto senza mutare il valore locale, marcando solo il message id.
+	t.Run("aggregation_type_mismatch", func(t *testing.T) {
+		local := fixtureState("node-1", 50, 7, base)
+		local.LastSeenVersionByNode = map[shared.NodeID]shared.StateVersionStamp{
+			"node-2": {Counter: 6},
+		}
+
+		msg := fixtureMessage("msg-type-mismatch", "node-2", 99, 8, base.Add(4*time.Minute))
+		msg.State.AggregationType = "sum"
+
+		res := applyRemote(local, msg)
+
+		if res.Status != MergeConflict || res.Reason != "aggregation_type_mismatch" {
+			t.Fatalf("mismatch aggregazione non rilevato: status=%s reason=%s", res.Status, res.Reason)
+		}
+		if res.State.Value != local.Value {
+			t.Fatalf("valore locale alterato da mismatch aggregazione: got=%v want=%v", res.State.Value, local.Value)
+		}
+		if _, seen := res.State.SeenMessageIDs[msg.MessageID]; !seen {
+			t.Fatalf("message id non tracciato nel mismatch aggregazione")
+		}
+		if got := res.State.LastSeenVersionByNode[msg.OriginNode]; got != local.LastSeenVersionByNode[msg.OriginNode] {
+			t.Fatalf("last seen alterato nel mismatch aggregazione: got=%+v want=%+v", got, local.LastSeenVersionByNode[msg.OriginNode])
+		}
+	})
+
+	// same_version_same_payload congela il ramo di skip idempotente quando versione e payload coincidono.
+	t.Run("same_version_same_payload", func(t *testing.T) {
+		local := fixtureState("node-1", 21, 9, base)
+		local.SeenMessageIDs = map[shared.MessageID]struct{}{"existing-msg": {}}
+		local.LastSeenVersionByNode = map[shared.NodeID]shared.StateVersionStamp{
+			"node-2": {Counter: 8},
+		}
+
+		msg := fixtureMessage("msg-same-payload", "node-2", local.Value, local.VersionCounter, base.Add(5*time.Minute))
+		msg.State = local
+		msg.State.SeenMessageIDs = nil
+		msg.State.LastSeenVersionByNode = nil
+
+		res := applyRemote(local, msg)
+
+		if res.Status != MergeSkipped || res.Reason != "same_version_same_payload" {
+			t.Fatalf("skip stessa versione/payload non rilevato: status=%s reason=%s", res.Status, res.Reason)
+		}
+		if res.State.Value != local.Value {
+			t.Fatalf("valore locale alterato da payload identico: got=%v want=%v", res.State.Value, local.Value)
+		}
+		if _, seen := res.State.SeenMessageIDs[msg.MessageID]; !seen {
+			t.Fatalf("message id non tracciato per stessa versione/payload")
+		}
+		if got := res.State.LastSeenVersionByNode[msg.OriginNode]; got != msg.StateVersion {
+			t.Fatalf("last seen non aggiornato sulla versione attesa: got=%+v want=%+v", got, msg.StateVersion)
+		}
+	})
+
+	// older_version verifica lo scarto di un messaggio più vecchio del locale ma non stale
+	// rispetto all'ultima versione vista per il mittente.
+	t.Run("older_version", func(t *testing.T) {
+		local := fixtureState("node-1", 70, 9, base)
+		local.LastSeenVersionByNode = map[shared.NodeID]shared.StateVersionStamp{
+			"node-2": {Counter: 3},
+		}
+
+		msg := fixtureMessage("msg-older-version", "node-2", 10, 7, base.Add(6*time.Minute))
+
+		res := applyRemote(local, msg)
+
+		if res.Status != MergeSkipped || res.Reason != "older_version" {
+			t.Fatalf("older version non gestita: status=%s reason=%s", res.Status, res.Reason)
+		}
+		if res.State.Value != local.Value {
+			t.Fatalf("valore locale alterato da versione vecchia: got=%v want=%v", res.State.Value, local.Value)
+		}
+		if _, seen := res.State.SeenMessageIDs[msg.MessageID]; !seen {
+			t.Fatalf("message id non tracciato per older version")
+		}
+		if got := res.State.LastSeenVersionByNode[msg.OriginNode]; got != msg.StateVersion {
+			t.Fatalf("last seen inatteso per older version: got=%+v want=%+v", got, msg.StateVersion)
+		}
+	})
+
 	t.Run("conflitto versione stato", func(t *testing.T) {
 		local := fixtureState("node-1", 11, 8, base.Add(10*time.Minute))
 		msg := fixtureMessage("msg-conflict", "node-2", 99, 8, base.Add(11*time.Minute))

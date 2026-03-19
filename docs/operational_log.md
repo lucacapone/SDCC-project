@@ -296,3 +296,11 @@
 - **Descrizione task**: Estensione dei test di configurazione per congelare la semantica degli override environment malformati e chiarimento documentale del comportamento reale di `Load`.
 - **File modificati**: `internal/config/config_test.go`, `README.md`, `docs/configuration.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato che il comportamento reale di `overrideFromEnv` ignora gli override numerici/CSV malformati invece di far fallire il caricamento; ho quindi aggiunto subtest dedicati per `NODE_PORT`, `FANOUT`, `ENABLED_AGGREGATIONS` e `BOOTSTRAP_PEERS` con base/file validi, e ho reso esplicita la stessa semantica nella documentazione utente e canonica di configurazione.
+## 2026-03-19 14:53:20 UTC
+- **Descrizione task**: Estensione di internal/gossip/state_test.go con copertura esplicita dei rami applyRemote per mismatch aggregazione, stessa versione/payload e versione remota più vecchia non stale.
+- **File modificati**: \, \.
+- **Reasoning summary**: Ho aggiunto tre subtest mirati in \ per congelare i rami \, \ e \, verificando esito merge, reason, invarianza di \ e semantica di aggiornamento di \ e \ coerente con l'implementazione di \.
+## 2026-03-19 14:53:45 UTC
+- **Descrizione task**: Correzione integrativa del log operativo precedente per registrare in forma completa l'estensione dei test di merge gossip.
+- **File modificati**: `internal/gossip/state_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho aggiunto tre subtest mirati in `TestMergeRules` per congelare i rami `aggregation_type_mismatch`, `same_version_same_payload` e `older_version`, verificando esito merge, reason, invarianza di `State.Value` e semantica di aggiornamento di `SeenMessageIDs` e `LastSeenVersionByNode` coerente con l'implementazione di `applyRemote`.
