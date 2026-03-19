@@ -7,6 +7,11 @@ type Algorithm struct{}
 func (Algorithm) Type() string { return "min" }
 
 // Merge mantiene il minimo tra valore locale e remoto.
+//
+// Supporta input finiti e ±Inf. NaN non è un input semantico supportato: il
+// comportamento resta quello dei confronti float64 di Go, quindi un NaN remoto
+// non sostituisce un valore locale ordinato, mentre un NaN locale viene
+// preservato.
 func (Algorithm) Merge(local, remote float64) float64 {
 	if remote < local {
 		return remote
