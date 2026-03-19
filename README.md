@@ -12,6 +12,7 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Configurazione esterna](#configurazione-esterna)
 - [Avvio locale con Docker Compose](#avvio-locale-con-docker-compose)
 - [Esecuzione test](#esecuzione-test)
+- [Test di integrazione M09](#test-di-integrazione-m09)
 - [Script/comandi standard](#scriptcomandi-standard)
 - [Criteri di successo misurabili](#criteri-di-successo-misurabili)
 - [Demo rapida](#demo-rapida)
@@ -53,6 +54,7 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M04**: completata lato repository per `sum` (merge idempotente con contributi/versioni per nodo, gestione duplicati/out-of-order, saturazione overflow e test di convergenza dedicati).
 - **M05**: completata lato repository/documentazione per estensione e consolidamento `average`/`min`/`max`, regressione multi-aggregazione e verifica coerenza architetturale.
 - **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
+- **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
 
 Comandi di verifica milestone:
 - M03 → `go test ./internal/... -run TestTransportContract`
@@ -185,6 +187,18 @@ Per passare configurazioni personalizzate basta cambiare i file montati. Il Comp
 
 Dettagli operativi canonici di build/deploy locale multi-nodo:
 - `docs/deployment.md`
+
+## Test di integrazione M09
+Documento canonico dei test di integrazione e dei comandi operativi:
+- `docs/testing.md`
+
+Test canonico disponibile:
+- `tests/integration/cluster_convergence_test.go` (`TestClusterConvergence`)
+
+Comando ufficiale M09:
+```bash
+go test ./tests/integration -run TestClusterConvergence -count=1
+```
 
 ## Esecuzione test
 - Test transport (UDP + contratto): `go test ./internal/transport -count=1`
