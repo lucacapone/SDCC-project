@@ -281,6 +281,81 @@ node_port: 7100
 		}
 	})
 
+	t.Run("override env malformati vengono ignorati esplicitamente", func(t *testing.T) {
+		path := writeTempConfig(t, "env-invalid-override.yaml", `node_id: file-node
+bind_address: 127.0.0.1
+advertise_addr: file-node:7100
+node_port: 7100
+bootstrap_peers: [node-1:7001,node-2:7002]
+seed_peers: [node-3:7003]
+gossip_interval_ms: 1500
+fanout: 4
+membership_timeout_ms: 6500
+enabled_aggregations: [sum,average,max]
+aggregation: sum
+log_level: debug
+`)
+
+		tests := []struct {
+			name      string
+			envName   string
+			envValue  string
+			assertCfg func(*testing.T, Config)
+		}{
+			{
+				name:     "NODE_PORT abc mantiene il valore del file valido",
+				envName:  "NODE_PORT",
+				envValue: "abc",
+				assertCfg: func(t *testing.T, cfg Config) {
+					t.Helper()
+					if cfg.NodePort != 7100 {
+						t.Fatalf("NODE_PORT malformato non ignorato: %+v", cfg)
+					}
+				},
+			},
+			{
+				name:     "FANOUT abc mantiene il valore del file valido",
+				envName:  "FANOUT",
+				envValue: "abc",
+				assertCfg: func(t *testing.T, cfg Config) {
+					t.Helper()
+					if cfg.Fanout != 4 {
+						t.Fatalf("FANOUT malformato non ignorato: %+v", cfg)
+					}
+				},
+			},
+			{
+				name:     "ENABLED_AGGREGATIONS con item vuoto mantiene la lista del file valida",
+				envName:  "ENABLED_AGGREGATIONS",
+				envValue: "sum,,max",
+				assertCfg: func(t *testing.T, cfg Config) {
+					t.Helper()
+					assertSliceEqual(t, "enabled_aggregations", cfg.EnabledAggregations, []string{"sum", "average", "max"})
+				},
+			},
+			{
+				name:     "BOOTSTRAP_PEERS con item vuoto mantiene la lista del file valida",
+				envName:  "BOOTSTRAP_PEERS",
+				envValue: "node-1:7001,",
+				assertCfg: func(t *testing.T, cfg Config) {
+					t.Helper()
+					assertSliceEqual(t, "bootstrap_peers", cfg.BootstrapPeers, []string{"node-1:7001", "node-2:7002"})
+				},
+			},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv(tc.envName, tc.envValue)
+				cfg, err := Load(path)
+				if err != nil {
+					t.Fatalf("load config con override env malformato: %v", err)
+				}
+				tc.assertCfg(t, cfg)
+			})
+		}
+	})
+
 	t.Run("default applicati quando il campo non è presente", func(t *testing.T) {
 		path := writeTempConfig(t, "missing-fields.json", `{"node_id":"json-partial"}`)
 
