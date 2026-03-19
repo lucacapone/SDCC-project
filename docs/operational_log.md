@@ -246,3 +246,13 @@
 - **Task**: Creazione del documento milestone M06 sulla configurazione esterna e validazione robusta.
 - **File modificati**: `docs/task/M06.md`, `docs/operational_log.md`.
 - **Sintesi**: Analizzato lo stato reale di `internal/config/config.go`, `internal/config/config_test.go`, `cmd/node/main.go`, `docs/configuration.md` e `README.md`; aggiunto il documento `docs/task/M06.md` per consolidare strategia di configurazione, validazioni, test eseguiti e limiti residui senza alterare il comportamento runtime.
+
+## 2026-03-19 08:50:56 UTC
+- **Descrizione task**: Promozione del file Compose di root a sorgente canonica del cluster locale multi-nodo, con allineamento della documentazione e dismissione del duplicato operativo in `deploy/`.
+- **File modificati**: `docker-compose.yml`, `deploy/docker-compose.yml`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito il vecchio compose placeholder alla root con una definizione reale a tre nodi basata sul precedente file in `deploy/`, usando la rete stabile `sdcc-net`, mount espliciti delle configurazioni `configs/node(1, 2, 3).yaml` e peer Compose risolvibili (`node1`, `node2`, `node3`). Per evitare doppia sorgente di verità, il file in `deploy/` è stato ridotto a promemoria documentale che rimanda al file canonico di root; in parallelo ho aggiornato il README ai comandi standard `docker compose ...` senza flag `-f`.
+
+## 2026-03-19 08:51:28 UTC
+- **Descrizione task**: Nota integrativa sulla canonizzazione del Compose di root per registrare l'allineamento dei file di configurazione montati dai servizi.
+- **File modificati**: `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho aggiornato i `seed_peers` dei tre file `configs/node*.yaml` ai nomi DNS effettivamente risolvibili nella rete Compose (`node1`, `node2`, `node3`), così che i peer dichiarati nei file montati dai container coincidano con gli hostname dei servizi definiti nel `docker-compose.yml` canonico.

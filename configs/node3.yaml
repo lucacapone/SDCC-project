@@ -2,8 +2,8 @@ node_id: node-3
 bind_address: 0.0.0.0
 node_port: 7003
 seed_peers:
-  - node-1:7001
-  - node-2:7002
+  - node1:7001
+  - node2:7002
 gossip_interval_ms: 1000
 fanout: 2
 membership_timeout_ms: 5000
