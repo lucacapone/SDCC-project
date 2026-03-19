@@ -12,7 +12,8 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Configurazione esterna](#configurazione-esterna)
 - [Avvio locale con Docker Compose](#avvio-locale-con-docker-compose)
 - [Esecuzione test](#esecuzione-test)
-- [Test di integrazione M09](#test-di-integrazione-m09)
+- [Test interni di convergenza in-memory](#test-interni-di-convergenza-in-memory)
+- [Test di integrazione end-to-end M09](#test-di-integrazione-end-to-end-m09)
 - [Script/comandi standard](#scriptcomandi-standard)
 - [Criteri di successo misurabili](#criteri-di-successo-misurabili)
 - [Demo rapida](#demo-rapida)
@@ -188,16 +189,34 @@ Per passare configurazioni personalizzate basta cambiare i file montati. Il Comp
 Dettagli operativi canonici di build/deploy locale multi-nodo:
 - `docs/deployment.md`
 
-## Test di integrazione M09
+## Test interni di convergenza in-memory
+Le suite storiche nel package `internal/gossip` restano utili come test interni di convergenza e resilienza in-memory, ma **non** rappresentano la suite canonica M09. Sono verifiche interne al repository rivolte alla logica gossip, senza Docker Compose e senza un cluster locale multi-nodo eseguito come scenario end-to-end.
+
+Comandi interni disponibili:
+```bash
+go test ./internal/gossip -run TestIntegrationGossipConvergence -count=1
+go test ./internal/gossip -run TestCrash -count=1
+```
+
+Target `Makefile` dedicati:
+```bash
+make test-integration-internal
+make test-crash
+```
+
+## Test di integrazione end-to-end M09
 Documento canonico dei test di integrazione e dei comandi operativi:
 - `docs/testing.md`
 
 Test canonico disponibile:
 - `tests/integration/cluster_convergence_test.go` (`TestClusterConvergence`)
 
+Il target `make test-integration` punta ufficialmente a questa suite M09. Nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
+
 Comando ufficiale M09:
 ```bash
 go test ./tests/integration -run TestClusterConvergence -count=1
+make test-integration
 ```
 
 ## Esecuzione test
@@ -252,8 +271,11 @@ make test
 # Solo unit test (config + aggregation + membership)
 make test-unit
 
-# Integrazione convergenza gossip in-memory
+# Test di integrazione/end-to-end M09
 make test-integration
+
+# Test interni di convergenza gossip in-memory
+make test-integration-internal
 
 # Robustezza crash/rejoin in-memory
 make test-crash
@@ -265,7 +287,7 @@ make docker-test
 ## Criteri di successo misurabili
 I test introdotti in repository usano i seguenti criteri quantitativi:
 
-1. **Convergenza gossip (3 nodi, transport in-memory)**:
+1. **Convergenza gossip (3 nodi, harness in-memory della suite di integrazione end-to-end M09)**:
    - criterio esplicito di pass/fail: differenza massima tra stati `<= 0.05`
    - riferimento informativo nel report: media iniziale `30.0` per input `10`, `30`, `50`
    - timeout massimo `2s`.
