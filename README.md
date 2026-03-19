@@ -139,10 +139,12 @@ Flusso bootstrap all'avvio:
 - il bootstrap non è autoritativo: dopo discovery iniziale la membership evolve solo via gossip peer-to-peer.
 
 ## Avvio locale con Docker Compose
-Compose multi-nodo:
-- `docker-compose.yml` (file Compose canonico alla root)
+Per M07 il file Compose canonico del cluster locale è:
+- `docker-compose.yml` alla root della repository.
 
-Comandi:
+Il file `deploy/docker-compose.yml` resta solo come **variante secondaria/storica di promemoria** e non va usato come sorgente operativa principale, così da evitare ambiguità sul file Compose da eseguire.
+
+Comandi reali del flusso standard:
 ```bash
 docker compose up -d --build
 docker compose ps
@@ -154,6 +156,10 @@ Ogni servizio usa la stessa immagine applicativa locale costruita dal `Dockerfil
 - `configs/node1.yaml`
 - `configs/node2.yaml`
 - `configs/node3.yaml`
+
+I nodi si scoprono tramite la rete Compose `sdcc-net` e i nomi servizio `node1`, `node2`, `node3`: questi hostname vengono risolti via DNS interno di Compose e sono gli stessi usati nei `seed_peers` del runtime.
+
+I file `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` sono coerenti con il runtime effettivo perché dichiarano le stesse porte (`7001`, `7002`, `7003`) e gli stessi peer (`node1`, `node2`, `node3`) attesi dai servizi Compose e dagli override environment definiti nel file canonico.
 
 Per passare configurazioni personalizzate basta cambiare i file montati o impostare env nel servizio desiderato. La build dell'immagine avviene localmente tramite `docker compose up -d --build`, senza più usare `golang:1.22` con `go run` dentro i container.
 
@@ -229,15 +235,20 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
 
 ## Demo rapida
 ```bash
-# 1) Build immagine applicativa e avvio cluster
+# 1) Build immagine applicativa e avvio cluster dal file canonico `docker-compose.yml`
 docker compose up -d --build
 
-# 2) Verifica servizi
+# 2) Verifica servizi e stato dei container
 docker compose ps
 
-# 3) Arresto
+# 3) Segui i log del nodo 1 per osservare bootstrap, gossip e discovery via service name Compose
+docker compose logs -f node1
+
+# 4) Arresto e rimozione del cluster locale
 docker compose down
 ```
+
+Durante la demo rapida i nodi si scoprono usando direttamente la rete Compose e i nomi servizio `node1`, `node2`, `node3`; non è necessario sostituire manualmente gli hostname nei file `configs/node*.yaml` perché sono già allineati con porte e peer del runtime.
 
 ## Nota deploy EC2 essenziale
 Checklist minima:
