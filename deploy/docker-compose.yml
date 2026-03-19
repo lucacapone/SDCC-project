@@ -1,5 +1,6 @@
-# File mantenuto solo come promemoria storico.
-# La sorgente canonica del progetto è `../docker-compose.yml`.
+# File mantenuto come promemoria storico del deployment locale.
+# La sorgente canonica del cluster resta `../docker-compose.yml`, che ora
+# costruisce l'immagine applicativa locale tramite `Dockerfile` multi-stage.
 # Usare i comandi standard dalla root della repository, senza `-f`:
 #   docker compose up -d --build
 #   docker compose ps
