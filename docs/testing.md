@@ -91,6 +91,38 @@ Dove:
 - `expected_delta` è la differenza assoluta dal valore atteso comune (`30.0` nello scenario corrente);
 - `common_band` è la banda comune del cluster al momento del report.
 
+## Helper script per cluster locale Docker Compose
+
+Per la validazione operativa/manuale del cluster locale multi-nodo con Docker Compose, il repository ora include helper minimi in `scripts/` progettati per essere **idempotenti**, robusti rispetto a container residui e leggibili in caso di errore:
+
+- `scripts/cluster_up.sh`: cleanup preventivo del progetto Compose canonico e avvio del cluster con build locale;
+- `scripts/cluster_wait_ready.sh`: attesa dello stato operativo verificando sia `running` dei container sia la presenza nei log di `bootstrap membership completato` e `transport inizializzato`;
+- `scripts/cluster_collect_results.sh`: raccolta di `docker compose ps`, log aggregati e ultimo report di valori finali disponibile nei log;
+- `scripts/cluster_down.sh`: stop pulito del cluster, raccolta degli artefatti finali e `docker compose down --remove-orphans`.
+
+Gli script usano naming prevedibile e stabile:
+
+- file Compose canonico: `docker-compose.yml` alla root;
+- project name Compose: `sdcc-bootstrap`;
+- directory artefatti: `artifacts/cluster/`;
+- symlink aggiornati automaticamente: `latest-compose-ps.txt`, `latest-cluster-logs.log`, `latest-final-values.txt`.
+
+Flusso operativo consigliato:
+
+```bash
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
+scripts/cluster_collect_results.sh
+scripts/cluster_down.sh
+```
+
+Note operative importanti:
+
+- `cluster_up.sh` esegue sempre un cleanup preventivo, quindi può essere rilanciato in ambiente sporco senza richiedere interventi manuali;
+- i **valori finali** per nodo vengono estratti dai log applicativi prodotti in shutdown con il messaggio `shutdown nodo completato`;
+- per questo motivo il file `artifacts/cluster/latest-final-values.txt` contiene il riepilogo finale completo soprattutto dopo `scripts/cluster_down.sh`;
+- se il cluster non è ancora stato fermato, `cluster_collect_results.sh` salva comunque i log correnti e segnala esplicitamente l'assenza del riepilogo finale.
+
 ## Comandi operativi canonici
 
 ### Verifica mirata M09

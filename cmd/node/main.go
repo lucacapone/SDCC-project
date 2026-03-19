@@ -82,5 +82,16 @@ func main() {
 		panic(err)
 	}
 	<-ctx.Done()
+
+	// Registra nei log lo snapshot finale per rendere osservabile il risultato del nodo
+	// durante il teardown orchestrato dagli script Docker Compose.
+	logger.Info("shutdown nodo completato",
+		"node_id", cfg.NodeID,
+		"aggregation", eng.State.AggregationType,
+		"final_value", eng.State.Value,
+		"final_round", eng.State.Round,
+		"last_message_id", eng.State.LastMessageID,
+	)
+
 	_ = eng.Stop()
 }
