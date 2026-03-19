@@ -150,12 +150,15 @@ docker compose logs -f node1
 docker compose down
 ```
 
-Ogni servizio monta una config esterna dedicata:
+Ogni servizio usa la stessa immagine applicativa locale costruita dal `Dockerfile` multi-stage e monta una config esterna dedicata:
 - `configs/node1.yaml`
 - `configs/node2.yaml`
 - `configs/node3.yaml`
 
-Per passare configurazioni personalizzate basta cambiare i file montati o impostare env nel servizio desiderato.
+Per passare configurazioni personalizzate basta cambiare i file montati o impostare env nel servizio desiderato. La build dell'immagine avviene localmente tramite `docker compose up -d --build`, senza più usare `golang:1.22` con `go run` dentro i container.
+
+Dettagli operativi di build/deploy locale:
+- `docs/deployment.md`
 
 ## Esecuzione test
 - Test transport (UDP + contratto): `go test ./internal/transport -count=1`
@@ -226,7 +229,7 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
 
 ## Demo rapida
 ```bash
-# 1) Avvio cluster
+# 1) Build immagine applicativa e avvio cluster
 docker compose up -d --build
 
 # 2) Verifica servizi

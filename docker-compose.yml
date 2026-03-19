@@ -1,11 +1,11 @@
 version: "3.9"
 
 x-node-base: &node-base
-  image: golang:1.22
-  working_dir: /app
-  command: ["go", "run", "./cmd/node", "--config", "/config/config.yaml"]
-  volumes:
-    - ./:/app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: sdcc-node:local
+  command: ["--config", "/config/config.yaml"]
   networks:
     - sdcc-net
   restart: unless-stopped
@@ -24,7 +24,6 @@ services:
       ENABLED_AGGREGATIONS: sum,average
       AGGREGATION: sum
     volumes:
-      - ./:/app
       - ./configs/node1.yaml:/config/config.yaml:ro
 
   node2:
@@ -40,7 +39,6 @@ services:
       ENABLED_AGGREGATIONS: sum,average
       AGGREGATION: sum
     volumes:
-      - ./:/app
       - ./configs/node2.yaml:/config/config.yaml:ro
 
   node3:
@@ -56,7 +54,6 @@ services:
       ENABLED_AGGREGATIONS: sum,average
       AGGREGATION: average
     volumes:
-      - ./:/app
       - ./configs/node3.yaml:/config/config.yaml:ro
 
 networks:

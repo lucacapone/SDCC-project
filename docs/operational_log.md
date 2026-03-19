@@ -256,3 +256,8 @@
 - **Descrizione task**: Nota integrativa sulla canonizzazione del Compose di root per registrare l'allineamento dei file di configurazione montati dai servizi.
 - **File modificati**: `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiornato i `seed_peers` dei tre file `configs/node*.yaml` ai nomi DNS effettivamente risolvibili nella rete Compose (`node1`, `node2`, `node3`), così che i peer dichiarati nei file montati dai container coincidano con gli hostname dei servizi definiti nel `docker-compose.yml` canonico.
+
+## 2026-03-19 09:00:08 UTC
+- **Descrizione task**: Introduzione del `Dockerfile` multi-stage per il nodo SDCC, migrazione del Compose a immagine applicativa locale e aggiornamento della documentazione di deployment.
+- **File modificati**: `Dockerfile`, `docker-compose.yml`, `deploy/docker-compose.yml`, `README.md`, `docs/deployment.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito l'esecuzione `go run` in container `golang:1.22` con una build multi-stage che produce il binario `sdcc-node` e lo esegue in un runtime minimale distroless; in parallelo ho aggiornato il Compose canonico per usare `build:` e mount della sola configurazione, mantenendo l'avvio coerente con `--config /config/config.yaml` e riallineando la documentazione operativa al nuovo flusso di avvio locale.
