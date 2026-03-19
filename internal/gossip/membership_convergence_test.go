@@ -13,8 +13,8 @@ import (
 func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
-	now := time.Now().UTC()
-	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2", Status: membership.Suspect, Incarnation: 7, LastSeen: now})
+	base := time.Date(2026, time.March, 19, 11, 30, 0, 0, time.UTC)
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2", Status: membership.Suspect, Incarnation: 7, LastSeen: base.Add(1 * time.Second)})
 
 	eng := NewEngine("node-1", "average", tr, m, nil, time.Second)
 	eng.round(context.Background())
@@ -34,17 +34,17 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 }
 
 func TestMergeMembershipConvergeConDuplicatiOutOfOrder(t *testing.T) {
-	now := time.Now().UTC()
+	base := time.Date(2026, time.March, 19, 11, 35, 0, 0, time.UTC)
 	msgA := []shared.MembershipEntry{
-		{NodeID: "node-b", Addr: "node-b", Status: string(membership.Suspect), Incarnation: 2, LastSeen: now.Add(1 * time.Second)},
-		{NodeID: "node-c", Addr: "node-c", Status: string(membership.Alive), Incarnation: 1, LastSeen: now.Add(1 * time.Second)},
+		{NodeID: "node-b", Addr: "node-b", Status: string(membership.Suspect), Incarnation: 2, LastSeen: base.Add(1 * time.Second)},
+		{NodeID: "node-c", Addr: "node-c", Status: string(membership.Alive), Incarnation: 1, LastSeen: base.Add(1 * time.Second)},
 	}
 	msgB := []shared.MembershipEntry{
-		{NodeID: "node-b", Addr: "node-b", Status: string(membership.Alive), Incarnation: 3, LastSeen: now.Add(2 * time.Second)},
-		{NodeID: "node-c", Addr: "node-c", Status: string(membership.Dead), Incarnation: 1, LastSeen: now.Add(2 * time.Second)},
+		{NodeID: "node-b", Addr: "node-b", Status: string(membership.Alive), Incarnation: 3, LastSeen: base.Add(2 * time.Second)},
+		{NodeID: "node-c", Addr: "node-c", Status: string(membership.Dead), Incarnation: 1, LastSeen: base.Add(2 * time.Second)},
 	}
 	msgC := []shared.MembershipEntry{
-		{NodeID: "node-c", Addr: "node-c", Status: string(membership.Left), Incarnation: 4, LastSeen: now.Add(3 * time.Second)},
+		{NodeID: "node-c", Addr: "node-c", Status: string(membership.Left), Incarnation: 4, LastSeen: base.Add(3 * time.Second)},
 	}
 
 	set1 := membership.NewSet()

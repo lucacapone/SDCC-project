@@ -123,8 +123,13 @@ func (s *Set) Upsert(update Peer) {
 	s.peers[update.NodeID] = current
 }
 
-// Leave rimuove un peer dalla membership.
+// Leave marca un peer come uscito usando il clock di processo.
 func (s *Set) Leave(nodeID string) {
+	s.LeaveAt(nodeID, time.Now().UTC())
+}
+
+// LeaveAt marca un peer come uscito usando un timestamp esplicito.
+func (s *Set) LeaveAt(nodeID string, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if nodeID == "" {
@@ -132,12 +137,12 @@ func (s *Set) Leave(nodeID string) {
 	}
 	peer, ok := s.peers[nodeID]
 	if !ok {
-		s.peers[nodeID] = Peer{NodeID: nodeID, Addr: nodeID, Status: Left, Incarnation: 1, LastSeen: time.Now().UTC()}
+		s.peers[nodeID] = Peer{NodeID: nodeID, Addr: nodeID, Status: Left, Incarnation: 1, LastSeen: now}
 		return
 	}
 	peer.Status = Left
 	peer.Incarnation++
-	peer.LastSeen = time.Now().UTC()
+	peer.LastSeen = now
 	s.peers[nodeID] = peer
 }
 

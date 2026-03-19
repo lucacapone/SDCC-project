@@ -25,13 +25,13 @@ func (t *inMemoryJoinTransport) Join(_ context.Context, _ string, req JoinReques
 
 func TestBootstrapJoinDiscoveryAppliesInitialView(t *testing.T) {
 	set := NewSet()
-	now := time.Now().UTC()
+	base := time.Date(2026, time.March, 19, 11, 0, 0, 0, time.UTC)
 	join := &inMemoryJoinTransport{response: JoinResponse{
-		Snapshot: []Peer{{NodeID: "node-2", Addr: "node2:7002", Status: Alive, LastSeen: now}},
-		Delta:    []Peer{{NodeID: "node-3", Addr: "node3:7003", Status: Alive, LastSeen: now}},
+		Snapshot: []Peer{{NodeID: "node-2", Addr: "node2:7002", Status: Alive, LastSeen: base.Add(1 * time.Second)}},
+		Delta:    []Peer{{NodeID: "node-3", Addr: "node3:7003", Status: Alive, LastSeen: base.Add(2 * time.Second)}},
 	}}
 
-	res := Bootstrap(context.Background(), set, JoinRequest{NodeID: "node-1", Addr: "node1:7001"}, "bootstrap:9000", []string{"seed-1:7001"}, join, now)
+	res := Bootstrap(context.Background(), set, JoinRequest{NodeID: "node-1", Addr: "node1:7001"}, "bootstrap:9000", []string{"seed-1:7001"}, join, base)
 
 	if !res.UsedJoinEndpoint || res.FallbackUsed {
 		t.Fatalf("bootstrap result inatteso: %+v", res)
@@ -49,10 +49,10 @@ func TestBootstrapJoinDiscoveryAppliesInitialView(t *testing.T) {
 
 func TestBootstrapFallbackToStaticSeedsWhenJoinUnavailable(t *testing.T) {
 	set := NewSet()
-	now := time.Now().UTC()
+	base := time.Date(2026, time.March, 19, 11, 5, 0, 0, time.UTC)
 	join := &inMemoryJoinTransport{err: errors.New("join down")}
 
-	res := Bootstrap(context.Background(), set, JoinRequest{NodeID: "node-1", Addr: "node1:7001"}, "bootstrap:9000", []string{"node1:7001", "node2:7002", "node3:7003"}, join, now)
+	res := Bootstrap(context.Background(), set, JoinRequest{NodeID: "node-1", Addr: "node1:7001"}, "bootstrap:9000", []string{"node1:7001", "node2:7002", "node3:7003"}, join, base)
 
 	if res.UsedJoinEndpoint || !res.FallbackUsed {
 		t.Fatalf("bootstrap result inatteso: %+v", res)
@@ -71,16 +71,16 @@ func TestBootstrapFallbackToStaticSeedsWhenJoinUnavailable(t *testing.T) {
 
 func TestBootstrapJoinDiscoverySkipsSelfByLogicalIDAndEndpoint(t *testing.T) {
 	set := NewSet()
-	now := time.Now().UTC()
+	base := time.Date(2026, time.March, 19, 11, 10, 0, 0, time.UTC)
 	join := &inMemoryJoinTransport{response: JoinResponse{
 		Snapshot: []Peer{
-			{NodeID: "node-1", Addr: "node1:7001", Status: Alive, LastSeen: now},
-			{NodeID: "seed-placeholder", Addr: "node1:7001", Status: Alive, LastSeen: now},
-			{NodeID: "node-2", Addr: "node2:7002", Status: Alive, LastSeen: now},
+			{NodeID: "node-1", Addr: "node1:7001", Status: Alive, LastSeen: base.Add(1 * time.Second)},
+			{NodeID: "seed-placeholder", Addr: "node1:7001", Status: Alive, LastSeen: base.Add(2 * time.Second)},
+			{NodeID: "node-2", Addr: "node2:7002", Status: Alive, LastSeen: base.Add(3 * time.Second)},
 		},
 	}}
 
-	res := Bootstrap(context.Background(), set, JoinRequest{NodeID: "node-1", Addr: "node1:7001"}, "bootstrap:9000", nil, join, now)
+	res := Bootstrap(context.Background(), set, JoinRequest{NodeID: "node-1", Addr: "node1:7001"}, "bootstrap:9000", nil, join, base)
 
 	if !res.UsedJoinEndpoint {
 		t.Fatalf("join endpoint non usato: %+v", res)
@@ -96,10 +96,10 @@ func TestBootstrapJoinDiscoverySkipsSelfByLogicalIDAndEndpoint(t *testing.T) {
 
 func TestUpsertPromotesSeedPlaceholderToLogicalNodeID(t *testing.T) {
 	set := NewSet()
-	now := time.Now().UTC()
+	base := time.Date(2026, time.March, 19, 11, 15, 0, 0, time.UTC)
 
-	set.Join("node2:7002", now)
-	set.Upsert(Peer{NodeID: "node-2", Addr: "node2:7002", Status: Alive, Incarnation: 1, LastSeen: now.Add(time.Second)})
+	set.Join("node2:7002", base)
+	set.Upsert(Peer{NodeID: "node-2", Addr: "node2:7002", Status: Alive, Incarnation: 1, LastSeen: base.Add(1 * time.Second)})
 
 	peers := byNodeID(set.Snapshot())
 	if len(peers) != 1 {
