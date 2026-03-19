@@ -166,6 +166,7 @@ func TestLoadConfigM06(t *testing.T) {
 	t.Run("parsing valido da YAML", func(t *testing.T) {
 		path := writeTempConfig(t, "config.yaml", `node_id: test-node
 bind_address: 0.0.0.0
+advertise_addr: test-node:7010
 node_port: 7010
 join_endpoint: bootstrap:9000
 bootstrap_peers: [node-4:7004,node-5:7005]
@@ -186,6 +187,7 @@ log_level: debug
 		assertConfigCore(t, cfg, Config{
 			NodeID:              "test-node",
 			BindAddress:         "0.0.0.0",
+			AdvertiseAddr:       "test-node:7010",
 			NodePort:            7010,
 			JoinEndpoint:        "bootstrap:9000",
 			GossipIntervalMS:    1200,
@@ -203,6 +205,7 @@ log_level: debug
 		path := writeTempConfig(t, "config.json", `{
   "node_id": "json-node",
   "bind_address": "127.0.0.1",
+  "advertise_addr": "json-node.internal:7020",
   "node_port": 7020,
   "join_endpoint": "bootstrap:9100",
   "bootstrap_peers": ["node-7:7007"],
@@ -223,6 +226,7 @@ log_level: debug
 		assertConfigCore(t, cfg, Config{
 			NodeID:              "json-node",
 			BindAddress:         "127.0.0.1",
+			AdvertiseAddr:       "json-node.internal:7020",
 			NodePort:            7020,
 			JoinEndpoint:        "bootstrap:9100",
 			GossipIntervalMS:    900,
@@ -263,6 +267,7 @@ fanout: 2
 node_port: 7100
 `)
 		t.Setenv("NODE_ID", "env-node")
+		t.Setenv("ADVERTISE_ADDR", "env-node.service:7200")
 		t.Setenv("AGGREGATION", "average")
 		t.Setenv("FANOUT", "5")
 		t.Setenv("NODE_PORT", "7200")
@@ -271,7 +276,7 @@ node_port: 7100
 		if err != nil {
 			t.Fatalf("load config con env override: %v", err)
 		}
-		if cfg.NodeID != "env-node" || cfg.Aggregation != "average" || cfg.Fanout != 5 || cfg.NodePort != 7200 {
+		if cfg.NodeID != "env-node" || cfg.AdvertiseAddr != "env-node.service:7200" || cfg.Aggregation != "average" || cfg.Fanout != 5 || cfg.NodePort != 7200 {
 			t.Fatalf("override env non applicato correttamente: %+v", cfg)
 		}
 	})
@@ -288,7 +293,7 @@ node_port: 7100
 		if cfg.NodeID != "json-partial" {
 			t.Fatalf("node_id inatteso: %+v", cfg)
 		}
-		if cfg.BindAddress != defaults.BindAddress || cfg.NodePort != defaults.NodePort || cfg.GossipIntervalMS != defaults.GossipIntervalMS {
+		if cfg.BindAddress != defaults.BindAddress || cfg.AdvertiseAddr != defaults.AdvertiseAddr || cfg.NodePort != defaults.NodePort || cfg.GossipIntervalMS != defaults.GossipIntervalMS {
 			t.Fatalf("default non mantenuti sui campi assenti: %+v, defaults=%+v", cfg, defaults)
 		}
 	})
@@ -323,6 +328,7 @@ node_port: 7100
 
 func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("NODE_ID", "env-node")
+	t.Setenv("ADVERTISE_ADDR", "env-node.service:7001")
 	t.Setenv("AGGREGATION", "average")
 	t.Setenv("ENABLED_AGGREGATIONS", "sum,average")
 	t.Setenv("JOIN_ENDPOINT", "seed:9010")
@@ -334,6 +340,9 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 	if cfg.NodeID != "env-node" {
 		t.Fatalf("override NODE_ID non applicato: %+v", cfg)
+	}
+	if cfg.AdvertiseAddr != "env-node.service:7001" {
+		t.Fatalf("override ADVERTISE_ADDR non applicato: %+v", cfg)
 	}
 	if cfg.Aggregation != "average" {
 		t.Fatalf("override AGGREGATION non applicato: %+v", cfg)
@@ -440,6 +449,34 @@ func TestValidateRejectsEmptyAndDuplicateListEntries(t *testing.T) {
 	})
 }
 
+func TestAdvertiseEndpointFallsBackToLoopbackWhenBindIsWildcard(t *testing.T) {
+	cfg := Default()
+	cfg.NodePort = 7015
+
+	if got := cfg.AdvertiseEndpoint(); got != "127.0.0.1:7015" {
+		t.Fatalf("advertise endpoint inatteso: got=%s", got)
+	}
+}
+
+func TestAdvertiseEndpointUsesExplicitAdvertiseAddr(t *testing.T) {
+	cfg := Default()
+	cfg.BindAddress = "0.0.0.0"
+	cfg.AdvertiseAddr = "node1:7001"
+
+	if got := cfg.AdvertiseEndpoint(); got != "node1:7001" {
+		t.Fatalf("advertise endpoint esplicito ignorato: got=%s", got)
+	}
+}
+
+func TestValidateRejectsInvalidAdvertiseAddr(t *testing.T) {
+	cfg := Default()
+	cfg.AdvertiseAddr = "node1"
+
+	err := Validate(cfg)
+	assertErrorContains(t, err, "advertise_addr")
+	assertErrorContains(t, err, "atteso formato host:porta valido")
+}
+
 func TestDiscoveryPeersPreferBootstrapPeers(t *testing.T) {
 	cfg := Default()
 	cfg.SeedPeers = []string{"seed-1", "seed-2"}
@@ -456,6 +493,7 @@ func assertConfigCore(t *testing.T, got Config, want Config) {
 	t.Helper()
 	if got.NodeID != want.NodeID ||
 		got.BindAddress != want.BindAddress ||
+		got.AdvertiseAddr != want.AdvertiseAddr ||
 		got.NodePort != want.NodePort ||
 		got.JoinEndpoint != want.JoinEndpoint ||
 		got.GossipIntervalMS != want.GossipIntervalMS ||

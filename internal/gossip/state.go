@@ -48,6 +48,19 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	cmp := compareVersion(remoteVersion, localVersion)
 	samePayload := samePayload(local, msg.State)
 
+	if usesPerNodeMerge(local.AggregationType, msg.State.AggregationType) {
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
+		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
+		local = mergeAggregationState(local, msg.State)
+		local.UpdatedAt = time.Now().UTC()
+		local.Round = maxCounter(local.Round, msg.State.Round) + 1
+		local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
+		local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
+		local.LastMessageID = msg.MessageID
+		local.LastSenderNodeID = msg.OriginNode
+		return MergeResult{State: local, Status: MergeApplied, Reason: "remote_contribution_merged"}
+	}
+
 	switch {
 	case cmp < 0:
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
@@ -79,6 +92,19 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 }
 
 // mergeAggregationState applica la strategia di merge in base al tipo aggregazione.
+func usesPerNodeMerge(localAggregationType, remoteAggregationType string) bool {
+	aggregationType := localAggregationType
+	if aggregationType == "" {
+		aggregationType = remoteAggregationType
+	}
+	switch aggregationType {
+	case "min", "max":
+		return true
+	default:
+		return false
+	}
+}
+
 func mergeAggregationState(local, remote shared.GossipState) shared.GossipState {
 	aggregationType := local.AggregationType
 	if aggregationType == "" {
@@ -208,6 +234,7 @@ func mergeMinState(local, remote shared.GossipState) shared.GossipState {
 	local.EnsureMinMetadata()
 	localInitialized := len(local.AggregationData.Min.Versions) > 0
 	ensureIncomingMinMetadata(&remote)
+	appliedRemote := false
 
 	for nodeID, remoteVersion := range remote.AggregationData.Min.Versions {
 		localVersion, exists := local.AggregationData.Min.Versions[nodeID]
@@ -215,6 +242,7 @@ func mergeMinState(local, remote shared.GossipState) shared.GossipState {
 			continue
 		}
 		local.AggregationData.Min.Versions[nodeID] = remoteVersion
+		appliedRemote = true
 	}
 
 	if remote.NodeID != "" {
@@ -222,13 +250,16 @@ func mergeMinState(local, remote shared.GossipState) shared.GossipState {
 		localContributionVersion := local.AggregationData.Min.Versions[remote.NodeID]
 		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
 			local.AggregationData.Min.Versions[remote.NodeID] = remoteContributionVersion
+			appliedRemote = true
 		}
 	}
 
-	if localInitialized {
-		local.Value = math.Min(local.Value, remote.Value)
-	} else {
+	if !localInitialized {
 		local.Value = remote.Value
+		return local
+	}
+	if appliedRemote {
+		local.Value = math.Min(local.Value, remote.Value)
 	}
 	return local
 }
@@ -254,6 +285,7 @@ func mergeMaxState(local, remote shared.GossipState) shared.GossipState {
 	local.EnsureMaxMetadata()
 	localInitialized := len(local.AggregationData.Max.Versions) > 0
 	ensureIncomingMaxMetadata(&remote)
+	appliedRemote := false
 
 	for nodeID, remoteVersion := range remote.AggregationData.Max.Versions {
 		localVersion, exists := local.AggregationData.Max.Versions[nodeID]
@@ -261,6 +293,7 @@ func mergeMaxState(local, remote shared.GossipState) shared.GossipState {
 			continue
 		}
 		local.AggregationData.Max.Versions[nodeID] = remoteVersion
+		appliedRemote = true
 	}
 
 	if remote.NodeID != "" {
@@ -268,13 +301,16 @@ func mergeMaxState(local, remote shared.GossipState) shared.GossipState {
 		localContributionVersion := local.AggregationData.Max.Versions[remote.NodeID]
 		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
 			local.AggregationData.Max.Versions[remote.NodeID] = remoteContributionVersion
+			appliedRemote = true
 		}
 	}
 
-	if localInitialized {
-		local.Value = math.Max(local.Value, remote.Value)
-	} else {
+	if !localInitialized {
 		local.Value = remote.Value
+		return local
+	}
+	if appliedRemote {
+		local.Value = math.Max(local.Value, remote.Value)
 	}
 	return local
 }

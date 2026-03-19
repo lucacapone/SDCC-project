@@ -14,45 +14,18 @@ services:
   node1:
     <<: *node-base
     container_name: sdcc-node1
-    environment:
-      NODE_ID: node-1
-      NODE_PORT: 7001
-      SEED_PEERS: node2:7002,node3:7003
-      GOSSIP_INTERVAL_MS: 1000
-      FANOUT: 2
-      MEMBERSHIP_TIMEOUT_MS: 5000
-      ENABLED_AGGREGATIONS: sum,average
-      AGGREGATION: sum
     volumes:
       - ./configs/node1.yaml:/config/config.yaml:ro
 
   node2:
     <<: *node-base
     container_name: sdcc-node2
-    environment:
-      NODE_ID: node-2
-      NODE_PORT: 7002
-      SEED_PEERS: node1:7001,node3:7003
-      GOSSIP_INTERVAL_MS: 1000
-      FANOUT: 2
-      MEMBERSHIP_TIMEOUT_MS: 5000
-      ENABLED_AGGREGATIONS: sum,average
-      AGGREGATION: sum
     volumes:
       - ./configs/node2.yaml:/config/config.yaml:ro
 
   node3:
     <<: *node-base
     container_name: sdcc-node3
-    environment:
-      NODE_ID: node-3
-      NODE_PORT: 7003
-      SEED_PEERS: node1:7001,node2:7002
-      GOSSIP_INTERVAL_MS: 1000
-      FANOUT: 2
-      MEMBERSHIP_TIMEOUT_MS: 5000
-      ENABLED_AGGREGATIONS: sum,average
-      AGGREGATION: average
     volumes:
       - ./configs/node3.yaml:/config/config.yaml:ro
 

@@ -43,9 +43,15 @@ Il cluster Compose reale prevede tre servizi:
 
 La configurazione corrente è coerente tra Compose e file YAML:
 
-- `node1` usa `node_port: 7001` e seed `node2:7002`, `node3:7003`;
-- `node2` usa `node_port: 7002` e seed `node1:7001`, `node3:7003`;
-- `node3` usa `node_port: 7003` e seed `node1:7001`, `node2:7002`.
+- `node1` usa `node_port: 7001`, `advertise_addr: node1:7001` e seed `node2:7002`, `node3:7003`;
+- `node2` usa `node_port: 7002`, `advertise_addr: node2:7002` e seed `node1:7001`, `node3:7003`;
+- `node3` usa `node_port: 7003`, `advertise_addr: node3:7003` e seed `node1:7001`, `node2:7002`.
+
+Convenzione operativa adottata per bootstrap e discovery:
+
+- `node_id` = identificatore logico del nodo, usato nel payload gossip e nella membership;
+- `addr` = endpoint reale raggiungibile nel formato `host:port`;
+- nei container Compose il campo `advertise_addr` usa il **service name** come hostname (`node1`, `node2`, `node3`).
 
 Le aggregazioni configurate sono:
 
@@ -117,24 +123,24 @@ All'interno di questa rete, Docker Compose fornisce la risoluzione DNS automatic
 - il servizio `node2` può raggiungere `node1` e `node3` usando gli hostname `node1` e `node3`;
 - il servizio `node3` può raggiungere `node1` e `node2` usando gli hostname `node1` e `node2`.
 
-Per questo motivo i file `configs/node*.yaml` usano peer nel formato:
+Per questo motivo i file `configs/node*.yaml` usano gli stessi hostname Compose sia nei `seed_peers` sia negli `advertise_addr`, sempre nel formato:
 
 - `node1:7001`
 - `node2:7002`
 - `node3:7003`
 
-È importante usare i **service name Compose** nei `seed_peers`, non hostname arbitrari o nomi container esterni alla rete. In questo repository i service name e i peer configurati sono già allineati.
+È importante usare i **service name Compose** nei `seed_peers` e negli `advertise_addr`, non hostname arbitrari o nomi container esterni alla rete. In questo repository i service name e i peer configurati sono già allineati e il bootstrap non confonde più il `node_id` logico (`node-1`, `node-2`, `node-3`) con l'endpoint pubblicizzato.
 
 ## Allineamento tra Compose e configurazione runtime
-Nel deployment corrente esistono due livelli coerenti di configurazione:
+Nel deployment corrente il file Compose canonico monta un solo livello di sorgente di verità per i nodi applicativi:
 
-1. **file YAML montato** (`configs/node*.yaml`);
-2. **variabili ambiente del servizio Compose**.
+1. **file YAML montato** (`configs/node*.yaml`).
 
-Il runtime del progetto supporta override via environment. Per questo motivo bisogna mantenere coerenti i valori duplicati tra YAML e Compose, in particolare:
+Il runtime del progetto supporta comunque override via environment. Se si introducono override custom, bisogna mantenere coerenti in particolare:
 
 - `NODE_ID` ↔ `node_id`;
 - `NODE_PORT` ↔ `node_port`;
+- `ADVERTISE_ADDR` ↔ `advertise_addr`;
 - `SEED_PEERS` ↔ `seed_peers`;
 - `GOSSIP_INTERVAL_MS` ↔ `gossip_interval_ms`;
 - `FANOUT` ↔ `fanout`;
@@ -142,7 +148,7 @@ Il runtime del progetto supporta override via environment. Per questo motivo bis
 - `ENABLED_AGGREGATIONS` ↔ `enabled_aggregations`;
 - `AGGREGATION` ↔ `aggregation`.
 
-In caso di disallineamento, l'override ambiente può prevalere sul contenuto del file montato, generando diagnosi fuorvianti se si osserva solo lo YAML.
+Nel Compose canonico attuale queste chiavi non vengono duplicate via environment, così da evitare ambiguità tra identificativo logico ed endpoint di rete osservati dai peer.
 
 ## Troubleshooting
 

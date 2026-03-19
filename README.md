@@ -109,6 +109,7 @@ Parametri esterni principali:
 - `gossip_interval_ms`
 - `fanout`
 - `node_port`
+- `advertise_addr`
 - `seed_peers`
 - `membership_timeout_ms`
 - `enabled_aggregations`
@@ -122,6 +123,7 @@ Override via variabili ambiente (precedenza sull'YAML):
 ```bash
 NODE_ID=node-custom \
 NODE_PORT=7100 \
+ADVERTISE_ADDR=node-local-1:7100 \
 JOIN_ENDPOINT=bootstrap:9000 \
 BOOTSTRAP_PEERS=node-1:7001,node-2:7002 \
 SEED_PEERS=node-1:7001,node-2:7002 \
@@ -134,9 +136,16 @@ go run ./cmd/node --config configs/example.yaml
 ```
 
 Flusso bootstrap all'avvio:
+- il nodo invia al bootstrap una `JoinRequest` con `node_id` logico e `addr` reale (`host:port`) ricavato da `advertise_addr` oppure, in fallback locale, da `bind_address:node_port`;
 - il nodo prova `join_endpoint` per ottenere snapshot/delta membership iniziale;
-- se il join non è disponibile, usa `bootstrap_peers` (o `seed_peers` come fallback compatibile) per seed discovery locale;
+- se il join non è disponibile, usa `bootstrap_peers` (o `seed_peers` come fallback compatibile) come elenco di endpoint reali `host:port`;
+- eventuali seed placeholder creati dal fallback vengono riallineati al vero `node_id` non appena il peer remoto propaga la membership completa;
 - il bootstrap non è autoritativo: dopo discovery iniziale la membership evolve solo via gossip peer-to-peer.
+
+Convenzione unica adottata:
+- `node_id` = identificatore logico stabile del nodo (`node-1`, `node-2`, ...);
+- `addr` = endpoint di rete realmente raggiungibile nel formato `host:port`;
+- nei deployment Docker Compose il `host` dell'endpoint coincide con il **service name** (`node1`, `node2`, `node3`), che Docker risolve via DNS interno.
 
 ## Avvio locale con Docker Compose
 Per M07 il file Compose canonico del cluster locale è:
@@ -157,11 +166,14 @@ Ogni servizio usa la stessa immagine applicativa locale costruita dal `Dockerfil
 - `configs/node2.yaml`
 - `configs/node3.yaml`
 
-I nodi si scoprono tramite la rete Compose `sdcc-net` e i nomi servizio `node1`, `node2`, `node3`: questi hostname vengono risolti via DNS interno di Compose e sono gli stessi usati nei `seed_peers` del runtime.
+I nodi si scoprono tramite la rete Compose `sdcc-net` e i nomi servizio `node1`, `node2`, `node3`: questi hostname vengono risolti via DNS interno di Compose e sono gli stessi usati negli `advertise_addr` e nei `seed_peers` del runtime.
 
-I file `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` sono coerenti con il runtime effettivo perché dichiarano le stesse porte (`7001`, `7002`, `7003`) e gli stessi peer (`node1`, `node2`, `node3`) attesi dai servizi Compose e dagli override environment definiti nel file canonico.
+I file `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` sono coerenti con il runtime effettivo perché dichiarano:
+- `node_id` logici distinti (`node-1`, `node-2`, `node-3`);
+- `advertise_addr` raggiungibili sulla rete Compose (`node1:7001`, `node2:7002`, `node3:7003`);
+- peer seed espressi come endpoint reali `host:port` e non come identificativi logici.
 
-Per passare configurazioni personalizzate basta cambiare i file montati o impostare env nel servizio desiderato. La build dell'immagine avviene localmente tramite `docker compose up -d --build`, senza più usare `golang:1.22` con `go run` dentro i container.
+Per passare configurazioni personalizzate basta cambiare i file montati. Il Compose canonico non duplica più `NODE_ID`, `NODE_PORT` o `SEED_PEERS` via environment, così da mantenere nei file YAML la sorgente di verità per identità logica ed endpoint pubblicizzati. La build dell'immagine avviene localmente tramite `docker compose up -d --build`, senza più usare `golang:1.22` con `go run` dentro i container.
 
 Dettagli operativi canonici di build/deploy locale multi-nodo:
 - `docs/deployment.md`
@@ -248,7 +260,7 @@ docker compose logs -f node1
 docker compose down
 ```
 
-Durante la demo rapida i nodi si scoprono usando direttamente la rete Compose e i nomi servizio `node1`, `node2`, `node3`; non è necessario sostituire manualmente gli hostname nei file `configs/node*.yaml` perché sono già allineati con porte e peer del runtime.
+Durante la demo rapida i nodi si scoprono usando direttamente la rete Compose e i nomi servizio `node1`, `node2`, `node3`; questi service name compaiono negli `advertise_addr` e nei peer seed come endpoint reali `host:port`, mentre i `node_id` restano identificativi logici separati.
 
 ## Nota deploy EC2 essenziale
 Checklist minima:

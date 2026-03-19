@@ -35,15 +35,15 @@ Regole timeout/retry/lifecycle effettivamente implementate:
 ## Modello membership locale
 Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da record `Peer` con:
 
-- `node_id`: identificativo logico del peer.
-- `addr`: endpoint di rete noto localmente.
+- `node_id`: identificativo logico del peer, stabile e distinto dall'indirizzo di rete.
+- `addr`: endpoint di rete noto localmente nel formato `host:port`.
 - `status`: stato corrente (`alive`, `suspect`, `dead`, `leave`).
 - `incarnation`: versione monotona del peer usata per ordinare aggiornamenti concorrenti.
 - `last_seen`: ultimo timestamp utile a timeout e osservabilità.
 
 Transizioni principali implementate:
 
-1. `Join`/`Upsert` inseriscono o aggiornano un peer in stato `alive`.
+1. `Join`/`Upsert` inseriscono o aggiornano un peer in stato `alive`; nel bootstrap seed-only un placeholder iniziale può usare temporaneamente `host:port` come chiave finché il peer remoto non propaga il vero `node_id`.
 2. `ApplyTimeoutTransitions` degrada `alive -> suspect -> dead` in base a timeout configurabili.
 3. `Leave` pubblica tombstone `leave` per preservare convergenza e prevenire resurrect implicite.
 4. aggiornamenti con `incarnation` più alta riattivano il peer e sovrascrivono stati precedenti.

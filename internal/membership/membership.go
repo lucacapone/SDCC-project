@@ -60,7 +60,11 @@ func NewSetWithConfig(cfg Config) *Set {
 	return &Set{cfg: cfg, peers: make(map[string]Peer)}
 }
 
-// Join aggiunge o aggiorna un peer nella membership.
+// Join aggiunge un seed peer noto solo tramite endpoint di rete.
+//
+// Nel bootstrap da configurazione il runtime può conoscere inizialmente solo `host:port`;
+// il vero `node_id` logico verrà riallineato non appena il peer remoto propaga la
+// propria membership completa via join endpoint o gossip.
 func (s *Set) Join(address string, now time.Time) {
 	s.Upsert(Peer{NodeID: address, Addr: address, Status: Alive, LastSeen: now})
 }
@@ -80,13 +84,24 @@ func (s *Set) Upsert(update Peer) {
 		update.Status = Alive
 	}
 
-	current, ok := s.peers[update.NodeID]
+	resolvedNodeID := update.NodeID
+	current, ok := s.peers[resolvedNodeID]
+	if !ok && update.Addr != "" {
+		if aliasNodeID := s.findNodeIDByAddrLocked(update.Addr); aliasNodeID != "" {
+			resolvedNodeID = aliasNodeID
+			current = s.peers[aliasNodeID]
+			ok = true
+		}
+	}
 	if !ok {
 		s.peers[update.NodeID] = update
 		return
 	}
 
 	if update.Incarnation > current.Incarnation {
+		if resolvedNodeID != update.NodeID {
+			delete(s.peers, resolvedNodeID)
+		}
 		s.peers[update.NodeID] = update
 		return
 	}
@@ -94,6 +109,7 @@ func (s *Set) Upsert(update Peer) {
 		return
 	}
 
+	current.NodeID = update.NodeID
 	if update.Addr != "" {
 		current.Addr = update.Addr
 	}
@@ -101,6 +117,9 @@ func (s *Set) Upsert(update Peer) {
 		current.LastSeen = update.LastSeen
 	}
 	current.Status = maxStatus(current.Status, update.Status)
+	if resolvedNodeID != update.NodeID {
+		delete(s.peers, resolvedNodeID)
+	}
 	s.peers[update.NodeID] = current
 }
 
@@ -164,6 +183,16 @@ func (s *Set) ApplyTimeoutTransitions(now time.Time) []Peer {
 		}
 	}
 	return updated
+}
+
+// findNodeIDByAddrLocked risolve l'eventuale placeholder creato dal bootstrap seed-only.
+func (s *Set) findNodeIDByAddrLocked(addr string) string {
+	for nodeID, peer := range s.peers {
+		if peer.Addr == addr {
+			return nodeID
+		}
+	}
+	return ""
 }
 
 func statusForElapsed(elapsed time.Duration, cfg Config) Status {
