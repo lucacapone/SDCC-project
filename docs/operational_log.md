@@ -284,3 +284,7 @@
 - **Descrizione task**: Correzione emersa in validazione sulla semantica di merge `min`/`max`, per preservare l'applicazione degli update lenti per-contributo senza alterare le regole di conflitto globali di `sum`/`average`.
 - **File modificati**: `internal/gossip/state.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Durante l'esecuzione della suite completa ho rilevato che i casi `nodo_lento` per `min`/`max` non venivano applicati correttamente a causa del filtro globale sulle versioni. Ho quindi limitato il merge per-contributo speciale ai soli casi `min`/`max`, mantenendo invariata la semantica storica dei conflitti per `sum` e `average` e ripristinando il passaggio dell'intera suite `go test ./...`.
+## 2026-03-19 10:45:00 UTC
+- **Descrizione task**: Creazione del documento milestone `docs/task/M08.md` e aggiornamento del `README.md` per dichiarare esplicitamente lo stato post-M08 della copertura test e il comando unico di verifica richiesto.
+- **File modificati**: `docs/task/M08.md`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho analizzato README, architettura, configurazione, log operativo e milestone M05-M07 per mantenere il formato documentale esistente; quindi ho consolidato in M08 lo stato iniziale della copertura test per `merge`, `membership`, `config` e `aggregation`, i gap documentali rilevati, le attività di verifica eseguite e l'esito finale rispetto ai done criteria, aggiungendo nel README il comando repository-wide `go test ./... -run Test -count=1` come verifica post-milestone.

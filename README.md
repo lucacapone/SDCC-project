@@ -52,11 +52,13 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M03**: completata lato documentazione del transport astratto/concreto, confini gossip↔adapter e contratto verificato da suite dedicata.
 - **M04**: completata lato repository per `sum` (merge idempotente con contributi/versioni per nodo, gestione duplicati/out-of-order, saturazione overflow e test di convergenza dedicati).
 - **M05**: completata lato repository/documentazione per estensione e consolidamento `average`/`min`/`max`, regressione multi-aggregazione e verifica coerenza architetturale.
+- **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
 
 Comandi di verifica milestone:
 - M03 → `go test ./internal/... -run TestTransportContract`
 - M04 → `go test ./internal/aggregation/sum -run TestSumConvergence`
 - M05 → test merge `average`/`min`/`max` + regressione multi-aggregazione (vedi sezione test M05).
+- M08 → `go test ./... -run Test -count=1`
 
 Documento task:
 - `docs/task/M01.md`
@@ -64,6 +66,9 @@ Documento task:
 - `docs/task/M03.md`
 - `docs/task/M04.md`
 - `docs/task/M05.md`
+- `docs/task/M06.md`
+- `docs/task/M07.md`
+- `docs/task/M08.md`
 
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
@@ -208,6 +213,17 @@ go test ./internal/gossip -run 'TestMergeMinMonotonoGestisceStatoVuotoELegacy|Te
 # regressione multi-aggregazione: sum invariata con nuove aggregazioni abilitate
 go test ./internal/gossip -run TestSumRegressionConNuoveAggregazioni
 ```
+
+Comando di verifica post-M08:
+```bash
+go test ./... -run Test -count=1
+```
+
+Stato post-M08 dichiarato esplicitamente:
+- area `merge`: suite dedicata nel package `internal/gossip` con verifica delle regole di merge, casi out-of-order, legacy, overflow e regressioni multi-aggregazione;
+- area `membership`: suite dedicata nei package `internal/membership` e `internal/gossip` per join/leave, timeout, incarnation, bootstrap e convergenza digest membership;
+- area `config`: suite dedicata in `internal/config` per load/validate, precedence env/file e validazioni bloccanti;
+- area `aggregation`: suite root + test di convergenza per `sum`, `average`, `min`, `max`, con verifica finale repository-wide demandata al comando sopra riportato.
 
 ## Script/comandi standard
 È disponibile `Makefile` con target per esecuzioni riproducibili locali e Docker:
