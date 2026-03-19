@@ -18,6 +18,14 @@ import (
 
 const (
 	clusterBootstrapStrategy = "harness in-memory promosso"
+	m09NodeCount             = 3
+	m09Aggregation           = "average"
+	m09GossipInterval        = 10 * time.Millisecond
+	m09PollInterval          = 20 * time.Millisecond
+	m09BootstrapAllowance    = 5 * m09GossipInterval
+	m09LocalCIBuffer         = 15 * m09PollInterval
+	m09Timeout               = m09BootstrapAllowance + m09LocalCIBuffer
+	m09ConvergenceBand       = 0.05
 )
 
 // integrationNetwork modella una rete in-memory deterministicamente controllabile per il cluster di test.
@@ -132,30 +140,33 @@ type clusterObservation struct {
 
 // TestClusterConvergence verifica che un cluster a tre nodi converga entro la banda e il timeout ufficiali M09.
 func TestClusterConvergence(t *testing.T) {
-	const (
-		roundEvery          = 10 * time.Millisecond
-		pollEvery           = 20 * time.Millisecond
-		convergenceDeadline = 2 * time.Second
-		maxDelta            = 0.05
-	)
-
 	initialValues := []float64{10, 30, 50}
 	expectedValue := averageOf(initialValues)
 
 	t.Logf("bootstrap cluster automatico con strategia %q", clusterBootstrapStrategy)
+	t.Logf("parametri M09: nodi=%d aggregazione=%s gossip_interval=%s poll_interval=%s bootstrap_allowance=%s buffer_locale_ci=%s timeout=%s banda=%0.6f",
+		m09NodeCount,
+		m09Aggregation,
+		m09GossipInterval,
+		m09PollInterval,
+		m09BootstrapAllowance,
+		m09LocalCIBuffer,
+		m09Timeout,
+		m09ConvergenceBand,
+	)
 
-	nodes, cancel := bootstrapAverageCluster(t, initialValues, roundEvery)
+	nodes, cancel := bootstrapAverageCluster(t, initialValues, m09GossipInterval)
 	defer cancel()
 	defer stopCluster(t, nodes)
 
-	observation, converged := waitForClusterConvergence(nodes, convergenceDeadline, pollEvery, expectedValue, maxDelta)
+	observation, converged := waitForClusterConvergence(nodes, m09Timeout, m09PollInterval, expectedValue, m09ConvergenceBand)
 	t.Logf("report finale convergenza:\n%s", formatClusterObservation(observation))
 
 	if !converged {
 		t.Fatalf(
 			"cluster non convergente entro %s: banda<=%0.6f report=%s",
-			convergenceDeadline,
-			maxDelta,
+			m09Timeout,
+			m09ConvergenceBand,
 			formatClusterObservation(observation),
 		)
 	}
@@ -177,7 +188,7 @@ func bootstrapAverageCluster(t *testing.T, initialValues []float64, roundEvery t
 		address := addresses[index]
 		engine := gossip.NewEngine(
 			address,
-			"average",
+			m09Aggregation,
 			network.newTransport(address),
 			fullMeshMembership(address, addresses),
 			slog.Default(),
@@ -262,30 +273,42 @@ func formatClusterObservation(observation clusterObservation) string {
 	}
 
 	ordered := []string{"node-1", "node-2", "node-3"}
-	parts := make([]string, 0, len(observation.values)+2)
+	parts := make([]string, 0, len(observation.values)+3)
 	seen := make(map[string]struct{}, len(observation.values))
 	for _, address := range ordered {
 		value, ok := observation.values[address]
 		if !ok {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s=%0.6f", address, value))
+		parts = append(parts, formatNodeObservation(address, value, observation.referenceValue, observation.maxDelta))
 		seen[address] = struct{}{}
 	}
 	for address, value := range observation.values {
 		if _, ok := seen[address]; ok {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s=%0.6f", address, value))
+		parts = append(parts, formatNodeObservation(address, value, observation.referenceValue, observation.maxDelta))
 	}
 
 	parts = append(parts,
 		fmt.Sprintf("riferimento_media_iniziale=%0.6f", observation.referenceValue),
 		fmt.Sprintf("banda=%0.6f", observation.maxDelta),
+		fmt.Sprintf("criterio_successo=banda<=%0.6f", m09ConvergenceBand),
 		fmt.Sprintf("offset_max_riferimento=%0.6f", observation.referenceMaxOffset),
 	)
 
 	return strings.Join(parts, ", ")
+}
+
+// formatNodeObservation rende esplicito il report finale per nodo nel formato M09.
+func formatNodeObservation(nodeID string, observedValue float64, expectedValue float64, commonBand float64) string {
+	return fmt.Sprintf(
+		"node_id=%s observed_value=%0.6f expected_delta=%0.6f common_band=%0.6f",
+		nodeID,
+		observedValue,
+		math.Abs(observedValue-expectedValue),
+		commonBand,
+	)
 }
 
 // observationMaxDelta calcola la massima distanza assoluta tra i valori osservati nel cluster.

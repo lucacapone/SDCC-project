@@ -321,3 +321,8 @@
 - **Descrizione task**: Riallineamento del target `test-integration` al comando canonico M09 e chiarimento documentale della distinzione tra test interni in-memory, suite di integrazione end-to-end M09 e scenario operativo con cluster locale multi-nodo su Docker Compose.
 - **File modificati**: `Makefile`, `README.md`, `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiornato il `Makefile` affinché `test-integration` esegua la suite canonica `tests/integration/TestClusterConvergence`, aggiungendo `test-integration-internal` per conservare il vecchio controllo in-memory del package `internal/gossip` senza ambiguità rispetto a M09. In parallelo ho rivisto README e documento canonico dei test per rendere coerente la terminologia: i test interni in-memory restano separati dalla suite di integrazione end-to-end M09, mentre Docker Compose viene descritto come scenario distinto di cluster locale multi-nodo per validazioni operative/manuali.
+
+## 2026-03-19 16:05:00 UTC
+- **Descrizione task**: Consolidamento documentale e tecnico dello scenario M09 con timeout esplicito motivato, parametri centralizzati nel test di integrazione e formato report finale per nodo.
+- **File modificati**: `tests/integration/cluster_convergence_test.go`, `docs/testing.md`, `docs/task/M09.md`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho reso i parametri M09 facilmente rintracciabili centralizzandoli in costanti, ho sostituito il timeout letterale con una composizione esplicita coerente con `gossip_interval` e con la variabilità locale/CI, e ho allineato documentazione e report finale del test al formato richiesto per facilitare diagnosi e manutenzione.
