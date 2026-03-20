@@ -304,7 +304,10 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
    - con `1` nodo down su `3`, il cluster residuo (`2/3`) converge con soglia `< 0.05`
    - timeout massimo `2s`.
 3. **Restart/Rejoin opzionale**:
-   - nodo riavviato rientra e il cluster torna a convergere con soglia `< 0.08`
+   - il nodo crashato viene effettivamente deregistrato dal transport di test e poi nuovamente registrato al restart;
+   - il cluster residuo mostra convergenza coerente su più snapshot consecutivi, non su un singolo campione;
+   - il nodo riavviato non resta bloccato sul valore di restart e rientra nella banda cluster con soglia `< 0.08`;
+   - il valore finale del nodo rientrato viene confrontato sia con la banda del cluster sia con un riferimento informativo basato su `average`;
    - timeout massimo `2s`.
 4. **Validazione configurazione**:
    - parsing YAML/JSON corretto

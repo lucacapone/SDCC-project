@@ -341,3 +341,8 @@
 - **Descrizione task**: Correzione concorrente del payload gossip per la suite di integrazione tramite copia profonda dello stato serializzabile prima della `json.Marshal`.
 - **File modificati**: `internal/gossip/engine.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Durante l'esecuzione ripetuta dei test di integrazione è emersa una corsa su mappe condivise tra round gossip e merge in ricezione; ho quindi isolato il payload serializzato con una copia profonda dei metadati di aggregazione, così da rendere stabile il nuovo scenario crash/restart e la suite `tests/integration` senza alterare il contratto osservabile del protocollo.
+
+## 2026-03-20 11:06:00 UTC
+- **Descrizione task**: Rafforzamento dello scenario canonico crash/restart nella suite `tests/integration` con verifiche separate su cluster residuo, rejoin reale del nodo e stabilizzazione finale multi-snapshot.
+- **File modificati**: `tests/integration/node_crash_restart_test.go`, `docs/testing.md`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho preso come riferimento i test interni `internal/gossip/integration_test.go` e ho irrigidito la suite canonica `tests/integration` aggiungendo assert su deregistrazione del nodo crashato dal transport di test, raccolta di snapshot consecutivi del cluster residuo per distinguere progresso/stabilizzazione coerente, verifica che il nodo riavviato non resti sul valore di restart e finestra finale di convergenza stabile su più poll consecutivi. Ho inoltre documentato perché `average` resta utile come aggregazione osservabile per il riallineamento del nodo rientrato e ho chiarito che il riferimento informativo finale viene derivato dal cluster residuo stabilizzato.
