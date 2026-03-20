@@ -7,13 +7,13 @@ Questo documento è il riferimento canonico per la distinzione tra test interni 
 La strategia di test corrente è organizzata su tre livelli:
 
 - **suite repository-wide** per verificare regressioni generali su package interni;
-- **test interni di convergenza in-memory** nel package `internal/gossip`, utili per verifiche rapide della logica gossip e degli scenari crash/rejoin;
+- **test interni di convergenza in-memory** nel package `tests/gossip`, utili per verifiche rapide della logica gossip e degli scenari crash/rejoin;
 - **suite di integrazione end-to-end M09** in `tests/integration`, usata come entrypoint canonico per la convergenza del cluster;
 - **test canonico M10** in `tests/integration`, dedicato a crash, funzionamento del cluster residuo e rejoin del nodo riavviato.
 
-## Test interni di convergenza in-memory (`internal/gossip`)
+## Test interni di convergenza in-memory (`tests/gossip`)
 
-Le suite storiche nel package `internal/gossip` restano supportate e vanno considerate **test interni**: usano una rete in-memory, esercitano direttamente l'engine gossip e sono pensate per controlli rapidi della logica interna, non come scenario canonico di milestone.
+Le suite storiche nel package `tests/gossip` restano supportate e vanno considerate **test interni**: usano una rete in-memory, esercitano direttamente l'engine gossip e sono pensate per controlli rapidi della logica interna, non come scenario canonico di milestone.
 
 Entry point principali:
 
@@ -24,13 +24,13 @@ Entry point principali:
 Comandi utili:
 
 ```bash
-go test ./internal/gossip -run TestIntegrationGossipConvergence -count=1
-go test ./internal/gossip -run TestCrash -count=1
+go test ./tests/gossip -run TestIntegrationGossipConvergence -count=1
+go test ./tests/gossip -run TestCrash -count=1
 make test-integration-internal
 make test-crash
 ```
 
-Questo target resta volutamente un **entry point interno/debug**: punta ai test del package `internal/gossip` e non coincide con il comando canonico di milestone M10.
+Questo target resta volutamente un **entry point interno/debug**: punta ai test del package `tests/gossip` e non coincide con il comando canonico di milestone M10.
 
 Questi test **non** vanno descritti come test end-to-end del cluster locale multi-nodo: non usano Docker Compose, non aprono porte UDP reali e non rappresentano un ambiente di deployment.
 
@@ -174,7 +174,7 @@ I limiti noti sono intenzionalmente esplicitati:
 
 Il rapporto tra gli strumenti di verifica crash/rejoin del repository è il seguente:
 
-- **`internal/gossip`**: i test crash/rejoin interni, inclusi entry point come `TestCrashRestartRejoinOptional`, restano verifiche rapide della logica gossip e della resilienza in-memory del package. Sono utili per sviluppo locale e debugging del merge/engine, ma non costituiscono il riferimento canonico di milestone. Il target `make test-crash` resta associato a questo livello.
+- **`tests/gossip`**: i test crash/rejoin interni, inclusi entry point come `TestCrashRestartRejoinOptional`, restano verifiche rapide della logica gossip e della resilienza in-memory del package. Sono utili per sviluppo locale e debugging del merge/engine, ma non costituiscono il riferimento canonico di milestone. Il target `make test-crash` resta associato a questo livello.
 - **`tests/integration`**: `TestNodeCrashAndRestart` è il **test canonico M10**. Usa ancora un harness in-memory, ma sposta il focus sul comportamento osservabile del cluster a tre nodi, con criteri espliciti di cluster residuo, rejoin e convergenza finale. I target `make test-crash-restart` e `make test-m10` puntano a questo livello canonico.
 - **`scripts/fault_injection/`**: gli script manuali (`node_stop_start.sh`, `collect_debug_snapshot.sh`) non sono test canonici automatici. Servono per fault injection operativa sul cluster Docker Compose locale, raccolta artefatti e diagnosi umana di scenari crash/restart reali lato deployment.
 
@@ -189,7 +189,7 @@ make test-crash-restart
 ```
 
 Qui la distinzione è intenzionale:
-- `make test-crash` = **target interno/debug** per gli scenari crash/rejoin storici in `internal/gossip`;
+- `make test-crash` = **target interno/debug** per gli scenari crash/rejoin storici in `tests/gossip`;
 - `make test-crash-restart` = **target canonico milestone M10** per `tests/integration/TestNodeCrashAndRestart`;
 - `make test-m10` = alias leggibile del target canonico M10.
 
@@ -320,7 +320,7 @@ Questo comando resta utile per confermare che il test M09 non introduca regressi
 ## Note operative
 
 - La suite `tests/integration` usa una rete in-memory e non richiede Docker, porte UDP reali o servizi esterni.
-- Per evitare ambiguità terminologiche: **test interni di convergenza in-memory** = suite in `internal/gossip` e target `make test-crash`; **test di integrazione/end-to-end M09** = `TestClusterConvergence` in `tests/integration`; **test canonico M10** = `TestNodeCrashAndRestart` in `tests/integration` e target `make test-crash-restart` / `make test-m10`; **cluster locale multi-nodo con Docker Compose** = scenario operativo/manuale distinto, utile per validazione di deployment ma non eseguito da questa suite automatica.
+- Per evitare ambiguità terminologiche: **test interni di convergenza in-memory** = suite in `tests/gossip` e target `make test-crash`; **test di integrazione/end-to-end M09** = `TestClusterConvergence` in `tests/integration`; **test canonico M10** = `TestNodeCrashAndRestart` in `tests/integration` e target `make test-crash-restart` / `make test-m10`; **cluster locale multi-nodo con Docker Compose** = scenario operativo/manuale distinto, utile per validazione di deployment ma non eseguito da questa suite automatica.
 - Il bootstrap del cluster è automatico nel test e costruisce i tre nodi `node-1`, `node-2`, `node-3` con membership full-mesh iniziale.
 - Il polling usa `time.NewTicker` e un timeout esplicito, evitando sleep arbitrari.
 - In caso di success o failure, il test emette un report leggibile tramite `t.Logf` con valori finali per nodo e metriche di convergenza.

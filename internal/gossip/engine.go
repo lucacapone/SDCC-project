@@ -15,6 +15,11 @@ import (
 
 var currentMessageVersion = shared.MessageVersion{Major: 1, Minor: 0}
 
+// CurrentMessageVersion restituisce la versione corrente del contratto messaggio gossip.
+func CurrentMessageVersion() shared.MessageVersion {
+	return currentMessageVersion
+}
+
 // Engine coordina il ciclo gossip locale.
 type Engine struct {
 	NodeID      shared.NodeID
@@ -176,6 +181,11 @@ func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
 	}
 }
 
+// MergeMembership espone il merge del digest membership per le suite esterne.
+func MergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
+	mergeMembership(set, remote)
+}
+
 func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
 	localVersion := normalizeVersion(state)
 	switch state.AggregationType {
@@ -308,4 +318,9 @@ func (e *Engine) Stop() error {
 		return e.Transport.Close()
 	}
 	return nil
+}
+
+// RoundOnce esegue un singolo round gossip esplicito per i test esterni.
+func (e *Engine) RoundOnce(ctx context.Context) {
+	e.round(ctx)
 }

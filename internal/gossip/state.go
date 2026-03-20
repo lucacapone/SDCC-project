@@ -91,6 +91,16 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	return MergeResult{State: local, Status: MergeApplied, Reason: "remote_newer_version"}
 }
 
+// ApplyRemote espone il merge remoto per le suite esterne che validano il contratto del package gossip.
+func ApplyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult {
+	return applyRemote(local, msg)
+}
+
+// NormalizeStateVersion espone la normalizzazione della versione di stato per i test esterni.
+func NormalizeStateVersion(state shared.GossipState) shared.StateVersionStamp {
+	return normalizeVersion(state)
+}
+
 // mergeAggregationState applica la strategia di merge in base al tipo aggregazione.
 func usesPerNodeMerge(localAggregationType, remoteAggregationType string) bool {
 	aggregationType := localAggregationType
