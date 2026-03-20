@@ -57,6 +57,7 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M05**: completata lato repository/documentazione per estensione e consolidamento `average`/`min`/`max`, regressione multi-aggregazione e verifica coerenza architetturale.
 - **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
 - **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
+- **M10**: documentata in `docs/testing.md` come milestone canonica di crash/restart con test `tests/integration/TestNodeCrashAndRestart` separato da M09.
 
 Comandi di verifica milestone:
 - M03 → `go test ./internal/... -run TestTransportContract`
@@ -209,11 +210,13 @@ make test-crash
 Documento canonico dei test di integrazione e dei comandi operativi:
 - `docs/testing.md`
 
-Test canonico disponibile:
+Test canonico M09 disponibile:
 - `tests/integration/cluster_convergence_test.go` (`TestClusterConvergence`)
+
+Test canonico M10 disponibile:
 - `tests/integration/node_crash_restart_test.go` (`TestNodeCrashAndRestart`)
 
-Il target `make test-integration` punta ufficialmente a questa suite M09. Nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
+Il target `make test-integration` punta ufficialmente alla suite di integrazione in `tests/integration`; Nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
 
 Sintesi criteri M09:
 - scenario congelato a **3 nodi** (`node-1`, `node-2`, `node-3`);
