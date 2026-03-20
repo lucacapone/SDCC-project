@@ -11,6 +11,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
 - `internal/aggregation`: contratti comuni delle aggregazioni + factory runtime con implementazioni dedicate (`sum`, `average`, `min`, `max`).
 - `internal/transport`: astrazione trasporto + adapter UDP concreto con lifecycle (`Start`/`Send`/`Close`) e rispetto di `context.Context`.
+- `internal/observability`: logger strutturato coerente con `log/slog`, collector di metriche aggregate a bassa cardinalità e handler/server HTTP minimo con endpoint `/health`, `/ready` e `/metrics`.
 
 
 ## Layer transport astratto e confini con gossip

@@ -108,6 +108,15 @@ Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate 
 - **Stato reale `min`/`max`**: merge gossip monotono robusto con metadati opzionali `state.aggregation_data.min/max.versions` per nodo e fallback retrocompatibile su payload legacy senza metadati.
 - Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 
+## Observability minima
+Il package `internal/observability` espone una API minima composta da:
+- logger strutturato coerente con `log/slog`;
+- collector di metriche aggregate del nodo con label a bassa cardinalità;
+- handler/server HTTP con endpoint distinti `/health`, `/ready` e `/metrics`.
+
+Comando di verifica mirato:
+- `go test ./internal/observability -run TestMetricsExposure -count=1`
+
 ## Configurazione esterna
 Documento canonico della configurazione runtime:
 - `docs/configuration.md`
