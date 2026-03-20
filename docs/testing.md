@@ -33,10 +33,12 @@ Questi test **non** vanno descritti come test end-to-end del cluster locale mult
 
 ## Test di integrazione end-to-end M09
 
-Il test canonico della milestone M09 è:
+I test canonici della milestone M09 sono:
 
 - `tests/integration/cluster_convergence_test.go`
+- `tests/integration/node_crash_restart_test.go`
 - test entrypoint: `TestClusterConvergence`
+- test entrypoint resilienza/rejoin: `TestNodeCrashAndRestart`
 
 ### Scenario M09
 
@@ -49,6 +51,28 @@ Parametri di scenario congelati:
 - **valori iniziali**: `10`, `30`, `50`;
 - **valore atteso informativo comune**: `30.0`, cioè `average(10, 30, 50)`;
 - **criterio di successo**: la banda `max(values) - min(values)` deve risultare `<= 0.05` entro il timeout M09.
+
+
+
+### Scenario crash/restart canonico
+
+`TestNodeCrashAndRestart` riusa lo stesso harness in-memory promosso e verifica in ordine osservabile:
+
+- bootstrap del cluster multi-nodo coerente con l'architettura corrente;
+- attività gossip prima del crash tramite snapshot che cambiano realmente;
+- crash di un nodo durante i round gossip;
+- prosecuzione della convergenza nel cluster residuo senza coordinatore centrale;
+- restart del nodo crashato e sua nuova registrazione sulla rete di test;
+- rejoin del nodo nel cluster e ricezione di aggiornamenti rispetto al valore iniziale;
+- convergenza finale del nodo rientrato verso lo stato osservato dal cluster entro banda configurata.
+
+Il test produce `t.Logf` diagnostici con:
+
+- valori per nodo prima del crash;
+- valori del cluster residuo;
+- valori dopo il restart;
+- valore finale del nodo rientrato;
+- banda finale del cluster.
 
 ### Timeout operativo
 

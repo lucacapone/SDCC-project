@@ -210,6 +210,7 @@ Documento canonico dei test di integrazione e dei comandi operativi:
 
 Test canonico disponibile:
 - `tests/integration/cluster_convergence_test.go` (`TestClusterConvergence`)
+- `tests/integration/node_crash_restart_test.go` (`TestNodeCrashAndRestart`)
 
 Il target `make test-integration` punta ufficialmente a questa suite M09. Nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
 
