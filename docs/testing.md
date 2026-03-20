@@ -1,6 +1,6 @@
 # Testing canonico
 
-Questo documento è il riferimento canonico per la distinzione tra test interni in-memory, test di integrazione/end-to-end M09 e relativi comandi operativi di validazione del repository.
+Questo documento è il riferimento canonico per la distinzione tra test interni in-memory, test di integrazione/end-to-end M09, test canonico M10 per crash/restart e relativi comandi operativi di validazione del repository.
 
 ## Ambito
 
@@ -8,7 +8,8 @@ La strategia di test corrente è organizzata su tre livelli:
 
 - **suite repository-wide** per verificare regressioni generali su package interni;
 - **test interni di convergenza in-memory** nel package `internal/gossip`, utili per verifiche rapide della logica gossip e degli scenari crash/rejoin;
-- **suite di integrazione end-to-end M09** in `tests/integration`, usata come entrypoint canonico per la convergenza del cluster.
+- **suite di integrazione end-to-end M09** in `tests/integration`, usata come entrypoint canonico per la convergenza del cluster;
+- **test canonico M10** in `tests/integration`, dedicato a crash, funzionamento del cluster residuo e rejoin del nodo riavviato.
 
 ## Test interni di convergenza in-memory (`internal/gossip`)
 
@@ -33,12 +34,10 @@ Questi test **non** vanno descritti come test end-to-end del cluster locale mult
 
 ## Test di integrazione end-to-end M09
 
-I test canonici della milestone M09 sono:
+Il test canonico della milestone M09 è:
 
-- `tests/integration/cluster_convergence_test.go`
-- `tests/integration/node_crash_restart_test.go`
-- test entrypoint: `TestClusterConvergence`
-- test entrypoint resilienza/rejoin: `TestNodeCrashAndRestart`
+- file: `tests/integration/cluster_convergence_test.go`;
+- entrypoint: `TestClusterConvergence`.
 
 ### Scenario M09
 
@@ -54,31 +53,136 @@ Parametri di scenario congelati:
 
 
 
-### Scenario crash/restart canonico
+## Test canonico M10 — crash, cluster residuo e rejoin
 
-`TestNodeCrashAndRestart` riusa lo stesso harness in-memory promosso e verifica in ordine osservabile:
+Il test canonico della milestone M10 è:
 
-- bootstrap del cluster multi-nodo coerente con l'architettura corrente;
-- attività gossip prima del crash tramite snapshot che cambiano realmente;
-- crash di un nodo durante i round gossip;
-- deregistrazione effettiva del nodo crashato dal transport di test;
-- convergenza del cluster residuo senza coordinatore centrale;
-- almeno tre snapshot consecutivi del cluster residuo che mostrano progresso monotono oppure stabilizzazione coerente entro banda;
-- restart del nodo crashato e sua nuova registrazione sulla rete di test;
-- rejoin reale del nodo, verificato osservando che il valore non resta bloccato sul valore di restart preimpostato;
-- convergenza stabile finale del nodo rientrato su più poll consecutivi, non su un singolo snapshot vincente;
-- confronto finale del nodo rientrato sia con la banda del cluster sia con un valore atteso informativo.
+- **nome canonico**: `TestNodeCrashAndRestart`;
+- **file**: `tests/integration/node_crash_restart_test.go`;
+- **package**: `tests/integration`;
+- **strategia di bootstrap**: stesso **harness in-memory promosso** già usato da M09, con trasporto deterministico e membership full-mesh iniziale.
 
-Il test produce `t.Logf` diagnostici con:
+### Scenario del cluster M10
 
-- valori per nodo prima del crash;
-- conferma di deregistrazione del nodo crashato;
-- valori e sequenza di snapshot del cluster residuo;
-- valori dopo il restart;
-- valore finale del nodo rientrato con distanza dalla banda del cluster e dal valore atteso informativo;
-- sequenza finale di snapshot stabili.
+`TestNodeCrashAndRestart` usa un cluster a tre nodi con parametri congelati nel test:
 
-La suite continua a usare `average` perché è particolarmente leggibile nello scenario di rejoin: il nodo rientrato parte da un valore artificiale di restart e deve mostrare un riallineamento osservabile verso il consenso del cluster, rendendo evidente se resta bloccato localmente oppure se assorbe davvero gli aggiornamenti gossip degli altri peer.
+- **nodi**: `node-1`, `node-2`, `node-3`;
+- **aggregazione attiva**: `average`;
+- **valori iniziali**: `10`, `30`, `90`;
+- **nodo crashato**: `node-1`;
+- **momento del crash in termini osservabili**: il crash avviene solo dopo che il test ha osservato attività gossip reale pre-crash, cioè dopo che almeno uno snapshot del cluster differisce dallo snapshot iniziale entro la finestra di bootstrap;
+- **valore di restart del nodo rientrato**: `initialValues[0] + 17.0`, quindi `27.0`, scelto apposta per verificare che il nodo non resti bloccato sul valore locale di riavvio.
+
+### Sequenza osservabile verificata da M10
+
+Il test verifica in ordine esplicito e osservabile:
+
+1. bootstrap del cluster multi-nodo coerente con l'architettura corrente;
+2. attività gossip prima del crash tramite snapshot che cambiano realmente;
+3. crash del nodo `node-1` durante i round gossip;
+4. deregistrazione effettiva del nodo crashato dal transport di test;
+5. convergenza del cluster residuo senza coordinatore centrale;
+6. almeno tre snapshot consecutivi del cluster residuo che mostrano progresso monotono oppure stabilizzazione coerente entro banda;
+7. restart del nodo crashato e sua nuova registrazione sulla rete di test;
+8. rejoin reale del nodo, verificato osservando che il valore non resta bloccato sul valore di restart preimpostato;
+9. convergenza stabile finale del nodo rientrato su più poll consecutivi, non su un singolo snapshot vincente;
+10. confronto finale del nodo rientrato sia con la banda del cluster sia con un valore atteso informativo derivato dal cluster residuo stabile.
+
+### Criterio per dimostrare che il cluster residuo continua a funzionare
+
+Il cluster residuo (`node-2`, `node-3`) viene considerato ancora funzionante solo se entrambe le condizioni risultano vere:
+
+- la convergenza del sotto-cluster viene osservata entro `crashRestartCrashTimeout`;
+- tre snapshot consecutivi soddisfano una delle due proprietà esplicite: **progresso monotono** della banda (`maxDelta` non crescente) oppure **stabilizzazione coerente** entro la soglia residua.
+
+In pratica M10 non accetta come prova un singolo snapshot favorevole: richiede polling ripetuto e una breve finestra di stabilizzazione del cluster residuo.
+
+### Criterio per dimostrare il rejoin del nodo riavviato
+
+Il rejoin non è dimostrato soltanto dal riavvio del processo di test. M10 richiede due evidenze osservabili:
+
+- il nodo riavviato deve risultare nuovamente registrato nella rete di test in-memory;
+- il suo valore osservato deve allontanarsi dal valore di restart di almeno `crashRestartMinimumRejoinDelta = 0.50`.
+
+Questo evita falsi positivi in cui il nodo viene riacceso ma non riceve davvero aggiornamenti gossip dal cluster residuo.
+
+### Criterio finale di convergenza del nodo rientrato
+
+La convergenza finale del nodo rientrato è dimostrata solo se, entro la finestra di rejoin, il test osserva tutti i seguenti criteri:
+
+- almeno `crashRestartStabilityPolls = 3` snapshot consecutivi stabili sull'intero cluster;
+- banda finale del cluster `<= crashRestartConvergenceBand`;
+- distanza del nodo rientrato dalla banda del cluster `<= crashRestartConvergenceBand`;
+- distanza del nodo rientrato dal valore informativo derivato dal cluster residuo **migliore** rispetto alla distanza iniziale del valore di restart da quello stesso riferimento;
+- il nodo rientrato non rimane troppo vicino al valore di restart artificiale.
+
+Il valore informativo finale non è un numero magico hard-coded: viene derivato dal valore medio osservato nell'ultimo snapshot stabile del cluster residuo prima del restart.
+
+### Timeout M10 motivati e non magici
+
+I timeout M10 sono centralizzati in `tests/integration/node_crash_restart_test.go` e sono motivati dal flusso osservabile del test, non da sleep arbitrari:
+
+- `crashRestartBootstrapTimeout = 120ms`: finestra per osservare attività gossip pre-crash reale prima di dichiarare il test non significativo;
+- `crashRestartCrashTimeout = 220ms`: finestra per lasciare convergere il cluster residuo dopo il crash e raccogliere la stabilizzazione su più poll;
+- `crashRestartRejoinTimeout = 320ms`: finestra più ampia per consentire restart, nuova registrazione, assorbimento degli update gossip e stabilizzazione finale del nodo rientrato;
+- `crashRestartGossipInterval = 10ms` e `crashRestartPollInterval = 20ms`: granularità esplicita di propagazione e osservazione, che spiegano la scala temporale dei timeout superiori.
+
+In sintesi, i timeout sono costruiti per coprire tre fasi diverse — bootstrap osservabile, resilienza del cluster residuo, rejoin/stabilizzazione — invece di condensare tutto in un singolo numero opaco.
+
+### Polling e stabilizzazione espliciti
+
+M10 usa meccanismi espliciti di polling/stabilizzazione, tutti visibili nel codice del test:
+
+- `waitForClusterActivity(...)` per verificare che il crash avvenga dopo attività gossip osservabile;
+- `waitForClusterConvergence(...)` per la convergenza del cluster residuo;
+- `collectStableConvergenceSnapshots(...)` per richiedere più snapshot consecutivi stabili sia sul cluster residuo sia sul cluster completo dopo il rejoin;
+- `waitForCondition(...)` per verificare il rejoin reale del nodo riavviato;
+- `residualSnapshotsShowCoherentProgress(...)` per accettare solo progressi/stabilizzazioni coerenti e leggibili.
+
+Questo rende esplicito che il test evita sleep “alla cieca” e basa il verdetto su condizioni osservabili e ripetute.
+
+### Parametri centralizzati nel test M10
+
+I parametri principali sono centralizzati come costanti all'inizio di `tests/integration/node_crash_restart_test.go`:
+
+- `crashRestartNodeCount = 3`;
+- `crashRestartAggregation = "average"`;
+- `crashRestartGossipInterval = 10ms`;
+- `crashRestartPollInterval = 20ms`;
+- `crashRestartBootstrapTimeout = 120ms`;
+- `crashRestartCrashTimeout = 220ms`;
+- `crashRestartRejoinTimeout = 320ms`;
+- `crashRestartConvergenceBand = 0.08`;
+- `crashRestartResidualExpectedBand = 0.05`;
+- `crashRestartStabilityPolls = 3`;
+- `crashRestartResidualSnapshotCount = 3`;
+- `crashRestartRestartValueOffset = 17.0`;
+- `crashRestartMinimumRejoinDelta = 0.50`.
+
+### Limiti noti del test M10
+
+I limiti noti sono intenzionalmente esplicitati:
+
+- la rete è **in-memory** e non esercita una rete reale;
+- il trasporto non usa **UDP reale** né socket di sistema;
+- il test resta soggetto a una **sensibilità residua al timing locale** della macchina/CI, pur mitigata da polling e soglie esplicite;
+- la full-mesh iniziale e il delivery sincrono dell'harness privilegiano riproducibilità e diagnosi, ma non simulano tutte le varianti di un deployment reale.
+
+### Rapporto tra test interno, test canonico M10 e script manuali
+
+Il rapporto tra gli strumenti di verifica crash/rejoin del repository è il seguente:
+
+- **`internal/gossip`**: i test crash/rejoin interni, inclusi entry point come `TestCrashRestartRejoinOptional`, restano verifiche rapide della logica gossip e della resilienza in-memory del package. Sono utili per sviluppo locale e debugging del merge/engine, ma non costituiscono il riferimento canonico di milestone.
+- **`tests/integration`**: `TestNodeCrashAndRestart` è il **test canonico M10**. Usa ancora un harness in-memory, ma sposta il focus sul comportamento osservabile del cluster a tre nodi, con criteri espliciti di cluster residuo, rejoin e convergenza finale.
+- **`scripts/fault_injection/`**: gli script manuali (`node_stop_start.sh`, `collect_debug_snapshot.sh`) non sono test canonici automatici. Servono per fault injection operativa sul cluster Docker Compose locale, raccolta artefatti e diagnosi umana di scenari crash/restart reali lato deployment.
+
+La relazione corretta è quindi: **test interno** per la logica del package, **test canonico M10** per la milestone automatica di repository, **script manuali** per osservabilità e validazione operativa su Compose.
+
+### Comando operativo canonico M10
+
+```bash
+go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+```
 
 ### Timeout operativo
 
@@ -188,6 +292,14 @@ go test ./tests/integration -run TestClusterConvergence -count=1
 
 Questo è il comando ufficiale da usare per validare la convergenza del cluster introdotta dalla milestone M09. Il target equivalente del `Makefile` è `make test-integration`.
 
+### Verifica mirata M10
+
+```bash
+go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+```
+
+Questo è il comando operativo canonico da usare per validare lo scenario M10 di crash, continuità del cluster residuo e rejoin del nodo riavviato.
+
 ### Verifica repository-wide
 
 ```bash
@@ -199,7 +311,7 @@ Questo comando resta utile per confermare che il test M09 non introduca regressi
 ## Note operative
 
 - La suite `tests/integration` usa una rete in-memory e non richiede Docker, porte UDP reali o servizi esterni.
-- Per evitare ambiguità terminologiche: **test interni di convergenza in-memory** = suite in `internal/gossip`; **test di integrazione/end-to-end M09** = suite canonica in `tests/integration`; **cluster locale multi-nodo con Docker Compose** = scenario operativo/manuale distinto, utile per validazione di deployment ma non eseguito da questa suite automatica.
+- Per evitare ambiguità terminologiche: **test interni di convergenza in-memory** = suite in `internal/gossip`; **test di integrazione/end-to-end M09** = `TestClusterConvergence` in `tests/integration`; **test canonico M10** = `TestNodeCrashAndRestart` in `tests/integration`; **cluster locale multi-nodo con Docker Compose** = scenario operativo/manuale distinto, utile per validazione di deployment ma non eseguito da questa suite automatica.
 - Il bootstrap del cluster è automatico nel test e costruisce i tre nodi `node-1`, `node-2`, `node-3` con membership full-mesh iniziale.
 - Il polling usa `time.NewTicker` e un timeout esplicito, evitando sleep arbitrari.
 - In caso di success o failure, il test emette un report leggibile tramite `t.Logf` con valori finali per nodo e metriche di convergenza.
