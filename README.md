@@ -44,10 +44,10 @@ Sintesi operativa del protocollo M01:
 - `GossipMessage` include i campi principali `message_id`, `origin_node`, `state_version` (con `version_epoch` + `version_counter`), `payload`, `sent_at` e `membership` (digest serializzato con `status` + `incarnation` per peer).
 - Il versioning è composto da `version_epoch + version_counter`: l'epoch separa i cicli/logical reset, il counter ordina gli aggiornamenti nello stesso epoch.
 - Regole principali di merge: `duplicate_message_id` (idempotenza), `out_of_order_stale` (scarto update vecchi), `same_version_different_payload` (conflitto a parità versione) e `remote_newer_version` (applicazione update più recente).
-- Comando mirato di verifica: `go test ./internal/gossip -run TestMergeRules`.
+- Comando mirato di verifica: `go test ./tests/gossip -run TestMergeRules`.
 
 Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/architecture.md).
-- Test membership dedicati: `go test ./internal/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder`.
+- Test membership dedicati: `go test ./tests/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder`.
 
 ## Stato avanzamento milestone
 - **M01**: completata (contratto messaggio gossip, versioning `epoch+counter`, merge deterministico e test di convergenza base).
@@ -60,8 +60,8 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M10**: completata lato repository/documentazione con test canonico `tests/integration/TestNodeCrashAndRestart`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
 
 Comandi di verifica milestone:
-- M03 → `go test ./internal/... -run TestTransportContract`
-- M04 → `go test ./internal/aggregation/sum -run TestSumConvergence`
+- M03 → `go test ./tests/transport -run TestTransportContract`
+- M04 → `go test ./tests/aggregation/sum -run TestSumConvergence`
 - M05 → test merge `average`/`min`/`max` + regressione multi-aggregazione (vedi sezione test M05).
 - M08 → `go test ./... -run Test -count=1`
 
@@ -194,12 +194,12 @@ Dettagli operativi canonici di build/deploy locale multi-nodo:
 - `docs/deployment.md`
 
 ## Test interni di convergenza in-memory
-Le suite storiche nel package `internal/gossip` restano utili come test interni di convergenza e resilienza in-memory, ma **non** rappresentano la suite canonica M09. Sono verifiche interne al repository rivolte alla logica gossip, senza Docker Compose e senza un cluster locale multi-nodo eseguito come scenario end-to-end.
+Le suite storiche nel package `tests/gossip` restano utili come test interni di convergenza e resilienza in-memory, ma **non** rappresentano la suite canonica M09. Sono verifiche interne al repository rivolte alla logica gossip, senza Docker Compose e senza un cluster locale multi-nodo eseguito come scenario end-to-end.
 
 Comandi interni disponibili:
 ```bash
-go test ./internal/gossip -run TestIntegrationGossipConvergence -count=1
-go test ./internal/gossip -run TestCrash -count=1
+go test ./tests/gossip -run TestIntegrationGossipConvergence -count=1
+go test ./tests/gossip -run TestCrash -count=1
 ```
 
 Target `Makefile` dedicati:
@@ -211,7 +211,7 @@ make test-crash-restart
 ```
 
 Differenza operativa tra i target crash:
-- `make test-crash`: **target interno/debug** che resta puntato ai test in-memory del package `internal/gossip`.
+- `make test-crash`: **target interno/debug** che resta puntato ai test in-memory del package `tests/gossip`.
 - `make test-crash-restart` / `make test-m10`: **target canonico milestone M10** che esegue `tests/integration/TestNodeCrashAndRestart`.
 
 ## Test di integrazione end-to-end M09
@@ -248,7 +248,7 @@ make test-crash-restart
 ```
 
 Distinzione esplicita dei target crash/restart:
-- `make test-crash` continua a rappresentare il livello **interno/debug** del package `internal/gossip`.
+- `make test-crash` continua a rappresentare il livello **interno/debug** del package `tests/gossip`.
 - `make test-crash-restart` e `make test-m10` rappresentano il livello **canonico milestone M10** nella suite `tests/integration`.
 
 Sintesi criteri M10:
@@ -266,34 +266,34 @@ make test-crash-restart
 ```
 
 ## Esecuzione test
-- Test transport (UDP + contratto): `go test ./internal/transport -count=1`
+- Test transport (UDP + contratto): `go test ./tests/transport -count=1`
 ```bash
 go test ./...
 ```
 
 Comandi mirati membership (M02):
 ```bash
-go test ./internal/membership -run TestJoinLeave
-go test ./internal/membership -run TestTimeoutTransitions
-go test ./internal/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder
-go test ./internal/gossip -run TestRoundSerializzaMembershipConIncarnation
+go test ./tests/membership -run TestJoinLeave
+go test ./tests/membership -run TestTimeoutTransitions
+go test ./tests/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder
+go test ./tests/gossip -run TestRoundSerializzaMembershipConIncarnation
 ```
 
 Comando operativo M04 (verifica convergenza `sum`):
 ```bash
-go test ./internal/aggregation/sum -run TestSumConvergence
+go test ./tests/aggregation/sum -run TestSumConvergence
 ```
 
 Comandi operativi M05:
 ```bash
 # average: merge convergente per contributi/versioni per nodo
-go test ./internal/gossip -run TestMergeAverageContributiConvergentiPerNodo
+go test ./tests/gossip -run TestMergeAverageContributiConvergentiPerNodo
 
 # min/max: merge monotono robusto e compatibilità payload legacy
-go test ./internal/gossip -run 'TestMergeMinMonotonoGestisceStatoVuotoELegacy|TestMergeMaxMonotonoGestisceStatoVuotoELegacy'
+go test ./tests/gossip -run 'TestMergeMinMonotonoGestisceStatoVuotoELegacy|TestMergeMaxMonotonoGestisceStatoVuotoELegacy'
 
 # regressione multi-aggregazione: sum invariata con nuove aggregazioni abilitate
-go test ./internal/gossip -run TestSumRegressionConNuoveAggregazioni
+go test ./tests/gossip -run TestSumRegressionConNuoveAggregazioni
 ```
 
 Comando di verifica post-M08:
@@ -302,9 +302,9 @@ go test ./... -run Test -count=1
 ```
 
 Stato post-M08 dichiarato esplicitamente:
-- area `merge`: suite dedicata nel package `internal/gossip` con verifica delle regole di merge, casi out-of-order, legacy, overflow e regressioni multi-aggregazione;
-- area `membership`: suite dedicata nei package `internal/membership` e `internal/gossip` per join/leave, timeout, incarnation, bootstrap e convergenza digest membership;
-- area `config`: suite dedicata in `internal/config` per load/validate, precedence env/file e validazioni bloccanti;
+- area `merge`: suite dedicata nel package `tests/gossip` con verifica delle regole di merge, casi out-of-order, legacy, overflow e regressioni multi-aggregazione;
+- area `membership`: suite dedicata nei package `tests/membership` e `tests/gossip` per join/leave, timeout, incarnation, bootstrap e convergenza digest membership;
+- area `config`: suite dedicata in `tests/config` per load/validate, precedence env/file e validazioni bloccanti;
 - area `aggregation`: suite root + test di convergenza per `sum`, `average`, `min`, `max`, con verifica finale repository-wide demandata al comando sopra riportato.
 
 ## Supporti operativi fault injection

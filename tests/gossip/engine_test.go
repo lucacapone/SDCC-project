@@ -55,7 +55,7 @@ func TestRoundMessageAndStateVersionAlignment(t *testing.T) {
 	eng.State.VersionCounter = 2
 	eng.State.Round = 2
 
-	eng.round(context.Background())
+	eng.RoundOnce(context.Background())
 
 	if len(tr.sent) != 1 {
 		t.Fatalf("messaggi inviati inattesi: got=%d want=1", len(tr.sent))

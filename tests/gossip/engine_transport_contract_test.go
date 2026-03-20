@@ -130,10 +130,8 @@ func TestEngineGestisceMessaggiInIngressoViaHandlerTransport(t *testing.T) {
 		t.Fatalf("deliver handler: %v", err)
 	}
 
-	eng.mu.Lock()
 	lastSender := eng.State.LastSenderNodeID
 	versionCounter := eng.State.VersionCounter
-	eng.mu.Unlock()
 	if lastSender != "node-2" {
 		t.Fatalf("last sender inatteso: got=%q want=node-2", lastSender)
 	}

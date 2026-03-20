@@ -17,7 +17,7 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2", Status: membership.Suspect, Incarnation: 7, LastSeen: base.Add(1 * time.Second)})
 
 	eng := NewEngine("node-1", "average", tr, m, nil, time.Second)
-	eng.round(context.Background())
+	eng.RoundOnce(context.Background())
 
 	if len(tr.sent) != 1 {
 		t.Fatalf("messaggi inviati inattesi: got=%d want=1", len(tr.sent))
