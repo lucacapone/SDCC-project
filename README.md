@@ -57,7 +57,7 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M05**: completata lato repository/documentazione per estensione e consolidamento `average`/`min`/`max`, regressione multi-aggregazione e verifica coerenza architetturale.
 - **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
 - **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
-- **M10**: documentata in `docs/testing.md` come milestone canonica di crash/restart con test `tests/integration/TestNodeCrashAndRestart` separato da M09.
+- **M10**: completata lato repository/documentazione con test canonico `tests/integration/TestNodeCrashAndRestart`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
 
 Comandi di verifica milestone:
 - M03 → `go test ./internal/... -run TestTransportContract`
@@ -74,6 +74,8 @@ Documento task:
 - `docs/task/M06.md`
 - `docs/task/M07.md`
 - `docs/task/M08.md`
+- `docs/task/M09.md`
+- `docs/task/M10.md`
 
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
@@ -216,7 +218,7 @@ Test canonico M09 disponibile:
 Test canonico M10 disponibile:
 - `tests/integration/node_crash_restart_test.go` (`TestNodeCrashAndRestart`)
 
-Il target `make test-integration` punta ufficialmente alla suite di integrazione in `tests/integration`; Nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
+Il target `make test-integration` punta ufficialmente alla suite di integrazione in `tests/integration`; nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
 
 Sintesi criteri M09:
 - scenario congelato a **3 nodi** (`node-1`, `node-2`, `node-3`);
@@ -230,6 +232,18 @@ Comando ufficiale M09:
 ```bash
 go test ./tests/integration -run TestClusterConvergence -count=1
 make test-integration
+```
+
+Sintesi criteri M10:
+- crash osservabile di **1 nodo su 3** durante round gossip già attivi;
+- convergenza del **cluster residuo** (`node-2`, `node-3`) entro banda `<= 0.05` e stabilizzazione su più snapshot consecutivi;
+- restart del nodo crashato con nuova registrazione sulla rete di test;
+- **rejoin reale** verificato osservando che il nodo riavviato si allontana dal valore di restart artificiale;
+- convergenza finale del nodo rientrato entro banda cluster `<= 0.08` dopo il rejoin.
+
+Comando ufficiale M10:
+```bash
+go test ./tests/integration -run TestNodeCrashAndRestart -count=1
 ```
 
 ## Esecuzione test
@@ -319,19 +333,21 @@ make docker-test
 ## Criteri di successo misurabili
 I test introdotti in repository usano i seguenti criteri quantitativi:
 
-1. **Convergenza gossip (3 nodi, harness in-memory della suite di integrazione end-to-end M09)**:
+1. **M09 — Convergenza gossip (3 nodi, harness in-memory della suite di integrazione end-to-end M09)**:
    - criterio esplicito di pass/fail: differenza massima tra stati `<= 0.05`
    - riferimento informativo nel report: media iniziale `30.0` per input `10`, `30`, `50`
-   - timeout massimo `2s`.
-2. **Tolleranza a crash singolo**:
-   - con `1` nodo down su `3`, il cluster residuo (`2/3`) converge con soglia `< 0.05`
-   - timeout massimo `2s`.
-3. **Restart/Rejoin opzionale**:
+   - timeout massimo `350ms`, coerente con la documentazione canonica M09 (`50ms` bootstrap + `300ms` buffer locale/CI).
+2. **M10 — Crash di un nodo e convergenza del cluster residuo**:
+   - crash di `1` nodo su `3` solo dopo avere osservato attività gossip reale pre-crash;
+   - con `1` nodo down su `3`, il cluster residuo (`2/3`) converge con banda `<= 0.05`;
+   - il cluster residuo deve mostrare progresso o stabilizzazione coerente su più snapshot consecutivi, non su un singolo campione;
+   - timeout operativo della fase residua: `220ms`.
+3. **M10 — Restart, rejoin e convergenza finale del nodo rientrato**:
    - il nodo crashato viene effettivamente deregistrato dal transport di test e poi nuovamente registrato al restart;
-   - il cluster residuo mostra convergenza coerente su più snapshot consecutivi, non su un singolo campione;
-   - il nodo riavviato non resta bloccato sul valore di restart e rientra nella banda cluster con soglia `< 0.08`;
-   - il valore finale del nodo rientrato viene confrontato sia con la banda del cluster sia con un riferimento informativo basato su `average`;
-   - timeout massimo `2s`.
+   - il nodo riavviato non resta bloccato sul valore di restart e deve quindi mostrare un **rejoin reale**;
+   - il nodo rientrato converge poi nella banda finale del cluster con soglia `<= 0.08`;
+   - il valore finale del nodo rientrato viene confrontato sia con la banda del cluster sia con un riferimento informativo derivato dal cluster residuo stabile;
+   - timeout operativo della fase di rejoin/stabilizzazione finale: `320ms`.
 4. **Validazione configurazione**:
    - parsing YAML/JSON corretto
    - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, peer `host:porta` malformati, `node_port` fuori range, duplicati o valori vuoti nelle liste).
