@@ -359,3 +359,8 @@
 - **Task**: allineamento documentazione M10 nel README con separazione esplicita da M09 e aggiunta del task report dedicato.
 - **File modificati**: `README.md`, `docs/task/M10.md`, `docs/operational_log.md`.
 - **Sintesi ragionata**: ho verificato che il test canonico `TestNodeCrashAndRestart` e la documentazione `docs/testing.md` erano già presenti, ma mancava il task report dedicato richiesto per considerare M10 pienamente completata. Ho quindi aggiornato il README per distinguere chiaramente M09 da M10, correggere il timeout M09 a `350ms`, documentare il comando ufficiale M10 e aggiungere il report `docs/task/M10.md` per mantenere coerenza tra codice, documentazione e milestone.
+
+## 2026-03-20 11:29:54 UTC
+- **Descrizione task**: Riscrittura di `docs/task/M10.md` nello stile milestone M08/M09, con esplicitazione del percorso da copertura interna parziale a completamento nella suite canonica di integrazione.
+- **File modificati**: `docs/task/M10.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho riletto README, documentazione architetturale/testing, log operativo, baseline interna `internal/gossip/integration_test.go`, harness `tests/integration` e script `scripts/` per ricostruire lo stato reale di M10. Ho quindi riscritto il task report chiarendo che la milestone era assente come documento, parzialmente coperta da test interni e poi completata nella suite canonica `tests/integration/TestNodeCrashAndRestart`, includendo gap, componenti riusati, decisioni tecniche, strategia di test, verifiche, limiti residui e follow-up.
