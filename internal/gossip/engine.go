@@ -66,13 +66,37 @@ func (e *Engine) Start(ctx context.Context) error {
 			return err
 		}
 		normalizeIncomingMessage(&msg)
+
+		membershipEntries := len(msg.Membership)
+		incomingEstimate := msg.State.Value
+		incomingRound := msg.State.Round
+
 		e.mu.Lock()
 		merge := applyRemote(e.State, msg)
 		e.State = merge.State
+		localRound := e.State.Round
+		localEstimate := e.State.Value
 		e.mu.Unlock()
+
 		mergeMembership(e.Membership, msg.Membership)
 		if e.Logger != nil {
-			e.Logger.Debug("merge remoto", "status", merge.Status, "reason", merge.Reason, "from", msg.OriginNode, "message_id", msg.MessageID, "membership_entries", len(msg.Membership))
+			logLevel := slog.LevelDebug
+			if merge.Status == MergeApplied || merge.Status == MergeConflict {
+				logLevel = slog.LevelInfo
+			}
+			e.Logger.LogAttrs(ctx, logLevel, "merge remoto gossip",
+				slog.String("event", "remote_merge"),
+				slog.String("node_id", string(e.NodeID)),
+				slog.Uint64("round", uint64(localRound)),
+				slog.Int("peers", membershipEntries),
+				slog.Float64("estimate", localEstimate),
+				slog.String("merge_status", string(merge.Status)),
+				slog.String("merge_reason", merge.Reason),
+				slog.String("remote_node_id", string(msg.OriginNode)),
+				slog.Uint64("remote_round", uint64(incomingRound)),
+				slog.Float64("remote_estimate", incomingEstimate),
+				slog.Int("membership_entries", membershipEntries),
+			)
 		}
 		return nil
 	})
@@ -130,10 +154,19 @@ func (e *Engine) round(ctx context.Context) {
 	}
 
 	if e.Logger != nil {
-		e.Logger.Debug("gossip round eseguito", "peers", len(peers), "round", msg.State.Round, "membership_entries", len(msg.Membership))
+		e.Logger.Debug("round gossip eseguito",
+			"event", "gossip_round",
+			"node_id", string(e.NodeID),
+			"round", msg.State.Round,
+			"peers", len(peers),
+			"estimate", msg.State.Value,
+			"message_id", msg.MessageID,
+			"membership_entries", len(msg.Membership),
+		)
 	}
 }
 
+// selectGossipTargets filtra i peer non raggiungibili per evitare invii inutili.
 func selectGossipTargets(peers []membership.Peer) []membership.Peer {
 	out := make([]membership.Peer, 0, len(peers))
 	for _, p := range peers {
@@ -145,6 +178,7 @@ func selectGossipTargets(peers []membership.Peer) []membership.Peer {
 	return out
 }
 
+// serializeMembershipDigest converte la membership locale nel digest condiviso via gossip.
 func serializeMembershipDigest(peers []membership.Peer) []shared.MembershipEntry {
 	entries := make([]shared.MembershipEntry, 0, len(peers))
 	for _, p := range peers {
@@ -159,6 +193,7 @@ func serializeMembershipDigest(peers []membership.Peer) []shared.MembershipEntry
 	return entries
 }
 
+// mergeMembership applica nel set locale il digest membership ricevuto da remoto.
 func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
 	if set == nil {
 		return
@@ -291,6 +326,11 @@ func cloneMaxState(maxState *shared.MaxState) *shared.MaxState {
 	return clone
 }
 
+// RoundOnce espone un singolo round gossip per i test esterni e interni.
+func (e *Engine) RoundOnce(ctx context.Context) {
+	e.round(ctx)
+}
+
 func normalizeIncomingMessage(msg *shared.GossipMessage) {
 	if msg.OriginNode == "" {
 		msg.OriginNode = msg.State.NodeID
@@ -318,9 +358,4 @@ func (e *Engine) Stop() error {
 		return e.Transport.Close()
 	}
 	return nil
-}
-
-// RoundOnce esegue un singolo round gossip esplicito per i test esterni.
-func (e *Engine) RoundOnce(ctx context.Context) {
-	e.round(ctx)
 }

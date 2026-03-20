@@ -1,9 +1,11 @@
 package gossip
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,5 +82,106 @@ func TestRoundMessageAndStateVersionAlignment(t *testing.T) {
 	}
 	if eng.State.Round != msg.State.Round {
 		t.Fatalf("round locale non allineato al messaggio: local=%d msg=%d", eng.State.Round, msg.State.Round)
+	}
+}
+
+func TestRoundLoggingEsponeCampiStabili(t *testing.T) {
+	tr := &captureTransport{}
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Suspect})
+
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	eng := NewEngine("node-1", "average", tr, m, logger, time.Second)
+	eng.State.Value = 42.5
+
+	eng.RoundOnce(context.Background())
+
+	logged := logBuffer.String()
+	for _, expected := range []string{
+		"event=gossip_round",
+		"node_id=node-1",
+		"round=1",
+		"peers=2",
+		"estimate=42.5",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log round privo del campo atteso %q: %s", expected, logged)
+		}
+	}
+}
+
+func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
+	tr := &spyTransportEngine{}
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	mset := membership.NewSet()
+	eng := NewEngine("node-1", "sum", tr, mset, logger, time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	now := time.Unix(1710000000, 0).UTC()
+	incoming := shared.GossipMessage{
+		MessageID:  "m-merge-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Epoch:   1,
+			Counter: 1,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           99.5,
+			VersionEpoch:    1,
+			VersionCounter:  1,
+			Round:           7,
+			UpdatedAt:       now,
+		},
+		Membership: []shared.MembershipEntry{{
+			NodeID:      "node-2",
+			Addr:        "node-2:7002",
+			Status:      string(membership.Alive),
+			Incarnation: 2,
+			LastSeen:    now,
+		}},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	logged := logBuffer.String()
+	for _, expected := range []string{
+		"event=remote_merge",
+		"node_id=node-1",
+		"merge_status=applied",
+		"merge_reason=remote_newer_version",
+		"remote_node_id=node-2",
+		"remote_round=7",
+		"remote_estimate=99.5",
+		"estimate=99.5",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log merge privo del campo atteso %q: %s", expected, logged)
+		}
+	}
+
+	for _, forbidden := range []string{"contributions", "versions", "SeenMessageIDs"} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("log merge contiene dettagli troppo verbosi %q: %s", forbidden, logged)
+		}
 	}
 }

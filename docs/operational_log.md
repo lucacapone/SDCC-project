@@ -378,3 +378,8 @@
 - **File modificati**: `internal/observability/logger.go`, `internal/observability/metrics.go`, `internal/observability/metrics_test.go`, `README.md`, `docs/architecture.md`, `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho mantenuto l’API indipendente dal runtime corrente per evitare introdurre configurazione non richiesta, scegliendo un formato testuale stabile per `/metrics` e riducendo la cardinalità dei label al solo esito di merge (`applied`, `skipped`, `conflict`, `unknown`); il test canonico valida esposizione minima, health positivo e readiness coerente con lo stato del collector.
 
+
+## 2026-03-20 13:20:00 UTC
+- **Descrizione task**: Uniformazione del logging strutturato degli eventi gossip in `cmd/node/main.go` e `internal/gossip/engine.go`, con chiavi stabili per bootstrap, avvio transport, round, merge remoto e shutdown.
+- **File modificati**: `cmd/node/main.go`, `internal/gossip/engine.go`, `tests/gossip/engine_test.go`, `scripts/cluster_wait_ready.sh`, `docs/testing.md`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho introdotto un formato coerente per i principali eventi di debugging del gossip usando chiavi stabili (`event`, `node_id`, `round`, `peers`, `estimate`) e ho separato il dettaglio più verboso del merge remoto mantenendo a livello `info` solo i casi applicati o conflittuali. Ho inoltre aggiornato i controlli degli script/documentazione che dipendevano dai vecchi messaggi testuali e ho aggiunto test dedicati per congelare sia la presenza dei campi strutturati nei round sia il fatto che i merge remoti non serializzino payload completi o metadati troppo rumorosi nei log.
