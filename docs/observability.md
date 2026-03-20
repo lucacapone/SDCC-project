@@ -1,5 +1,14 @@
 # Observability minima del nodo
 
+## Decisione canonica e vincolante
+La scelta univoca del repository per l'observability minima è la **soluzione ibrida**: **stdout strutturato per gli eventi applicativi** + **endpoint HTTP dedicati per metriche, health e readiness**. Questa decisione è vincolante per i task successivi e sostituisce ogni precedente ambiguità tra opzione HTTP-only, stdout-only o implementazioni parallele.
+
+Conseguenze operative della decisione:
+- **i log evento-per-evento** devono continuare a uscire su stdout/stderr in formato strutturato tramite `log/slog`;
+- **metriche e probe** devono essere esposte solo tramite il piccolo server HTTP di observability;
+- **non sono ammesse implementazioni duplicate** che pubblichino le stesse metriche sia su stdout sia via endpoint alternativi non documentati;
+- i done criteria relativi a metriche, liveness e readiness si considerano soddisfatti solo quando sono verificabili attraverso `/metrics`, `/health` e `/ready`, mentre stdout resta il canale canonico per il debugging sequenziale degli eventi.
+
 ## 1. Architettura minima dell'observability
 L'architettura di observability introdotta e consolidata nel repository è volutamente piccola, coerente con il runtime attuale e priva di dipendenze esterne obbligatorie. I componenti minimi sono quattro:
 
@@ -55,7 +64,8 @@ Gli endpoint HTTP disponibili sono tre.
 ### `/ready`
 - scopo: **readiness** del nodo per uso locale/Compose/debug;
 - comportamento: restituisce `503` finché il nodo non ha completato bootstrap e avvio engine;
-- transizione a pronto: restituisce `200 OK` quando il nodo raggiunge `engine_started`.
+- transizione a pronto: restituisce `200 OK` quando il nodo raggiunge `engine_started`;
+- **criterio canonico di readiness**: il nodo è pronto solo quando il collector ha già osservato sia il completamento del bootstrap sia l'avvio effettivo dell'engine gossip; il semplice fatto che il processo sia in esecuzione non è sufficiente.
 
 ### `/metrics`
 - scopo: esportazione testuale delle metriche minime del nodo;
@@ -65,6 +75,12 @@ Gli endpoint HTTP disponibili sono tre.
 Binding HTTP:
 - default: `:8080`;
 - override: variabile ambiente `OBSERVABILITY_ADDR`.
+
+Lifecycle del server HTTP:
+- il server di observability viene avviato dal runtime del nodo durante il bootstrap di `cmd/node/main.go`;
+- resta attivo per tutta la vita del processo, così da offrire una superficie stabile per `curl`, Compose e verifiche manuali;
+- durante l'avvio espone subito `/health`, mentre `/ready` rimane non-pronto (`503`) finché il lifecycle non raggiunge `engine_started`;
+- durante lo shutdown il processo aggiorna `node_state` a `shutdown`, quindi la disponibilità degli endpoint termina con l'arresto del processo stesso.
 
 ## 5. Istruzioni d'uso e verifica
 ### Avvio del nodo con observability attiva
@@ -119,6 +135,7 @@ Per una diagnosi locale rapida:
 ### Scelte progettuali
 - **integrazione diretta in `cmd/node/main.go`**: non è stato introdotto un layer aggiuntivo perché il wiring richiesto resta piccolo e leggibile;
 - **bassa cardinalità prima della ricchezza del dato**: priorità a metriche sostenibili e log stabili, più utili per debug e CI rispetto a un output molto dettagliato ma rumoroso;
+- **soluzione ibrida fissata esplicitamente**: stdout strutturato per eventi e HTTP per metriche/probe; nessuna delle due superfici sostituisce l'altra;
 - **health/readiness separate**: `/health` segnala vita del processo, `/ready` segnala la disponibilità funzionale minima del nodo;
 - **command-centric verification**: la prova canonica resta il comando `go test ./internal/observability -run TestMetricsExposure`, così da avere una verifica ripetibile e non ambigua;
 - **documentazione coerente con implementazione reale**: il documento descrive solo ciò che il repository espone oggi, senza introdurre claim su stack observability non presenti.

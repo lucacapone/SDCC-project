@@ -392,3 +392,8 @@
 - **Descrizione task**: Chiusura documentale M11 con nuovo documento canonico di observability, task report dedicato e aggiornamento README sullo stato post-milestone e sul comando di verifica ufficiale.
 - **File modificati**: `docs/observability.md`, `docs/task/M11.md`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho prima ricostruito lo stato reale dell'observability già presente nel repository tramite README, architettura, testing e log operativo. Ho quindi consolidato in `docs/observability.md` l'architettura minima, i campi log, le metriche, gli endpoint, le istruzioni d'uso e i limiti noti senza introdurre claim oltre l'implementazione attuale; in parallelo ho creato `docs/task/M11.md` nello stile delle milestone M08-M10 e aggiornato il README per dichiarare esplicitamente il comando canonico `go test ./internal/observability -run TestMetricsExposure`.
+
+## 2026-03-20 14:59:01 UTC
+- **Descrizione task**: Chiarimento documentale definitivo della scelta observability come soluzione ibrida, con esplicitazione di porta HTTP, lifecycle del server e criteri readiness per evitare implementazioni duplicate nei task successivi.
+- **File modificati**: `docs/observability.md`, `README.md`, `docs/task/M11.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho ricostruito la baseline reale del repository e verificato che l'implementazione corrente combina già logger strutturato e endpoint HTTP minimi. Ho quindi reso la decisione architetturale esplicita e vincolante nella documentazione canonica, separando chiaramente le responsabilità di stdout e HTTP e fissando senza ambiguità porta di default, lifecycle del server e semantica di readiness.

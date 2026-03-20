@@ -114,11 +114,15 @@ Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate 
 ## Observability minima
 Lo stato post-M11 dell'observability è documentato in modo canonico in `docs/observability.md`.
 
+**Decisione architetturale vincolante**: per il repository la scelta univoca è la **soluzione ibrida** — **stdout strutturato** per gli eventi applicativi e **HTTP** per metriche/probe. I task successivi non devono introdurre alternative concorrenti o duplicare la stessa informazione su superfici osservabili diverse senza aggiornamento esplicito della documentazione canonica.
+
 Sintesi operativa M11:
 - architettura minima composta da logger strutturato, collector metriche, stato lifecycle del nodo e server HTTP minimo integrato in `cmd/node/main.go`;
-- campi log stabili per gli eventi gossip principali (`event`, `node_id`, `round`, `peers`, `estimate`, `result`, `node_state`);
-- metriche esposte a bassa cardinalità per round gossip, merge remoti, stato del nodo e readiness;
-- endpoint disponibili `/health`, `/ready` e `/metrics`, con binding configurabile via `OBSERVABILITY_ADDR` (default `:8080`);
+- campi log stabili per gli eventi gossip principali (`event`, `node_id`, `round`, `peers`, `estimate`, `result`, `node_state`), emessi su stdout/stderr strutturato;
+- metriche e probe esposte via endpoint HTTP `/health`, `/ready` e `/metrics`;
+- binding HTTP configurabile via `OBSERVABILITY_ADDR` (default `:8080`);
+- criterio canonico di readiness: `/ready` resta `503` fino a bootstrap completato + engine gossip avviato, poi passa a `200`;
+- lifecycle del server HTTP: avvio insieme al runtime del nodo, disponibilità per tutta la vita del processo e terminazione contestuale allo shutdown;
 - comando canonico di verifica post-M11:
   - `go test ./internal/observability -run TestMetricsExposure`
 
