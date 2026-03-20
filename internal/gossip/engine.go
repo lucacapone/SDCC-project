@@ -197,9 +197,88 @@ func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
 }
 
 func sanitizedStateForMessage(state shared.GossipState) shared.GossipState {
-	state.SeenMessageIDs = nil
-	state.LastSeenVersionByNode = nil
-	return state
+	stateCopy := cloneStateForMessage(state)
+	stateCopy.SeenMessageIDs = nil
+	stateCopy.LastSeenVersionByNode = nil
+	return stateCopy
+}
+
+// cloneStateForMessage crea una copia profonda della porzione serializzabile dello stato per evitare corse sulle mappe.
+func cloneStateForMessage(state shared.GossipState) shared.GossipState {
+	clone := state
+	clone.AggregationData = cloneAggregationState(state.AggregationData)
+	return clone
+}
+
+// cloneAggregationState duplica in profondità i metadati specifici dell'aggregazione inclusi nel payload gossip.
+func cloneAggregationState(data shared.AggregationState) shared.AggregationState {
+	return shared.AggregationState{
+		Sum:     cloneSumState(data.Sum),
+		Average: cloneAverageState(data.Average),
+		Min:     cloneMinState(data.Min),
+		Max:     cloneMaxState(data.Max),
+	}
+}
+
+// cloneSumState duplica contributi e versioni della somma idempotente.
+func cloneSumState(sumState *shared.SumState) *shared.SumState {
+	if sumState == nil {
+		return nil
+	}
+	clone := &shared.SumState{
+		Contributions: make(map[shared.NodeID]float64, len(sumState.Contributions)),
+		Versions:      make(map[shared.NodeID]shared.StateVersionStamp, len(sumState.Versions)),
+		Overflowed:    sumState.Overflowed,
+	}
+	for nodeID, contribution := range sumState.Contributions {
+		clone.Contributions[nodeID] = contribution
+	}
+	for nodeID, version := range sumState.Versions {
+		clone.Versions[nodeID] = version
+	}
+	return clone
+}
+
+// cloneAverageState duplica contributi e versioni della media convergente.
+func cloneAverageState(averageState *shared.AverageState) *shared.AverageState {
+	if averageState == nil {
+		return nil
+	}
+	clone := &shared.AverageState{
+		Contributions: make(map[shared.NodeID]shared.AverageContribution, len(averageState.Contributions)),
+		Versions:      make(map[shared.NodeID]shared.StateVersionStamp, len(averageState.Versions)),
+	}
+	for nodeID, contribution := range averageState.Contributions {
+		clone.Contributions[nodeID] = contribution
+	}
+	for nodeID, version := range averageState.Versions {
+		clone.Versions[nodeID] = version
+	}
+	return clone
+}
+
+// cloneMinState duplica le versioni monotone del minimo.
+func cloneMinState(minState *shared.MinState) *shared.MinState {
+	if minState == nil {
+		return nil
+	}
+	clone := &shared.MinState{Versions: make(map[shared.NodeID]shared.StateVersionStamp, len(minState.Versions))}
+	for nodeID, version := range minState.Versions {
+		clone.Versions[nodeID] = version
+	}
+	return clone
+}
+
+// cloneMaxState duplica le versioni monotone del massimo.
+func cloneMaxState(maxState *shared.MaxState) *shared.MaxState {
+	if maxState == nil {
+		return nil
+	}
+	clone := &shared.MaxState{Versions: make(map[shared.NodeID]shared.StateVersionStamp, len(maxState.Versions))}
+	for nodeID, version := range maxState.Versions {
+		clone.Versions[nodeID] = version
+	}
+	return clone
 }
 
 func normalizeIncomingMessage(msg *shared.GossipMessage) {

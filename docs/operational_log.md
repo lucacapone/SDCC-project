@@ -331,3 +331,13 @@
 - **Descrizione task**: Introduzione di helper script idempotenti per bootstrap/attesa/raccolta artefatti/teardown del cluster Docker Compose, con osservabilità dei valori finali in shutdown e documentazione operativa aggiornata.
 - **File modificati**: `scripts/cluster_common.sh`, `scripts/cluster_up.sh`, `scripts/cluster_wait_ready.sh`, `scripts/cluster_collect_results.sh`, `scripts/cluster_down.sh`, `cmd/node/main.go`, `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiunto un set minimo di script Bash per orchestrare esternamente il Compose canonico senza modificarne la struttura, con cleanup preventivo, naming stabile (`sdcc-bootstrap`) e messaggi di errore uniformi. Per permettere la raccolta dei valori finali per nodo senza introdurre endpoint runtime aggiuntivi, ho reso esplicito nel binario il log di shutdown con snapshot finale (`final_value`, round e message id), quindi ho documentato in `docs/testing.md` il flusso operativo consigliato e la directory artefatti generata dagli helper.
+
+## 2026-03-20 00:00:00 UTC
+- **Descrizione task**: Introduzione del test canonico `TestNodeCrashAndRestart` nella suite `tests/integration`, con estrazione dell'harness in-memory condiviso, logging osservabile e aggiornamento documentazione dei test.
+- **File modificati**: `tests/integration/harness_test.go`, `tests/integration/cluster_convergence_test.go`, `tests/integration/node_crash_restart_test.go`, `docs/testing.md`, `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho centralizzato rete/transport/bootstrap/polling/snapshot in helper condivisi per evitare duplicazioni nella suite di integrazione; il nuovo scenario verifica attività gossip pre-crash, stop effettivo del nodo, convergenza del cluster residuo, restart/rejoin e aggiornamento del nodo rientrato tramite assert osservabili e `t.Logf` diagnostici, mantenendo la documentazione allineata al comportamento reale del repository.
+
+## 2026-03-20 00:10:00 UTC
+- **Descrizione task**: Correzione concorrente del payload gossip per la suite di integrazione tramite copia profonda dello stato serializzabile prima della `json.Marshal`.
+- **File modificati**: `internal/gossip/engine.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Durante l'esecuzione ripetuta dei test di integrazione è emersa una corsa su mappe condivise tra round gossip e merge in ricezione; ho quindi isolato il payload serializzato con una copia profonda dei metadati di aggregazione, così da rendere stabile il nuovo scenario crash/restart e la suite `tests/integration` senza alterare il contratto osservabile del protocollo.
