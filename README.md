@@ -58,12 +58,14 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
 - **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
 - **M10**: completata lato repository/documentazione con test canonico `tests/integration/TestNodeCrashAndRestart`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
+- **M11**: completata lato documentazione operativa dell'observability con guida dedicata `docs/observability.md`, task report `docs/task/M11.md` e comando canonico di verifica `go test ./internal/observability -run TestMetricsExposure`.
 
 Comandi di verifica milestone:
 - M03 → `go test ./tests/transport -run TestTransportContract`
 - M04 → `go test ./tests/aggregation/sum -run TestSumConvergence`
 - M05 → test merge `average`/`min`/`max` + regressione multi-aggregazione (vedi sezione test M05).
 - M08 → `go test ./... -run Test -count=1`
+- M11 → `go test ./internal/observability -run TestMetricsExposure`
 
 Documento task:
 - `docs/task/M01.md`
@@ -76,6 +78,7 @@ Documento task:
 - `docs/task/M08.md`
 - `docs/task/M09.md`
 - `docs/task/M10.md`
+- `docs/task/M11.md`
 
 ## Raccomandazione membership / discovery
 Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
@@ -109,16 +112,17 @@ Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate 
 - Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 
 ## Observability minima
-Il package `internal/observability` espone una API minima composta da:
-- logger strutturato coerente con `log/slog`;
-- eventi gossip principali (`node_bootstrap`, `transport_start`, `gossip_round`, `remote_merge`, `shutdown`) con chiavi stabili `node_id`, `round`, `peers`, `estimate` e dettagli aggiuntivi solo quando utili al debugging;
-- collector di metriche aggregate del nodo con label a bassa cardinalità;
-- stato lifecycle minimo del nodo con transizioni `startup`, `bootstrap_completed`, `transport_initialized`, `engine_started`, `shutdown`;
-- handler/server HTTP integrato nel lifecycle reale di `cmd/node/main.go`, con `/health` usato come liveness di processo e `/ready` marcato pronto solo dopo bootstrap+avvio engine;
-- endpoint `/metrics` ed eventuale override dell'indirizzo HTTP via `OBSERVABILITY_ADDR` (default `:8080`).
+Lo stato post-M11 dell'observability è documentato in modo canonico in `docs/observability.md`.
 
-Comando di verifica mirato:
-- `go test ./internal/observability -run TestMetricsExposure -count=1`
+Sintesi operativa M11:
+- architettura minima composta da logger strutturato, collector metriche, stato lifecycle del nodo e server HTTP minimo integrato in `cmd/node/main.go`;
+- campi log stabili per gli eventi gossip principali (`event`, `node_id`, `round`, `peers`, `estimate`, `result`, `node_state`);
+- metriche esposte a bassa cardinalità per round gossip, merge remoti, stato del nodo e readiness;
+- endpoint disponibili `/health`, `/ready` e `/metrics`, con binding configurabile via `OBSERVABILITY_ADDR` (default `:8080`);
+- comando canonico di verifica post-M11:
+  - `go test ./internal/observability -run TestMetricsExposure`
+
+Per istruzioni d'uso, verifica manuale, limiti noti e scelte progettuali consultare direttamente `docs/observability.md`.
 
 ## Configurazione esterna
 Documento canonico della configurazione runtime:
