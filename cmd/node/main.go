@@ -41,24 +41,46 @@ func main() {
 		membership.NoopJoinClient{},
 		time.Now().UTC(),
 	)
-	logger.Info("bootstrap membership completato",
-		"used_join_endpoint", bootstrapRes.UsedJoinEndpoint,
+	logger.Info("gossip bootstrap completato",
+		"event", "node_bootstrap",
+		"node_id", cfg.NodeID,
+		"round", 0,
+		"peers", bootstrapRes.KnownPeers,
+		"estimate", 0.0,
 		"join_endpoint", bootstrapRes.JoinEndpoint,
+		"used_join_endpoint", bootstrapRes.UsedJoinEndpoint,
 		"fallback_used", bootstrapRes.FallbackUsed,
-		"known_peers", bootstrapRes.KnownPeers,
-		"self_node_id", cfg.NodeID,
-		"self_addr", selfAdvertiseAddr,
+		"advertise_addr", selfAdvertiseAddr,
 	)
 
 	listenAddress := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(cfg.NodePort))
 	var gossipTransport transport.Transport
 	udpTransport, err := transport.NewUDPTransport(listenAddress)
 	if err != nil {
-		logger.Warn("inizializzazione UDP transport fallita, fallback a NoopTransport", "listen_address", listenAddress, "error", err)
+		logger.Warn("avvio transport gossip con fallback noop",
+			"event", "transport_start",
+			"node_id", cfg.NodeID,
+			"round", 0,
+			"peers", bootstrapRes.KnownPeers,
+			"estimate", 0.0,
+			"transport", "noop",
+			"listen_address", fmt.Sprintf("udp://%s", listenAddress),
+			"advertise_address", fmt.Sprintf("udp://%s", selfAdvertiseAddr),
+			"error", err,
+		)
 		gossipTransport = transport.NoopTransport{}
 	} else {
 		gossipTransport = udpTransport
-		logger.Info("transport inizializzato", "type", "udp", "listen_address", fmt.Sprintf("udp://%s", listenAddress), "advertise_address", fmt.Sprintf("udp://%s", selfAdvertiseAddr))
+		logger.Info("transport gossip avviato",
+			"event", "transport_start",
+			"node_id", cfg.NodeID,
+			"round", 0,
+			"peers", bootstrapRes.KnownPeers,
+			"estimate", 0.0,
+			"transport", "udp",
+			"listen_address", fmt.Sprintf("udp://%s", listenAddress),
+			"advertise_address", fmt.Sprintf("udp://%s", selfAdvertiseAddr),
+		)
 	}
 
 	aggAlgo, err := aggregation.Factory(cfg.Aggregation)
@@ -86,10 +108,12 @@ func main() {
 	// Registra nei log lo snapshot finale per rendere osservabile il risultato del nodo
 	// durante il teardown orchestrato dagli script Docker Compose.
 	logger.Info("shutdown nodo completato",
+		"event", "shutdown",
 		"node_id", cfg.NodeID,
+		"round", eng.State.Round,
+		"peers", len(mset.Snapshot()),
+		"estimate", eng.State.Value,
 		"aggregation", eng.State.AggregationType,
-		"final_value", eng.State.Value,
-		"final_round", eng.State.Round,
 		"last_message_id", eng.State.LastMessageID,
 	)
 

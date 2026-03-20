@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Attende che il cluster risulti operativo verificando sia lo stato running dei container
-# sia la presenza nei log dei messaggi di bootstrap e inizializzazione del transport.
+# sia la presenza nei log dei messaggi strutturati di bootstrap e avvio transport.
 
 set -euo pipefail
 
@@ -28,14 +28,14 @@ while (( $(date +%s) <= DEADLINE_EPOCH )); do
     fi
 
     service_logs="$(run_compose logs --no-color --tail=200 "${service}" 2>/dev/null || true)"
-    if [[ "${service_logs}" != *"bootstrap membership completato"* ]] || [[ "${service_logs}" != *"transport inizializzato"* ]]; then
+    if [[ "${service_logs}" != *"gossip bootstrap completato"* ]] || [[ "${service_logs}" != *"transport gossip avviato"* ]]; then
       all_bootstrapped=false
       printf '   - %s running ma non ancora operativo nei log\n' "${service}"
     fi
   done
 
   if [[ "${all_running}" == true && "${all_bootstrapped}" == true ]]; then
-    printf 'Cluster operativo: tutti i servizi sono running e hanno completato bootstrap + transport init.\n'
+    printf 'Cluster operativo: tutti i servizi sono running e hanno completato bootstrap + avvio transport.\n'
     exit 0
   fi
 

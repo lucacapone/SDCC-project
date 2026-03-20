@@ -111,6 +111,7 @@ Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate 
 ## Observability minima
 Il package `internal/observability` espone una API minima composta da:
 - logger strutturato coerente con `log/slog`;
+- eventi gossip principali (`node_bootstrap`, `transport_start`, `gossip_round`, `remote_merge`, `shutdown`) con chiavi stabili `node_id`, `round`, `peers`, `estimate` e dettagli aggiuntivi solo quando utili al debugging;
 - collector di metriche aggregate del nodo con label a bassa cardinalità;
 - handler/server HTTP con endpoint distinti `/health`, `/ready` e `/metrics`.
 
