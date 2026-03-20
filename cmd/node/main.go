@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +32,25 @@ func main() {
 
 	selfAdvertiseAddr := cfg.AdvertiseEndpoint()
 	logger := observability.NewLogger(cfg.LogLevel, nil)
+	collector := observability.NewCollector(time.Now().UTC())
+	collector.SetHealthMessage("alive")
+	collector.SetNodeState(observability.NodeStateStartup)
+	metricsHandler := observability.NewMetricsHandler(collector)
+	metricsAddr := observabilityAddress()
+	metricsServer := observability.NewServer(metricsAddr, metricsHandler.Handler())
+	go func() {
+		if err := metricsServer.Start(); err != nil {
+			logger.Warn("server observability terminato con errore",
+				"event", "observability_http",
+				"node_id", cfg.NodeID,
+				"round", 0,
+				"peers", 0,
+				"estimate", 0.0,
+				"listen_address", metricsAddr,
+				"error", err,
+			)
+		}
+	}()
 	mset := membership.NewSet()
 	bootstrapRes := membership.Bootstrap(
 		context.Background(),
@@ -41,6 +61,8 @@ func main() {
 		membership.NoopJoinClient{},
 		time.Now().UTC(),
 	)
+	collector.AdvanceNodeState(observability.NodeStateBootstrapCompleted)
+	collector.SetKnownPeers(bootstrapRes.KnownPeers)
 	logger.Info("gossip bootstrap completato",
 		"event", "node_bootstrap",
 		"node_id", cfg.NodeID,
@@ -69,8 +91,10 @@ func main() {
 			"error", err,
 		)
 		gossipTransport = transport.NoopTransport{}
+		collector.AdvanceNodeState(observability.NodeStateTransportInitialized)
 	} else {
 		gossipTransport = udpTransport
+		collector.AdvanceNodeState(observability.NodeStateTransportInitialized)
 		logger.Info("transport gossip avviato",
 			"event", "transport_start",
 			"node_id", cfg.NodeID,
@@ -103,10 +127,16 @@ func main() {
 	if err := eng.Start(ctx); err != nil {
 		panic(err)
 	}
+	collector.AdvanceNodeState(observability.NodeStateEngineStarted)
+	collector.SetKnownPeers(len(mset.Snapshot()))
+	collector.SetCurrentEstimate(eng.State.Value)
 	<-ctx.Done()
 
 	// Registra nei log lo snapshot finale per rendere osservabile il risultato del nodo
 	// durante il teardown orchestrato dagli script Docker Compose.
+	collector.SetCurrentEstimate(eng.State.Value)
+	collector.SetKnownPeers(len(mset.Snapshot()))
+	collector.SetNodeState(observability.NodeStateShutdown)
 	logger.Info("shutdown nodo completato",
 		"event", "shutdown",
 		"node_id", cfg.NodeID,
@@ -118,4 +148,17 @@ func main() {
 	)
 
 	_ = eng.Stop()
+	_ = metricsServer.Shutdown(5 * time.Second)
+}
+
+// observabilityAddress restituisce l'indirizzo del server HTTP di observability.
+//
+// Se OBSERVABILITY_ADDR non è valorizzato, usa :8080 per mantenere il wiring
+// piccolo e compatibile con Compose/debug locale senza introdurre nuova config.
+func observabilityAddress() string {
+	addr := strings.TrimSpace(os.Getenv("OBSERVABILITY_ADDR"))
+	if addr == "" {
+		return ":8080"
+	}
+	return addr
 }

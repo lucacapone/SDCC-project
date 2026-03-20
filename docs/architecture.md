@@ -11,8 +11,23 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
 - `internal/aggregation`: contratti comuni delle aggregazioni + factory runtime con implementazioni dedicate (`sum`, `average`, `min`, `max`).
 - `internal/transport`: astrazione trasporto + adapter UDP concreto con lifecycle (`Start`/`Send`/`Close`) e rispetto di `context.Context`.
-- `internal/observability`: logger strutturato coerente con `log/slog`, collector di metriche aggregate a bassa cardinalità e handler/server HTTP minimo con endpoint `/health`, `/ready` e `/metrics`.
+- `internal/observability`: logger strutturato coerente con `log/slog`, collector di metriche aggregate a bassa cardinalità, stato lifecycle minimo del nodo e handler/server HTTP minimo con endpoint `/health`, `/ready` e `/metrics`.
 
+
+## Integrazione runtime observability e lifecycle del nodo
+Nel runtime reale il punto di integrazione primario resta `cmd/node/main.go`: il package `internal/node/` non è presente nel repository attuale e non è stato introdotto un ulteriore layer intermedio perché il wiring richiesto resta piccolo e coerente con il layout esistente.
+
+Il collector di observability viene inizializzato all'avvio del processo e segue le transizioni minime:
+- `startup` subito dopo il caricamento configurazione e prima del bootstrap;
+- `bootstrap_completed` dopo `membership.Bootstrap`;
+- `transport_initialized` dopo la scelta/inizializzazione del transport reale o fallback `NoopTransport`;
+- `engine_started` solo dopo `eng.Start(ctx)` completato con successo;
+- `shutdown` quando il processo riceve il segnale di terminazione e pubblica lo snapshot finale.
+
+Semantica degli endpoint:
+- `/health`: liveness minimale del processo HTTP/runtime, restituisce sempre `200 OK` finché il processo è vivo e include il `node_state` corrente per debugging;
+- `/ready`: readiness utile per Compose/debug locale, restituisce `503` finché il nodo non ha completato bootstrap e avvio engine, poi `200 OK` in stato `engine_started`;
+- `/metrics`: esporta sia i contatori/gauge esistenti sia la gauge `sdcc_node_state{state=...}` per rendere osservabile la fase corrente del lifecycle.
 
 ## Layer transport astratto e confini con gossip
 L'engine gossip è isolato dal protocollo di rete concreto: usa solo l'interfaccia `Transport` (`Start`, `Send`, `Close`) con payload `[]byte` e destinazione `string`.

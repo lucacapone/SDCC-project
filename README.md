@@ -113,7 +113,9 @@ Il package `internal/observability` espone una API minima composta da:
 - logger strutturato coerente con `log/slog`;
 - eventi gossip principali (`node_bootstrap`, `transport_start`, `gossip_round`, `remote_merge`, `shutdown`) con chiavi stabili `node_id`, `round`, `peers`, `estimate` e dettagli aggiuntivi solo quando utili al debugging;
 - collector di metriche aggregate del nodo con label a bassa cardinalità;
-- handler/server HTTP con endpoint distinti `/health`, `/ready` e `/metrics`.
+- stato lifecycle minimo del nodo con transizioni `startup`, `bootstrap_completed`, `transport_initialized`, `engine_started`, `shutdown`;
+- handler/server HTTP integrato nel lifecycle reale di `cmd/node/main.go`, con `/health` usato come liveness di processo e `/ready` marcato pronto solo dopo bootstrap+avvio engine;
+- endpoint `/metrics` ed eventuale override dell'indirizzo HTTP via `OBSERVABILITY_ADDR` (default `:8080`).
 
 Comando di verifica mirato:
 - `go test ./internal/observability -run TestMetricsExposure -count=1`
