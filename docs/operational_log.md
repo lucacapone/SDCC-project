@@ -355,3 +355,7 @@
 - **Descrizione task**: Estensione di `docs/testing.md` con sezione M10 separata da M09, chiarimento del rapporto tra test interni crash/rejoin, test canonico in `tests/integration` e script manuali di fault injection; allineamento sintetico del README alla nuova distinzione documentale.
 - **File modificati**: `docs/testing.md`, `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho separato esplicitamente M09 (convergenza cluster) da M10 (crash/restart e rejoin) nel documento canonico dei test, documentando scenario, timeout motivati, polling/stabilizzazione, limiti noti e comando operativo ufficiale del test `TestNodeCrashAndRestart`; ho inoltre aggiornato il README per evitare divergenze terminologiche tra documentazione introduttiva e documento canonico.
+## 2026-03-20 11:23:14 UTC
+- **Task**: allineamento documentazione M10 nel README con separazione esplicita da M09 e aggiunta del task report dedicato.
+- **File modificati**: `README.md`, `docs/task/M10.md`, `docs/operational_log.md`.
+- **Sintesi ragionata**: ho verificato che il test canonico `TestNodeCrashAndRestart` e la documentazione `docs/testing.md` erano già presenti, ma mancava il task report dedicato richiesto per considerare M10 pienamente completata. Ho quindi aggiornato il README per distinguere chiaramente M09 da M10, correggere il timeout M09 a `350ms`, documentare il comando ufficiale M10 e aggiungere il report `docs/task/M10.md` per mantenere coerenza tra codice, documentazione e milestone.
