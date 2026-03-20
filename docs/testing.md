@@ -61,18 +61,24 @@ Parametri di scenario congelati:
 - bootstrap del cluster multi-nodo coerente con l'architettura corrente;
 - attività gossip prima del crash tramite snapshot che cambiano realmente;
 - crash di un nodo durante i round gossip;
-- prosecuzione della convergenza nel cluster residuo senza coordinatore centrale;
+- deregistrazione effettiva del nodo crashato dal transport di test;
+- convergenza del cluster residuo senza coordinatore centrale;
+- almeno tre snapshot consecutivi del cluster residuo che mostrano progresso monotono oppure stabilizzazione coerente entro banda;
 - restart del nodo crashato e sua nuova registrazione sulla rete di test;
-- rejoin del nodo nel cluster e ricezione di aggiornamenti rispetto al valore iniziale;
-- convergenza finale del nodo rientrato verso lo stato osservato dal cluster entro banda configurata.
+- rejoin reale del nodo, verificato osservando che il valore non resta bloccato sul valore di restart preimpostato;
+- convergenza stabile finale del nodo rientrato su più poll consecutivi, non su un singolo snapshot vincente;
+- confronto finale del nodo rientrato sia con la banda del cluster sia con un valore atteso informativo.
 
 Il test produce `t.Logf` diagnostici con:
 
 - valori per nodo prima del crash;
-- valori del cluster residuo;
+- conferma di deregistrazione del nodo crashato;
+- valori e sequenza di snapshot del cluster residuo;
 - valori dopo il restart;
-- valore finale del nodo rientrato;
-- banda finale del cluster.
+- valore finale del nodo rientrato con distanza dalla banda del cluster e dal valore atteso informativo;
+- sequenza finale di snapshot stabili.
+
+La suite continua a usare `average` perché è particolarmente leggibile nello scenario di rejoin: il nodo rientrato parte da un valore artificiale di restart e deve mostrare un riallineamento osservabile verso il consenso del cluster, rendendo evidente se resta bloccato localmente oppure se assorbe davvero gli aggiornamenti gossip degli altri peer.
 
 ### Timeout operativo
 
