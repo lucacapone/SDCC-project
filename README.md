@@ -206,7 +206,13 @@ Target `Makefile` dedicati:
 ```bash
 make test-integration-internal
 make test-crash
+make test-crash-restart
+# alias equivalente: make test-m10
 ```
+
+Differenza operativa tra i target crash:
+- `make test-crash`: **target interno/debug** che resta puntato ai test in-memory del package `internal/gossip`.
+- `make test-crash-restart` / `make test-m10`: **target canonico milestone M10** che esegue `tests/integration/TestNodeCrashAndRestart`.
 
 ## Test di integrazione end-to-end M09
 Documento canonico dei test di integrazione e dei comandi operativi:
@@ -234,6 +240,17 @@ go test ./tests/integration -run TestClusterConvergence -count=1
 make test-integration
 ```
 
+Comando ufficiale M10:
+```bash
+go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+make test-crash-restart
+# alias equivalente: make test-m10
+```
+
+Distinzione esplicita dei target crash/restart:
+- `make test-crash` continua a rappresentare il livello **interno/debug** del package `internal/gossip`.
+- `make test-crash-restart` e `make test-m10` rappresentano il livello **canonico milestone M10** nella suite `tests/integration`.
+
 Sintesi criteri M10:
 - crash osservabile di **1 nodo su 3** durante round gossip già attivi;
 - convergenza del **cluster residuo** (`node-2`, `node-3`) entro banda `<= 0.05` e stabilizzazione su più snapshot consecutivi;
@@ -244,6 +261,8 @@ Sintesi criteri M10:
 Comando ufficiale M10:
 ```bash
 go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+make test-crash-restart
+# alias equivalente: make test-m10
 ```
 
 ## Esecuzione test

@@ -364,3 +364,8 @@
 - **Descrizione task**: Riscrittura di `docs/task/M10.md` nello stile milestone M08/M09, con esplicitazione del percorso da copertura interna parziale a completamento nella suite canonica di integrazione.
 - **File modificati**: `docs/task/M10.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho riletto README, documentazione architetturale/testing, log operativo, baseline interna `internal/gossip/integration_test.go`, harness `tests/integration` e script `scripts/` per ricostruire lo stato reale di M10. Ho quindi riscritto il task report chiarendo che la milestone era assente come documento, parzialmente coperta da test interni e poi completata nella suite canonica `tests/integration/TestNodeCrashAndRestart`, includendo gap, componenti riusati, decisioni tecniche, strategia di test, verifiche, limiti residui e follow-up.
+
+## 2026-03-20 12:30:00 UTC
+- **Descrizione task**: Introduzione di un target Makefile dedicato al test canonico M10 e chiarimento documentale della differenza tra target crash interno/debug e target crash/restart di milestone.
+- **File modificati**: `Makefile`, `README.md`, `docs/testing.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho mantenuto invariato `make test-crash` come entry point dei test interni `internal/gossip`, aggiungendo `make test-crash-restart` e l'alias `make test-m10` verso `tests/integration/TestNodeCrashAndRestart`. Ho poi allineato README e documento canonico dei test per esplicitare senza ambiguità la differenza tra livello interno/debug e livello canonico M10.
