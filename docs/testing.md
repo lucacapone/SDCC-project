@@ -234,6 +234,26 @@ Dove:
 - `expected_delta` è la differenza assoluta dal valore atteso comune (`30.0` nello scenario corrente);
 - `common_band` è la banda comune del cluster al momento del report.
 
+## Test canonico observability
+
+Il package `internal/observability` include ora il test canonico:
+
+- **nome canonico**: `TestMetricsExposure`;
+- **file**: `internal/observability/metrics_test.go`.
+
+La suite verifica in modo deterministico che:
+
+- l'endpoint `/metrics` esponga almeno le metriche minime del nodo (`rounds`, merge remoti per esito, peer noti, stima corrente, uptime, readiness);
+- l'endpoint `/health` risponda positivamente con HTTP `200 OK`;
+- l'endpoint `/ready` rifletta coerentemente lo stato del collector restituendo `503` quando il nodo non è pronto e `200` quando viene marcato ready;
+- gli esiti di merge non riconosciuti vengano collassati nel bucket stabile `unknown`, evitando label ad alta cardinalità.
+
+Comando operativo mirato:
+
+```bash
+go test ./internal/observability -run TestMetricsExposure -count=1
+```
+
 ## Helper script per cluster locale Docker Compose
 
 Per la validazione operativa/manuale del cluster locale multi-nodo con Docker Compose, il repository ora include helper minimi in `scripts/` progettati per essere **idempotenti**, robusti rispetto a container residui e leggibili in caso di errore:
