@@ -129,6 +129,8 @@ Per la validazione operativa/manuale del cluster locale multi-nodo con Docker Co
 - `scripts/cluster_wait_ready.sh`: attesa dello stato operativo verificando sia `running` dei container sia la presenza nei log di `bootstrap membership completato` e `transport inizializzato`;
 - `scripts/cluster_collect_results.sh`: raccolta di `docker compose ps`, log aggregati e ultimo report di valori finali disponibile nei log;
 - `scripts/cluster_down.sh`: stop pulito del cluster, raccolta degli artefatti finali e `docker compose down --remove-orphans`.
+- `scripts/fault_injection/node_stop_start.sh`: stop/start/bounce di un singolo nodo Compose per prove manuali di crash/restart;
+- `scripts/fault_injection/collect_debug_snapshot.sh`: snapshot diagnostici minimi per un nodo target in `artifacts/fault_injection/`.
 
 Gli script usano naming prevedibile e stabile:
 
@@ -145,6 +147,29 @@ scripts/cluster_wait_ready.sh
 scripts/cluster_collect_results.sh
 scripts/cluster_down.sh
 ```
+
+### Fault injection operativo/manuale sul cluster Compose
+
+Per scenari manuali di crash/restart il repository include la directory `scripts/fault_injection/`, volutamente minimale e senza coordinatore centrale. Gli script riusano `scripts/cluster_common.sh`, quindi restano allineati al project name Compose canonico, al file `docker-compose.yml` di root e ai servizi `node1`, `node2`, `node3`.
+
+Esempio operativo suggerito:
+
+```bash
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
+AFTER_STOP_SLEEP_SECONDS=5 scripts/fault_injection/node_stop_start.sh bounce node2
+SNAPSHOT_LABEL=post-bounce scripts/fault_injection/collect_debug_snapshot.sh node2
+scripts/cluster_down.sh
+```
+
+Parametri principali supportati:
+
+- `ACTION`, `SERVICE`, `STOP_TIMEOUT_SECONDS`, `START_TIMEOUT_SECONDS`, `AFTER_STOP_SLEEP_SECONDS`, `WAIT_FOR_RUNNING` per `node_stop_start.sh`;
+- `SERVICE`, `LOG_TAIL_LINES`, `SNAPSHOT_LABEL` per `collect_debug_snapshot.sh`.
+
+Gli artefatti vengono salvati in `artifacts/fault_injection/` con un symlink `latest-<service>` verso l'ultimo snapshot raccolto per il nodo target.
+
+Nota esplicita di scope: il test automatico canonico crash/restart resta `TestNodeCrashAndRestart` dentro `tests/integration` e continua a usare un harness in-memory; gli script `scripts/fault_injection/` sono solo supporti operativi/manuali per osservare o diagnosticare il cluster Docker Compose locale.
 
 Note operative importanti:
 

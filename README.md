@@ -15,6 +15,7 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Test interni di convergenza in-memory](#test-interni-di-convergenza-in-memory)
 - [Test di integrazione end-to-end M09](#test-di-integrazione-end-to-end-m09)
 - [Script/comandi standard](#scriptcomandi-standard)
+- [Supporti operativi fault injection](#supporti-operativi-fault-injection)
 - [Criteri di successo misurabili](#criteri-di-successo-misurabili)
 - [Demo rapida](#demo-rapida)
 - [Nota deploy EC2 essenziale](#nota-deploy-ec2-essenziale)
@@ -269,6 +270,25 @@ Stato post-M08 dichiarato esplicitamente:
 - area `membership`: suite dedicata nei package `internal/membership` e `internal/gossip` per join/leave, timeout, incarnation, bootstrap e convergenza digest membership;
 - area `config`: suite dedicata in `internal/config` per load/validate, precedence env/file e validazioni bloccanti;
 - area `aggregation`: suite root + test di convergenza per `sum`, `average`, `min`, `max`, con verifica finale repository-wide demandata al comando sopra riportato.
+
+## Supporti operativi fault injection
+Per validazione manuale e debug del cluster Docker Compose canonico è disponibile la directory `scripts/fault_injection/`, costruita come estensione leggera degli helper già presenti in `scripts/` e senza introdurre orchestrazione centralizzata o dipendenze fragili.
+
+Script disponibili:
+- `scripts/fault_injection/node_stop_start.sh`: simula `stop`, `start` o `bounce` di un singolo servizio Compose (`node1`, `node2`, `node3`) con parametri configurabili via argomenti o variabili ambiente.
+- `scripts/fault_injection/collect_debug_snapshot.sh`: raccoglie snapshot diagnostici minimi (`docker compose ps`, log cluster, log del servizio target, `docker inspect`, metadata) in `artifacts/fault_injection/`.
+- `scripts/fault_injection/common.sh`: helper condivisi che riusano `scripts/cluster_common.sh` per rimanere allineati al `docker-compose.yml` canonico di root.
+
+Esempi rapidi:
+```bash
+# arresta e riavvia node2 con una breve pausa post-stop
+AFTER_STOP_SLEEP_SECONDS=5 scripts/fault_injection/node_stop_start.sh bounce node2
+
+# raccoglie uno snapshot diagnostico del nodo riavviato
+SNAPSHOT_LABEL=post-restart scripts/fault_injection/collect_debug_snapshot.sh node2
+```
+
+Nota importante: il test automatico canonico di crash/restart continua a vivere in `tests/integration` come suite **in-memory**; gli script in `scripts/fault_injection/` sono supporti operativi/manuali per debug e validazione locale del cluster Compose, non dipendenze hard della suite Go.
 
 ## Script/comandi standard
 È disponibile `Makefile` con target per esecuzioni riproducibili locali e Docker:
