@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration test-integration-internal test-crash docker-test
+.PHONY: test test-unit test-integration test-integration-internal test-crash test-crash-restart test-m10 docker-test
 
 test:
 	go test ./... -count=1
@@ -14,6 +14,11 @@ test-integration-internal:
 
 test-crash:
 	go test ./internal/gossip -run TestCrash -count=1
+
+test-crash-restart:
+	go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+
+test-m10: test-crash-restart
 
 docker-test:
 	docker run --rm -v "$(PWD)":/src -w /src golang:1.22 go test ./... -count=1
