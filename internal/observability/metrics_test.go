@@ -18,7 +18,7 @@ func TestMetricsExposure(t *testing.T) {
 	collector.IncRemoteMergeOutcome("dynamic-peer-should-collapse")
 	collector.SetKnownPeers(4)
 	collector.SetCurrentEstimate(42.5)
-	collector.SetHealthMessage("ok")
+	collector.SetHealthMessage("alive")
 
 	handler := NewMetricsHandler(collector)
 	handler.now = func() time.Time {
@@ -47,6 +47,8 @@ func TestMetricsExposure(t *testing.T) {
 		"sdcc_node_estimate 42.5",
 		"sdcc_node_uptime_seconds 12.000",
 		"sdcc_node_ready 0",
+		"sdcc_node_state{state=\"startup\"} 1",
+		"sdcc_node_state{state=\"engine_started\"} 0",
 	} {
 		if !strings.Contains(metricsText, expected) {
 			t.Fatalf("metrica attesa assente %q nel body:\n%s", expected, metricsText)
@@ -64,6 +66,13 @@ func TestMetricsExposure(t *testing.T) {
 	if healthResp.StatusCode != http.StatusOK {
 		t.Fatalf("status health inatteso: got=%d want=%d", healthResp.StatusCode, http.StatusOK)
 	}
+	healthBody, err := io.ReadAll(healthResp.Body)
+	if err != nil {
+		t.Fatalf("errore lettura body health: %v", err)
+	}
+	if !strings.Contains(string(healthBody), `"status":"alive"`) {
+		t.Fatalf("body health inatteso: %s", string(healthBody))
+	}
 
 	readyResp, err := http.Get(server.URL + "/ready")
 	if err != nil {
@@ -73,8 +82,17 @@ func TestMetricsExposure(t *testing.T) {
 	if readyResp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status ready not-ready inatteso: got=%d want=%d", readyResp.StatusCode, http.StatusServiceUnavailable)
 	}
+	readyBody, err := io.ReadAll(readyResp.Body)
+	if err != nil {
+		t.Fatalf("errore lettura body ready non pronto: %v", err)
+	}
+	if !strings.Contains(string(readyBody), `"node_state":"startup"`) {
+		t.Fatalf("body ready non pronto inatteso: %s", string(readyBody))
+	}
 
-	collector.SetReady(true)
+	collector.AdvanceNodeState(NodeStateBootstrapCompleted)
+	collector.AdvanceNodeState(NodeStateTransportInitialized)
+	collector.AdvanceNodeState(NodeStateEngineStarted)
 	readyRespAfter, err := http.Get(server.URL + "/ready")
 	if err != nil {
 		t.Fatalf("errore richiesta ready dopo aggiornamento: %v", err)
@@ -82,5 +100,38 @@ func TestMetricsExposure(t *testing.T) {
 	defer readyRespAfter.Body.Close()
 	if readyRespAfter.StatusCode != http.StatusOK {
 		t.Fatalf("status ready inatteso dopo update: got=%d want=%d", readyRespAfter.StatusCode, http.StatusOK)
+	}
+	readyBodyAfter, err := io.ReadAll(readyRespAfter.Body)
+	if err != nil {
+		t.Fatalf("errore lettura body ready pronto: %v", err)
+	}
+	if !strings.Contains(string(readyBodyAfter), `"node_state":"engine_started"`) {
+		t.Fatalf("body ready pronto inatteso: %s", string(readyBodyAfter))
+	}
+}
+
+func TestCollectorNodeStateTransitions(t *testing.T) {
+	collector := NewCollector(time.Date(2026, time.March, 20, 11, 0, 0, 0, time.UTC))
+
+	collector.AdvanceNodeState(NodeStateBootstrapCompleted)
+	collector.AdvanceNodeState(NodeStateTransportInitialized)
+	collector.AdvanceNodeState(NodeStateEngineStarted)
+	collector.AdvanceNodeState(NodeStateStartup)
+
+	snapshot := collector.Snapshot(time.Date(2026, time.March, 20, 11, 0, 5, 0, time.UTC))
+	if snapshot.NodeState != NodeStateEngineStarted {
+		t.Fatalf("stato lifecycle inatteso: got=%s want=%s", snapshot.NodeState, NodeStateEngineStarted)
+	}
+	if !snapshot.Ready {
+		t.Fatalf("readiness inattesa: got=%t want=%t", snapshot.Ready, true)
+	}
+
+	collector.SetNodeState(NodeStateShutdown)
+	shutdownSnapshot := collector.Snapshot(time.Date(2026, time.March, 20, 11, 0, 6, 0, time.UTC))
+	if shutdownSnapshot.NodeState != NodeStateShutdown {
+		t.Fatalf("stato shutdown inatteso: got=%s want=%s", shutdownSnapshot.NodeState, NodeStateShutdown)
+	}
+	if shutdownSnapshot.Ready {
+		t.Fatalf("readiness inattesa in shutdown: got=%t want=%t", shutdownSnapshot.Ready, false)
 	}
 }

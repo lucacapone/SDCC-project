@@ -344,3 +344,6 @@ Questo comando resta utile per confermare che il test M09 non introduca regressi
 - Il bootstrap del cluster è automatico nel test e costruisce i tre nodi `node-1`, `node-2`, `node-3` con membership full-mesh iniziale.
 - Il polling usa `time.NewTicker` e un timeout esplicito, evitando sleep arbitrari.
 - In caso di success o failure, il test emette un report leggibile tramite `t.Logf` con valori finali per nodo e metriche di convergenza.
+
+
+Nota runtime: `cmd/node/main.go` avvia anche il piccolo server HTTP di observability sul binding `OBSERVABILITY_ADDR` se presente, altrimenti `:8080`.

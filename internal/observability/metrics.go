@@ -14,6 +14,17 @@ import (
 const (
 	// mergeResultUnknown raccoglie eventuali esiti non riconosciuti senza aumentare la cardinalità.
 	mergeResultUnknown = "unknown"
+
+	// NodeStateStartup rappresenta l'avvio iniziale del processo prima del bootstrap.
+	NodeStateStartup NodeState = "startup"
+	// NodeStateBootstrapCompleted indica che il bootstrap membership iniziale è terminato.
+	NodeStateBootstrapCompleted NodeState = "bootstrap_completed"
+	// NodeStateTransportInitialized indica che il transport è stato inizializzato.
+	NodeStateTransportInitialized NodeState = "transport_initialized"
+	// NodeStateEngineStarted indica che l'engine gossip è stato avviato ed è pronto per round/scambi.
+	NodeStateEngineStarted NodeState = "engine_started"
+	// NodeStateShutdown indica che il nodo sta completando lo shutdown.
+	NodeStateShutdown NodeState = "shutdown"
 )
 
 var allowedMergeResults = map[string]struct{}{
@@ -23,12 +34,24 @@ var allowedMergeResults = map[string]struct{}{
 	mergeResultUnknown: {},
 }
 
+var nodeStateOrder = map[NodeState]int{
+	NodeStateStartup:              0,
+	NodeStateBootstrapCompleted:   1,
+	NodeStateTransportInitialized: 2,
+	NodeStateEngineStarted:        3,
+	NodeStateShutdown:             4,
+}
+
+// NodeState rappresenta lo stato lifecycle minimo osservabile del nodo.
+type NodeState string
+
 // Collector raccoglie metriche aggregate del nodo con label a bassa cardinalità.
 type Collector struct {
 	mu sync.RWMutex
 
 	startedAt time.Time
 	ready     bool
+	nodeState NodeState
 
 	totalRounds   uint64
 	remoteMerges  map[string]uint64
@@ -41,6 +64,7 @@ type Collector struct {
 type Snapshot struct {
 	StartedAt       time.Time
 	Ready           bool
+	NodeState       NodeState
 	TotalRounds     uint64
 	RemoteMerges    map[string]uint64
 	KnownPeers      int
@@ -57,8 +81,9 @@ func NewCollector(now time.Time) *Collector {
 
 	collector := &Collector{
 		startedAt:     now,
+		nodeState:     NodeStateStartup,
 		remoteMerges:  make(map[string]uint64, len(allowedMergeResults)),
-		healthMessage: "ok",
+		healthMessage: "alive",
 	}
 	for result := range allowedMergeResults {
 		collector.remoteMerges[result] = 0
@@ -112,11 +137,31 @@ func (c *Collector) SetReady(ready bool) {
 	c.ready = ready
 }
 
+// AdvanceNodeState applica una transizione monotona del lifecycle del nodo.
+func (c *Collector) AdvanceNodeState(state NodeState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if nodeStateOrder[state] < nodeStateOrder[c.nodeState] {
+		return
+	}
+	c.nodeState = state
+	c.ready = state == NodeStateEngineStarted
+}
+
+// SetNodeState forza esplicitamente lo stato lifecycle del nodo aggiornando anche la readiness.
+func (c *Collector) SetNodeState(state NodeState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nodeState = state
+	c.ready = state == NodeStateEngineStarted
+}
+
 // SetHealthMessage aggiorna il messaggio sintetico dell'health check.
 func (c *Collector) SetHealthMessage(message string) {
 	message = strings.TrimSpace(message)
 	if message == "" {
-		message = "ok"
+		message = "alive"
 	}
 
 	c.mu.Lock()
@@ -141,6 +186,7 @@ func (c *Collector) Snapshot(now time.Time) Snapshot {
 	return Snapshot{
 		StartedAt:       c.startedAt,
 		Ready:           c.ready,
+		NodeState:       c.nodeState,
 		TotalRounds:     c.totalRounds,
 		RemoteMerges:    remoteMerges,
 		KnownPeers:      c.currentPeers,
@@ -218,7 +264,7 @@ func (h *MetricsHandler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	snapshot := h.collector.Snapshot(h.now())
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, "{\"status\":\"ok\",\"message\":%q}", snapshot.HealthMessage)
+	_, _ = fmt.Fprintf(w, "{\"status\":\"alive\",\"message\":%q,\"node_state\":%q}", snapshot.HealthMessage, snapshot.NodeState)
 }
 
 // handleReady espone lo stato di readiness del nodo/servizio.
@@ -227,12 +273,12 @@ func (h *MetricsHandler) handleReady(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if !snapshot.Ready {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = fmt.Fprint(w, "{\"status\":\"not_ready\"}")
+		_, _ = fmt.Fprintf(w, "{\"status\":\"not_ready\",\"node_state\":%q}", snapshot.NodeState)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprint(w, "{\"status\":\"ready\"}")
+	_, _ = fmt.Fprintf(w, "{\"status\":\"ready\",\"node_state\":%q}", snapshot.NodeState)
 }
 
 // handleMetrics espone metriche testuali in formato line-based stabile e facile da testare.
@@ -292,6 +338,26 @@ func formatMetrics(snapshot Snapshot) string {
 		builder.WriteString("1\n")
 	} else {
 		builder.WriteString("0\n")
+	}
+
+	builder.WriteString("# HELP sdcc_node_state Stato lifecycle minimo del nodo esposto con label stabile.\n")
+	builder.WriteString("# TYPE sdcc_node_state gauge\n")
+	states := []NodeState{
+		NodeStateStartup,
+		NodeStateBootstrapCompleted,
+		NodeStateTransportInitialized,
+		NodeStateEngineStarted,
+		NodeStateShutdown,
+	}
+	for _, state := range states {
+		builder.WriteString("sdcc_node_state{state=\"")
+		builder.WriteString(string(state))
+		builder.WriteString("\"} ")
+		if snapshot.NodeState == state {
+			builder.WriteString("1\n")
+		} else {
+			builder.WriteString("0\n")
+		}
 	}
 
 	return builder.String()
