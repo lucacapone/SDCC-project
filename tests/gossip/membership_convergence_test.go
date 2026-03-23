@@ -98,3 +98,52 @@ func decodeMessage(t *testing.T, payload []byte) shared.GossipMessage {
 	}
 	return msg
 }
+
+func TestMergeMembershipIgnoresObsoleteDigestAfterPrune(t *testing.T) {
+	base := time.Date(2026, time.March, 23, 10, 30, 0, 0, time.UTC)
+	set := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 5 * time.Second,
+	})
+
+	set.Upsert(membership.Peer{NodeID: "node-b", Addr: "node-b", Status: membership.Left, Incarnation: 4, LastSeen: base})
+	pruned := set.Prune(base.Add(5 * time.Second))
+	if len(pruned) != 1 {
+		t.Fatalf("prune inattesa: %+v", pruned)
+	}
+
+	mergeMembership(set, []shared.MembershipEntry{{
+		NodeID:      "node-b",
+		Addr:        "node-b",
+		Status:      string(membership.Alive),
+		Incarnation: 4,
+		LastSeen:    base.Add(6 * time.Second),
+	}})
+	if len(set.Snapshot()) != 0 {
+		t.Fatalf("digest obsoleto non deve reintrodurre il peer: %+v", set.Snapshot())
+	}
+
+	mergeMembership(set, []shared.MembershipEntry{{
+		NodeID:      "node-b",
+		Addr:        "node-b",
+		Status:      string(membership.Alive),
+		Incarnation: 5,
+		LastSeen:    base.Add(7 * time.Second),
+	}})
+	peer, ok := membershipByNodeID(set.Snapshot())["node-b"]
+	if !ok {
+		t.Fatalf("digest piu recente deve permettere il rejoin")
+	}
+	if peer.Status != membership.Alive || peer.Incarnation != 5 {
+		t.Fatalf("peer inatteso dopo rejoin: %+v", peer)
+	}
+}
+
+func membershipByNodeID(peers []membership.Peer) map[string]membership.Peer {
+	out := make(map[string]membership.Peer, len(peers))
+	for _, peer := range peers {
+		out[peer.NodeID] = peer
+	}
+	return out
+}

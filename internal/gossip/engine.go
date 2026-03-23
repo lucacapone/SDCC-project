@@ -124,6 +124,7 @@ func (e *Engine) round(ctx context.Context) {
 	sentAt := time.Now().UTC()
 	transitions := e.Membership.ApplyTimeoutTransitions(sentAt)
 	e.logMembershipTransitions(ctx, sentAt, transitions)
+	e.Membership.Prune(sentAt)
 	membershipSnapshot := e.Membership.Snapshot()
 	peers := selectGossipTargets(membershipSnapshot)
 

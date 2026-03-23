@@ -19,11 +19,13 @@ const (
 type Config struct {
 	SuspectTimeout time.Duration
 	DeadTimeout    time.Duration
+	PruneRetention time.Duration
 }
 
 var defaultConfig = Config{
 	SuspectTimeout: 3 * time.Second,
 	DeadTimeout:    6 * time.Second,
+	PruneRetention: 18 * time.Second,
 }
 
 // Peer rappresenta lo stato locale noto per un nodo remoto.
@@ -43,9 +45,10 @@ type Transition struct {
 
 // Set mantiene la membership locale thread-safe.
 type Set struct {
-	mu    sync.RWMutex
-	cfg   Config
-	peers map[string]Peer
+	mu               sync.RWMutex
+	cfg              Config
+	peers            map[string]Peer
+	prunedWatermarks map[string]Peer
 }
 
 func NewSet() *Set {
@@ -62,8 +65,11 @@ func NewSetWithConfig(cfg Config) *Set {
 	if cfg.DeadTimeout <= cfg.SuspectTimeout {
 		cfg.DeadTimeout = cfg.SuspectTimeout * 2
 	}
+	if cfg.PruneRetention <= 0 {
+		cfg.PruneRetention = defaultConfig.PruneRetention
+	}
 
-	return &Set{cfg: cfg, peers: make(map[string]Peer)}
+	return &Set{cfg: cfg, peers: make(map[string]Peer), prunedWatermarks: make(map[string]Peer)}
 }
 
 // Join aggiunge un seed peer noto solo tramite endpoint di rete.
@@ -88,6 +94,17 @@ func (s *Set) Upsert(update Peer) {
 	}
 	if update.Status == "" {
 		update.Status = Alive
+	}
+
+	watermarkNodeID, watermark, hasWatermark := s.findPrunedWatermarkLocked(update)
+	if hasWatermark {
+		if update.Incarnation < watermark.Incarnation {
+			return
+		}
+		if update.Incarnation == watermark.Incarnation && rankStatus(update.Status) <= rankStatus(watermark.Status) {
+			return
+		}
+		delete(s.prunedWatermarks, watermarkNodeID)
 	}
 
 	resolvedNodeID := update.NodeID
@@ -197,6 +214,39 @@ func (s *Set) ApplyTimeoutTransitions(now time.Time) []Transition {
 	return updated
 }
 
+// Prune rimuove fisicamente peer in stato dead/leave che hanno superato la retention.
+//
+// La rimozione è deterministica: un peer è eleggibile solo se
+// `now - last_seen >= PruneRetention`. Prima della cancellazione viene conservato un
+// watermark locale minimale (`node_id`, `addr`, `status`, `incarnation`, `last_seen`)
+// che impedisce la reintroduzione di digest obsoleti con incarnation/stato non più recenti.
+// Un peer può rientrare solo con un aggiornamento strettamente più nuovo del watermark.
+func (s *Set) Prune(now time.Time) []Peer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.cfg.PruneRetention <= 0 {
+		return nil
+	}
+
+	pruned := make([]Peer, 0)
+	for nodeID, peer := range s.peers {
+		if peer.Status != Dead && peer.Status != Left {
+			continue
+		}
+		if peer.LastSeen.IsZero() {
+			continue
+		}
+		if now.Sub(peer.LastSeen) < s.cfg.PruneRetention {
+			continue
+		}
+		s.recordPrunedWatermarkLocked(peer)
+		delete(s.peers, nodeID)
+		pruned = append(pruned, peer)
+	}
+	return pruned
+}
+
 // findNodeIDByAddrLocked risolve l'eventuale placeholder creato dal bootstrap seed-only.
 func (s *Set) findNodeIDByAddrLocked(addr string) string {
 	for nodeID, peer := range s.peers {
@@ -205,6 +255,55 @@ func (s *Set) findNodeIDByAddrLocked(addr string) string {
 		}
 	}
 	return ""
+}
+
+// findPrunedWatermarkLocked cerca un watermark compatibile per node_id o addr del peer aggiornato.
+func (s *Set) findPrunedWatermarkLocked(update Peer) (string, Peer, bool) {
+	if update.NodeID != "" {
+		if watermark, ok := s.prunedWatermarks[update.NodeID]; ok {
+			return update.NodeID, watermark, true
+		}
+	}
+	if update.Addr != "" {
+		for nodeID, watermark := range s.prunedWatermarks {
+			if watermark.Addr == update.Addr {
+				return nodeID, watermark, true
+			}
+		}
+	}
+	return "", Peer{}, false
+}
+
+// recordPrunedWatermarkLocked mantiene il watermark più recente per bloccare reintroduzioni obsolete.
+func (s *Set) recordPrunedWatermarkLocked(peer Peer) {
+	current, ok := s.prunedWatermarks[peer.NodeID]
+	if ok && comparePeerFreshness(peer, current) <= 0 {
+		return
+	}
+	s.prunedWatermarks[peer.NodeID] = peer
+}
+
+// comparePeerFreshness ordina peer usando prima incarnation, poi priorità stato e infine last_seen.
+func comparePeerFreshness(a, b Peer) int {
+	if a.Incarnation != b.Incarnation {
+		if a.Incarnation > b.Incarnation {
+			return 1
+		}
+		return -1
+	}
+	if rankStatus(a.Status) != rankStatus(b.Status) {
+		if rankStatus(a.Status) > rankStatus(b.Status) {
+			return 1
+		}
+		return -1
+	}
+	if a.LastSeen.After(b.LastSeen) {
+		return 1
+	}
+	if a.LastSeen.Before(b.LastSeen) {
+		return -1
+	}
+	return 0
 }
 
 func nextStatusForElapsed(current Status, elapsed time.Duration, cfg Config) Status {
