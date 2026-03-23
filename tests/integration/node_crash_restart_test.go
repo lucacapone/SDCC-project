@@ -23,8 +23,8 @@ const (
 	crashRestartMinimumRejoinDelta    = 0.50
 )
 
-// TestNodeCrashAndRestart verifica in modo più rigoroso crash, convergenza residua, rejoin reale e stabilizzazione finale.
-func TestNodeCrashAndRestart(t *testing.T) {
+// TestNodeCrashAndRestartInMemory mantiene la variante rapida/deterministica del vecchio scenario M10 per debugging locale.
+func TestNodeCrashAndRestartInMemory(t *testing.T) {
 	initialValues := []float64{10, 30, 90}
 	scenarioReferenceValue := averageOf(initialValues)
 	crashedNodeIndex := 0
