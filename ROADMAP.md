@@ -55,7 +55,7 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 
 ### M03 — Transport astratto
 - **Obiettivo**: introdurre layer di trasporto astratto (interfaccia) separato dalla logica gossip.
-- **File/cartelle coinvolti**: `internal/transport/`, `internal/gossip/`, `internal/node/`.
+- **File/cartelle coinvolti**: `internal/transport/`, `internal/gossip/`, `cmd/node/` (entrypoint runtime reale; il precedente riferimento a `internal/node/` era architetturale e non corrisponde al layout attuale del repository).
 - **Comando di verifica**: `go test ./tests/transport -run TestTransportContract`.
 - **Done criteria**:
   - interfaccia `Transport` definita;
