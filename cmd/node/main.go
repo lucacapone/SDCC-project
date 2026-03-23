@@ -122,6 +122,9 @@ func main() {
 		collector,
 		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,
 	)
+	// Conserviamo il valore locale originario in uno stato runtime dedicato per evitare
+	// che l'algoritmo average sovrascriva il contributo del nodo con la media corrente.
+	eng.State.LocalValue = cfg.InitialValue
 	eng.State.Value = cfg.InitialValue
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

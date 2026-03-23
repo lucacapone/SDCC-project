@@ -430,6 +430,54 @@ func TestMergeAverageLegacySenzaMetadataCompatibile(t *testing.T) {
 	}
 }
 
+func TestMergeAverageNonReinferisceContributoDaRemoteValueQuandoMetadataCompleti(t *testing.T) {
+	base := time.Date(2026, 3, 16, 19, 5, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "average",
+		Value:           10,
+		Round:           2,
+		VersionCounter:  2,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Average: &shared.AverageState{
+			Contributions: map[shared.NodeID]shared.AverageContribution{"node-1": {Sum: 10, Count: 1}},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-1": {Counter: 2}},
+		}},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "avg-complete-metadata",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "average",
+			Value:           30,
+			Round:           3,
+			VersionCounter:  3,
+			UpdatedAt:       base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{Average: &shared.AverageState{
+				Contributions: map[shared.NodeID]shared.AverageContribution{
+					"node-2": {Sum: 50, Count: 2},
+				},
+				Versions: map[shared.NodeID]shared.StateVersionStamp{
+					"node-2": {Counter: 3},
+				},
+			}},
+		},
+	}
+
+	res := applyRemote(local, msg)
+	gotContribution := res.State.AggregationData.Average.Contributions["node-2"]
+	if gotContribution != (shared.AverageContribution{Sum: 50, Count: 2}) {
+		t.Fatalf("contributo remoto reinferito impropriamente: got=%+v", gotContribution)
+	}
+	if math.Abs(res.State.Value-20) > 1e-9 {
+		t.Fatalf("media inattesa dopo merge con metadata completi: got=%v want=20", res.State.Value)
+	}
+}
+
 func TestMergeMinMonotonoGestisceStatoVuotoELegacy(t *testing.T) {
 	base := time.Date(2026, 3, 16, 19, 10, 0, 0, time.UTC)
 	local := shared.GossipState{

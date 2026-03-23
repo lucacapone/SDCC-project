@@ -30,6 +30,7 @@ type GossipState struct {
 	VersionEpoch          uint64                       `json:"version_epoch"`
 	VersionCounter        StateVersion                 `json:"version_counter"`
 	AggregationType       string                       `json:"aggregation_type"`
+	LocalValue            float64                      `json:"-"`
 	Value                 float64                      `json:"value"`
 	AggregationData       AggregationState             `json:"aggregation_data,omitempty"`
 	UpdatedAt             time.Time                    `json:"updated_at"`

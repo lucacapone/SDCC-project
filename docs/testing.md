@@ -221,6 +221,20 @@ go test ./tests/gossip -run TestMergeMembershipIgnoresRejoinWithLowerIncarnation
 go test ./tests/gossip -run TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID -count=1
 ```
 
+## Regressioni canoniche average
+
+Per l'aggregazione `average` il repository congela esplicitamente due rischi:
+
+- il contributo locale di un nodo non deve driftare verso la media corrente del cluster dopo round multipli;
+- un payload remoto che include gia' metadata `average` completi non deve re-inferire il contributo del mittente a partire da `state.value`.
+
+Comandi mirati:
+
+```bash
+go test ./tests/aggregation/average -run 'TestAverageConvergence|TestAverageRoundDoesNotDriftLocalContribution' -count=1
+go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|TestMergeAverageNonReinferisceContributoDaRemoteValueQuandoMetadataCompleti' -count=1
+```
+
 ## Test canonico observability
 
 La suite esterna `tests/observability` include ora il test canonico:

@@ -317,8 +317,20 @@ func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
 		return state
 	case "average":
 		state.EnsureAverageMetadata()
+		// Il contributo locale average deve restare ancorato al valore originario del nodo
+		// e non alla stima aggregata corrente, altrimenti i round successivi introducono drift.
+		localContribution, hasLocalContribution := state.AggregationData.Average.Contributions[state.NodeID]
+		if !hasLocalContribution {
+			localContribution = shared.AverageContribution{Sum: state.LocalValue, Count: 1}
+			// Manteniamo compatibilita' con il bootstrap legacy dei test/runtime che impostano
+			// solo `state.Value`: al primo round usiamo quel valore come seme immutabile locale.
+			if state.LocalValue == 0 && state.Value != 0 {
+				localContribution = shared.AverageContribution{Sum: state.Value, Count: 1}
+				state.LocalValue = state.Value
+			}
+		}
 		state.AggregationData.Average.Versions[state.NodeID] = localVersion
-		state.AggregationData.Average.Contributions[state.NodeID] = shared.AverageContribution{Sum: state.Value, Count: 1}
+		state.AggregationData.Average.Contributions[state.NodeID] = localContribution
 		state.Value = averageFromContributions(state.AggregationData.Average.Contributions)
 		return state
 	default:

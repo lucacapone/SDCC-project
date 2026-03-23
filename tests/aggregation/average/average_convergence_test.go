@@ -83,6 +83,7 @@ func (h *testHarness) setLocalContribution(id shared.NodeID, sum float64, count 
 	n := h.nodes[id]
 	n.eng.State.NodeID = id
 	n.eng.State.AggregationType = "average"
+	n.eng.State.LocalValue = sum
 	n.eng.State.Round = 0
 	n.eng.State.VersionCounter = 0
 	n.eng.State.UpdatedAt = time.Date(2026, 3, 17, 10, 0, 0, 0, time.UTC)
@@ -141,8 +142,8 @@ func TestAverageConvergence(t *testing.T) {
 		ids := []shared.NodeID{"node-1", "node-2", "node-3"}
 		h := newTestHarness(t, ids)
 		h.setLocalContribution("node-1", 10, 1)
-		h.setLocalContribution("node-2", 20, 1)
-		h.setLocalContribution("node-3", 40, 1)
+		h.setLocalContribution("node-2", 30, 1)
+		h.setLocalContribution("node-3", 50, 1)
 
 		versionByReceiver := map[shared.NodeID]shared.StateVersion{}
 		for _, to := range ids {
@@ -157,7 +158,13 @@ func TestAverageConvergence(t *testing.T) {
 		}
 
 		for _, id := range ids {
-			h.assertNodeValue(t, id, 70.0/3.0)
+			h.assertNodeValue(t, id, 30)
+		}
+		for _, id := range ids {
+			contribution := h.nodes[id].eng.State.AggregationData.Average.Contributions[id]
+			if math.Abs(contribution.Sum-h.nodes[id].eng.State.LocalValue) > 1e-9 || contribution.Count != 1 {
+				t.Fatalf("contributo locale driftato su %s: got=%+v local=%v", id, contribution, h.nodes[id].eng.State.LocalValue)
+			}
 		}
 	})
 
@@ -226,6 +233,32 @@ func TestAverageConvergence(t *testing.T) {
 			t.Fatalf("stato vuoto dovrebbe restare a zero: got=%v", got)
 		}
 	})
+}
+
+// TestAverageRoundDoesNotDriftLocalContribution congela la regressione in cui round successivi
+// riscrivevano il contributo locale del nodo con la media corrente del cluster.
+func TestAverageRoundDoesNotDriftLocalContribution(t *testing.T) {
+	h := newTestHarness(t, []shared.NodeID{"node-1"})
+	h.setLocalContribution("node-1", 10, 1)
+
+	n := h.nodes["node-1"]
+	n.eng.State.AggregationData.Average.Contributions["node-2"] = shared.AverageContribution{Sum: 30, Count: 1}
+	n.eng.State.AggregationData.Average.Contributions["node-3"] = shared.AverageContribution{Sum: 50, Count: 1}
+	n.eng.State.AggregationData.Average.Versions["node-2"] = shared.StateVersionStamp{Counter: 1}
+	n.eng.State.AggregationData.Average.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+	n.eng.State.Value = 30
+
+	for round := 0; round < 4; round++ {
+		n.eng.RoundOnce(context.Background())
+	}
+
+	localContribution := n.eng.State.AggregationData.Average.Contributions["node-1"]
+	if math.Abs(localContribution.Sum-10) > 1e-9 || localContribution.Count != 1 {
+		t.Fatalf("il contributo locale e' driftato dopo round multipli: got=%+v", localContribution)
+	}
+	if math.Abs(n.eng.State.Value-30) > 1e-9 {
+		t.Fatalf("la media cluster attesa non e' stata preservata: got=%v want=30", n.eng.State.Value)
+	}
 }
 
 // safeAverage calcola la media ignorando contributi con count zero.

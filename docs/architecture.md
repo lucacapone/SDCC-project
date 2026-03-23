@@ -82,7 +82,7 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 7. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
 8. `state.value` (`float64`): valore numerico corrente del nodo.
 9. `state.aggregation_data.sum` (`object`, opzionale): metadati minimali per `sum` idempotente (`contributions`, `versions`, `overflowed`).
-10. `state.aggregation_data.average` (`object`, opzionale): metadati per `average` convergente (`contributions` con `sum/count` per nodo + `versions`).
+10. `state.aggregation_data.average` (`object`, opzionale): metadati per `average` convergente (`contributions` con `sum/count` per nodo + `versions`); il runtime locale mantiene separatamente il valore originario del nodo, cosi' il contributo locale non viene rimpiazzato dalla stima aggregata corrente durante i round successivi.
 11. `state.aggregation_data.min` (`object`, opzionale): metadati monotoni per `min` (versioni per nodo) usati per merge robusto e retrocompatibile.
 12. `state.aggregation_data.max` (`object`, opzionale): metadati monotoni per `max` (versioni per nodo) usati per merge robusto e retrocompatibile.
 10. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
