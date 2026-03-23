@@ -82,11 +82,15 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 
 ### M05 — Aggregazione #2
 - **Obiettivo**: implementare seconda aggregazione (es. `average` o `min/max`) compatibile col framework.
-- **File/cartelle coinvolti**: `internal/aggregation/average/` (o equivalente), `internal/aggregation/`, `internal/gossip/`.
-- **Comando di verifica**: `go test ./internal/aggregation/... -run TestAverageConvergence`.
+- **File/cartelle coinvolti**: `internal/aggregation/average/`, `internal/aggregation/min/`, `internal/aggregation/max/`, `internal/aggregation/`, `internal/gossip/`, `tests/aggregation/average/`, `tests/aggregation/min/`, `tests/aggregation/max/`, `tests/gossip/`.
+- **Comandi di verifica**:
+  - `go test ./tests/aggregation/average -run TestAverageConvergence -count=1`
+  - `go test ./tests/aggregation/min ./tests/aggregation/max -count=1`
+  - `go test ./tests/gossip -run TestSumRegressionConNuoveAggregazioni -count=1`
 - **Done criteria**:
-  - seconda aggregazione selezionabile da config;
+  - aggregazioni `average`, `min` e `max` selezionabili da config;
   - stessa API della #1;
+  - suite canoniche di convergenza nei package reali `tests/aggregation/*` verdi;
   - test di regressione multi-aggregazione verdi.
 - **Rischi/edge cases**:
   - divisione per zero;

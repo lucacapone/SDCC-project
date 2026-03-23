@@ -310,14 +310,14 @@ go test ./tests/aggregation/sum -run TestSumConvergence
 
 Comandi operativi M05:
 ```bash
-# average: merge convergente per contributi/versioni per nodo
-go test ./tests/gossip -run TestMergeAverageContributiConvergentiPerNodo
+# average: suite canonica di convergenza end-to-end nel package reale dedicato
+go test ./tests/aggregation/average -run TestAverageConvergence -count=1
 
-# min/max: merge monotono robusto e compatibilità payload legacy
-go test ./tests/gossip -run 'TestMergeMinMonotonoGestisceStatoVuotoELegacy|TestMergeMaxMonotonoGestisceStatoVuotoELegacy'
+# min/max: suite canoniche di convergenza nei package reali dedicati
+go test ./tests/aggregation/min ./tests/aggregation/max -count=1
 
 # regressione multi-aggregazione: sum invariata con nuove aggregazioni abilitate
-go test ./tests/gossip -run TestSumRegressionConNuoveAggregazioni
+go test ./tests/gossip -run TestSumRegressionConNuoveAggregazioni -count=1
 ```
 
 Comando di verifica post-M08:
