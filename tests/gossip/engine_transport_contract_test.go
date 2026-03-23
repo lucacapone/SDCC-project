@@ -59,7 +59,7 @@ func (s *spyTransportEngine) deliver(ctx context.Context, payload []byte) error 
 func TestEngineUsaSoloInterfacciaTransportStartStop(t *testing.T) {
 	tr := &spyTransportEngine{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	eng := NewEngine("node-1", "sum", tr, membership.NewSet(), logger, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, membership.NewSet(), logger, nil, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -85,7 +85,7 @@ func TestEngineGestisceMessaggiInIngressoViaHandlerTransport(t *testing.T) {
 	tr := &spyTransportEngine{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mset := membership.NewSet()
-	eng := NewEngine("node-1", "sum", tr, mset, logger, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
