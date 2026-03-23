@@ -101,9 +101,10 @@ Aggregazioni abilitate via configurazione:
 - `max`
 
 La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contro `enabled_aggregations`.
-La configurazione segue due livelli:
+La configurazione segue tre leve operative:
 - `enabled_aggregations`: insieme delle aggregazioni consentite per il nodo (whitelist runtime);
-- `aggregation`: aggregazione effettivamente attiva nel nodo e usata dal gossip locale.
+- `aggregation`: aggregazione effettivamente attiva nel nodo e usata dal gossip locale;
+- `initial_value`: valore locale iniziale con cui il nodo semina il proprio stato gossip al bootstrap.
 La validazione fallisce se `aggregation` non appartiene a `enabled_aggregations`.
 Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate in `sum`, `average`, `min` e `max`.
 - **Stato reale `sum`**: algoritmo base in `internal/aggregation/sum/`; il merge gossip usa `state.aggregation_data.sum` con contributi/versioni per nodo ed è implementato in `internal/gossip/state.go`, dove mantiene semantica idempotente su duplicati/out-of-order; la suite canonica di convergenza è `tests/aggregation/sum/sum_convergence_test.go` con `TestSumConvergence`.

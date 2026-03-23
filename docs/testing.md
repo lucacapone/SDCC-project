@@ -43,15 +43,18 @@ Il test canonico della milestone M09 è:
 
 ### Scenario M09
 
-`TestClusterConvergence` avvia automaticamente lo scenario M09 usando la strategia scelta per la milestone, cioè un **harness in-memory promosso** con trasporto deterministico e membership full-mesh iniziale. Nel repository questa suite viene classificata come **integrazione/end-to-end M09** perché valida il comportamento osservabile del cluster come scenario di milestone, pur senza usare rete reale. Il test verifica quindi la convergenza end-to-end della logica di cluster, ma **non** sostituisce una prova manuale su cluster locale multi-nodo con Docker Compose.
+`TestClusterConvergence` avvia automaticamente **il cluster locale reale** tramite il deployment Compose canonico di root, usando `scripts/cluster_up.sh`, `scripts/cluster_wait_ready.sh` e `scripts/cluster_down.sh`. La suite quindi non usa più `newIntegrationNetwork()` né `bootstrapCluster(...)` dell'harness in-memory: parte davvero con i tre servizi `node1`, `node2`, `node3` definiti nel `docker-compose.yml` di root, attende readiness osservabile e poi raccoglie i valori finali dai log strutturati di shutdown.
+
+La suite veloce/deterministica resta disponibile nello stesso package come `TestClusterConvergenceInMemory`, utile per debugging locale rapido senza Docker. La distinzione canonica è quindi esplicita: **M09 = cluster Compose reale**, **variante veloce = harness in-memory**.
 
 Parametri di scenario congelati:
 
 - **numero di nodi**: `3` (`node-1`, `node-2`, `node-3`);
-- **aggregazione attiva**: `average`;
-- **valori iniziali**: `10`, `30`, `50`;
+- **servizi Compose reali**: `node1`, `node2`, `node3`;
+- **aggregazione attiva**: `average` su tutti e tre i nodi Compose;
+- **valori iniziali**: `10`, `30`, `50`, configurati nei file `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` tramite `initial_value`;
 - **valore atteso informativo comune**: `30.0`, cioè `average(10, 30, 50)`;
-- **criterio di successo**: la banda `max(values) - min(values)` deve risultare `<= 0.05` entro il timeout M09.
+- **criterio di successo**: la banda `max(values) - min(values)` deve risultare `<= 0.05` entro il timeout M09 Compose.
 
 
 
@@ -195,33 +198,38 @@ Qui la distinzione è intenzionale:
 
 ### Timeout operativo
 
-Il timeout ufficiale del test M09 è:
+I timeout ufficiali di M09 sono ora separati in modo esplicito tra suite reale e suite veloce:
 
-- `350ms`
+- **suite canonica Compose**: `composeReadyTimeout = 90s`, `composeConvergenceTimeout = 18s`, `composeShutdownTimeout = 40s`;
+- **suite veloce in-memory**: `m09InMemoryTimeout = 350ms`.
 
-Motivazione operativa:
+Motivazione operativa della suite Compose:
 
-- il parametro è derivato in modo esplicito da costanti centralizzate in `tests/integration/cluster_convergence_test.go`;
-- con `gossip_interval_ms = 10ms`, il test riserva `50ms` di bootstrap (`5 * gossip_interval`) per dare tempo all’avvio del cluster e ai primi round utili dopo la registrazione dei transport;
-- aggiunge poi un buffer di `300ms` (`15 * poll_interval`, con `poll_interval = 20ms`) per assorbire la variabilità locale e CI senza allungare inutilmente la suite;
-- il totale `350ms` rimane abbastanza stretto da segnalare regressioni reali, ma più motivato e facilmente manutenibile di un valore letterale isolato.
+- `90s` coprono build immagine, bootstrap container e marker osservabili nei log (`gossip bootstrap completato`, `transport gossip avviato`) senza dipendere da sleep ciechi;
+- `18s` lasciano al cluster reale con `gossip_interval_ms = 1000` una finestra di convergenza di più round completi prima del teardown controllato;
+- `40s` riservano margine per stop pulito dei container e raccolta degli artefatti finali di shutdown.
+
+La suite in-memory mantiene invece il timeout corto storico da `350ms` per debugging rapido e riproducibile.
 
 ### Parametri centralizzati nel test
 
-I parametri M09 sono facilmente rintracciabili perché centralizzati come costanti all’inizio di `tests/integration/cluster_convergence_test.go`:
+I parametri M09 sono facilmente rintracciabili perché centralizzati come costanti all’inizio di `tests/integration/cluster_convergence_test.go` e `tests/integration/compose_harness_test.go`:
 
 - `m09NodeCount = 3`;
 - `m09Aggregation = "average"`;
-- `m09GossipInterval = 10ms`;
-- `m09PollInterval = 20ms`;
-- `m09BootstrapAllowance = 50ms`;
-- `m09LocalCIBuffer = 300ms`;
-- `m09Timeout = 350ms`;
-- `m09ConvergenceBand = 0.05`.
+- `m09ComposeTimeout = 18s`;
+- `m09ComposePollInterval = 1s`;
+- `m09InMemoryGossipInterval = 10ms`;
+- `m09InMemoryPollInterval = 20ms`;
+- `m09InMemoryTimeout = 350ms`;
+- `m09ConvergenceBand = 0.05`;
+- `composeReadyTimeout = 90s`;
+- `composeReadyPollInterval = 2s`;
+- `composeShutdownTimeout = 40s`.
 
 ### Formato del report finale
 
-Il report finale emesso via `t.Logf` include, per ogni nodo, il formato M09:
+Il report finale emesso via `t.Logf` mantiene, per ogni nodo, il formato M09 già usato da `formatNodeObservation(...)`. Nella suite Compose i valori vengono prima estratti dai log strutturati `shutdown nodo completato` raccolti in `artifacts/cluster/latest-final-values.txt`, poi ricostruiti nello stesso `clusterObservation` usato dal report.
 
 ```text
 node_id=<id> observed_value=<valore> expected_delta=<differenza_dal_valore_atteso> common_band=<banda_cluster>

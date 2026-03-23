@@ -121,6 +121,7 @@ func main() {
 		logger,
 		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,
 	)
+	eng.State.Value = cfg.InitialValue
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

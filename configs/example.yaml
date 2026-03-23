@@ -18,4 +18,5 @@ enabled_aggregations:
   - min
   - max
 aggregation: sum
+initial_value: 0
 log_level: info
