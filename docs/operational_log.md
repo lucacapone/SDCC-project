@@ -497,3 +497,9 @@
 - **Descrizione task**: Integrazione del collector observability nel ciclo di vita runtime dell'engine gossip e del nodo, con aggiornamento delle metriche live durante round e merge remoti.
 - **File modificati**: `internal/gossip/engine.go`, `cmd/node/main.go`, `tests/gossip/engine_test.go`, `tests/gossip/integration_test.go`, `tests/gossip/engine_transport_contract_test.go`, `tests/gossip/membership_convergence_test.go`, `tests/aggregation/average/average_convergence_test.go`, `tests/aggregation/max/max_convergence_test.go`, `tests/aggregation/min/min_convergence_test.go`, `tests/aggregation/sum/sum_convergence_test.go`, `tests/integration/harness_test.go`, `README.md`, `docs/architecture.md`, `docs/observability.md`, `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho analizzato prima documentazione canonica, architettura e log operativi, poi ho esteso `gossip.NewEngine` per accettare un collector opzionale condiviso con `cmd/node`. L'engine ora aggiorna il collector subito dopo round locali completati e dopo merge remoti, riallineando contatori e gauge allo stato runtime effettivo della membership e della stima locale. Ho aggiornato le suite che costruiscono l'engine, aggiunto test mirati per verificare incremento round/merge nel collector e riallineato la documentazione observability/testing per chiarire che `/metrics` deve riflettere progresso live e non soltanto snapshot di bootstrap/shutdown.
+
+- Data: 2026-03-23
+  Ora: 22:24:49 UTC
+  Attività: Aggiornata la milestone M06 in ROADMAP.md per allineare il comando di verifica alla suite reale tests/config e chiarire che l'entrypoint canonico è tests/config/config_test.go.
+  File modificati: ROADMAP.md
+  Sintesi ragionamento: La roadmap riportava un comando puntato al package interno internal/config; l'allineamento documentale richiede invece di riferirsi alla suite reale nel package tests/config, coerente con TestValidateConfig già definito nel repository.

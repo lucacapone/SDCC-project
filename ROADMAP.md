@@ -99,12 +99,14 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 
 ### M06 — Config + validazione
 - **Obiettivo**: supportare configurazione esterna e validazione robusta dei parametri.
-- **File/cartelle coinvolti**: `configs/`, `internal/config/`, `cmd/node/`, `docs/configuration.md`.
-- **Comando di verifica**: `go test ./internal/config -run TestValidateConfig`.
+- **File/cartelle coinvolti**: `configs/`, `internal/config/`, `cmd/node/`, `docs/configuration.md`, `tests/config/config_test.go`.
+- **Suite canonica / entrypoint**: `tests/config/config_test.go` con entrypoint principale `TestValidateConfig`, evitando di trattare `internal/config` come sede della suite di test.
+- **Comando di verifica**: `go test ./tests/config -run TestValidateConfig -count=1`.
 - **Done criteria**:
   - parsing file + override env documentati;
   - validazioni bloccanti con errori chiari;
-  - default sensati per ambiente locale.
+  - default sensati per ambiente locale;
+  - riferimenti documentali allineati alla suite reale `tests/config/config_test.go`.
 - **Rischi/edge cases**:
   - mismatch tipi/config incompleta;
   - valori pericolosi (interval=0);
