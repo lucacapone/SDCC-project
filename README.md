@@ -153,7 +153,7 @@ go run ./cmd/node --config configs/example.yaml
 
 Override via variabili ambiente (precedenza sull'YAML):
 
-> Nota runtime reale: gli override env numerici o CSV malformati non fanno fallire `Load`; vengono ignorati esplicitamente e il nodo mantiene il valore già ottenuto da default/file. Esempi congelati dalla suite: `NODE_PORT=abc`, `FANOUT=abc`, `ENABLED_AGGREGATIONS=sum,,max`, `BOOTSTRAP_PEERS=node-1:7001,`.
+> Nota runtime reale: gli override env numerici o CSV malformati ora fanno fallire `Load` in modo fail-fast. Gli errori citano sempre nome variabile e valore ricevuto, ad esempio per `NODE_PORT=abc`, `FANOUT=abc`, `ENABLED_AGGREGATIONS=sum,,max` o `BOOTSTRAP_PEERS=node-1:7001,`.
 
 ```bash
 NODE_ID=node-custom \

@@ -73,7 +73,9 @@ func Load(path string) (Config, error) {
 		}
 	}
 	// Gli override ambiente vengono applicati solo dopo il file per preservare Default() -> file -> env -> Validate().
-	overrideFromEnv(&cfg)
+	if err := overrideFromEnv(&cfg); err != nil {
+		return Config{}, err
+	}
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
@@ -239,20 +241,35 @@ func atoiDefault(value string, fallback int) (int, error) {
 	return parsed, nil
 }
 
-func overrideFromEnv(cfg *Config) {
+func overrideFromEnv(cfg *Config) error {
 	overrideString("NODE_ID", &cfg.NodeID)
 	overrideString("BIND_ADDRESS", &cfg.BindAddress)
 	overrideString("ADVERTISE_ADDR", &cfg.AdvertiseAddr)
-	overrideInt("NODE_PORT", &cfg.NodePort)
+	if err := overrideInt("NODE_PORT", &cfg.NodePort); err != nil {
+		return err
+	}
 	overrideString("JOIN_ENDPOINT", &cfg.JoinEndpoint)
-	overrideCSV("BOOTSTRAP_PEERS", &cfg.BootstrapPeers)
-	overrideCSV("SEED_PEERS", &cfg.SeedPeers)
-	overrideInt("GOSSIP_INTERVAL_MS", &cfg.GossipIntervalMS)
-	overrideInt("FANOUT", &cfg.Fanout)
-	overrideInt("MEMBERSHIP_TIMEOUT_MS", &cfg.MembershipTimeoutMS)
-	overrideCSV("ENABLED_AGGREGATIONS", &cfg.EnabledAggregations)
+	if err := overrideCSV("BOOTSTRAP_PEERS", &cfg.BootstrapPeers); err != nil {
+		return err
+	}
+	if err := overrideCSV("SEED_PEERS", &cfg.SeedPeers); err != nil {
+		return err
+	}
+	if err := overrideInt("GOSSIP_INTERVAL_MS", &cfg.GossipIntervalMS); err != nil {
+		return err
+	}
+	if err := overrideInt("FANOUT", &cfg.Fanout); err != nil {
+		return err
+	}
+	if err := overrideInt("MEMBERSHIP_TIMEOUT_MS", &cfg.MembershipTimeoutMS); err != nil {
+		return err
+	}
+	if err := overrideCSV("ENABLED_AGGREGATIONS", &cfg.EnabledAggregations); err != nil {
+		return err
+	}
 	overrideString("AGGREGATION", &cfg.Aggregation)
 	overrideString("LOG_LEVEL", &cfg.LogLevel)
+	return nil
 }
 
 func (c Config) DiscoveryPeers() []string {
@@ -268,26 +285,35 @@ func overrideString(name string, target *string) {
 	}
 }
 
-func overrideInt(name string, target *int) {
+// overrideInt applica l'override ambiente numerico solo se presente e valido,
+// fallendo in modo esplicito quando l'input non è parseabile.
+func overrideInt(name string, target *int) error {
 	value, ok := os.LookupEnv(name)
 	if !ok || strings.TrimSpace(value) == "" {
-		return
+		return nil
 	}
-	parsed, err := strconv.Atoi(strings.TrimSpace(value))
-	if err == nil {
-		*target = parsed
+	trimmed := strings.TrimSpace(value)
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return fmt.Errorf("override env %s non valido: valore %q non parseabile come intero", name, value)
 	}
+	*target = parsed
+	return nil
 }
 
-func overrideCSV(name string, target *[]string) {
+// overrideCSV applica l'override ambiente CSV solo se presente e sintatticamente valido,
+// fallendo in modo esplicito su item vuoti o input malformato.
+func overrideCSV(name string, target *[]string) error {
 	value, ok := os.LookupEnv(name)
 	if !ok || strings.TrimSpace(value) == "" {
-		return
+		return nil
 	}
 	parsed, err := parseInlineList("[" + value + "]")
-	if err == nil {
-		*target = parsed
+	if err != nil {
+		return fmt.Errorf("override env %s non valido: valore %q non parseabile come lista CSV: %w", name, value, err)
 	}
+	*target = parsed
+	return nil
 }
 
 func (c Config) AdvertiseEndpoint() string {
