@@ -22,17 +22,28 @@ Ogni servizio usa la stessa immagine locale `sdcc-node:local`, costruita dal `Do
 Per eseguire il cluster locale servono:
 
 1. **Docker Engine** installato e avviato;
-2. **Docker Compose plugin** disponibile come sottocomando `docker compose`;
-3. porte UDP locali non occupate per i tre nodi del cluster.
+2. **Docker Compose plugin** disponibile come sottocomando `docker compose`.
+
+Nel file Compose canonico di root **non** è attualmente richiesto come prerequisito che le porte UDP `7001`, `7002`, `7003` siano libere sull'host. Queste porte sono infatti usate dal runtime dei nodi **dentro** la rete Docker Compose `sdcc-net`, ma il `docker-compose.yml` canonico non le pubblica verso l'host con una sezione `ports:`.
+
+Di conseguenza, parlare di “porte UDP locali host non occupate” è corretto **solo** in scenari diversi dal Compose canonico, ad esempio se in futuro si aggiungesse una pubblicazione esplicita delle porte o se si eseguissero i nodi con binding/publishing manuale verso l'host.
 
 ### Porte usate
-Nel deployment corrente i nodi usano queste porte applicative:
+Nel deployment corrente è utile distinguere due livelli.
+
+#### Porte interne al cluster Docker Compose
+I nodi usano internamente queste porte applicative sulla rete `sdcc-net`:
 
 - `7001/udp` per `node1`;
 - `7002/udp` per `node2`;
 - `7003/udp` per `node3`.
 
-Queste porte sono dichiarate nei file `configs/node*.yaml` tramite `node_port`, che nel deployment locale rappresenta la sorgente di verità runtime per ogni nodo. Il `docker-compose.yml` canonico di root non ribadisce questi valori tramite `environment:`: si limita a montare il file corretto per ciascun servizio.
+Queste porte sono dichiarate nei file `configs/node*.yaml` tramite `node_port` e compaiono anche negli `advertise_addr` e nei `seed_peers` come endpoint interni raggiungibili dai container (`node1:7001`, `node2:7002`, `node3:7003`). Nel deployment locale rappresentano quindi la sorgente di verità runtime per la comunicazione **intra-cluster**.
+
+#### Porte host in scenari futuri o manuali
+Il `docker-compose.yml` canonico di root **non** definisce oggi alcuna sezione `ports:` per `node1`, `node2` o `node3`. Questo significa che le porte UDP `7001`, `7002`, `7003` **non sono pubblicate sull'host** dal Compose standard e non vanno presentate come requisito host-side del flusso canonico `docker compose up -d --build`.
+
+Solo se si introducesse una pubblicazione esplicita delle porte nel Compose, oppure si avviassero container/nodi con binding manuale verso l'host, diventerebbe corretto richiedere che le corrispondenti porte locali host siano libere.
 
 ## Topologia del cluster locale
 Il cluster Compose reale prevede tre servizi:
