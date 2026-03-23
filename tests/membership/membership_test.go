@@ -7,7 +7,7 @@ import (
 )
 
 func TestJoinLeave(t *testing.T) {
-	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 4 * time.Second}
+	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 4 * time.Second, PruneRetention: 10 * time.Second}
 	setA := NewSetWithConfig(cfg)
 	base := time.Date(2026, time.March, 5, 18, 30, 0, 0, time.UTC)
 
@@ -57,15 +57,23 @@ func TestJoinLeave(t *testing.T) {
 		t.Fatalf("cleanup tombstone non applicato: got=%s", peers["node-b"].Status)
 	}
 
-	setA.ApplyTimeoutTransitions(base.Add(20 * time.Second))
+	setA.ApplyTimeoutTransitions(base.Add(12 * time.Second))
 	peers = byNodeID(setA.Snapshot())
 	if peers["node-b"].Status != Left {
-		t.Fatalf("tombstone leave non deve degradare: got=%s", peers["node-b"].Status)
+		t.Fatalf("tombstone leave non deve degradare durante la retention: got=%s", peers["node-b"].Status)
+	}
+
+	pruned := setA.Prune(base.Add(17 * time.Second))
+	if len(pruned) != 1 || pruned[0].NodeID != "node-b" || pruned[0].Status != Left {
+		t.Fatalf("prune tombstone leave inattesa: %+v", pruned)
+	}
+	if _, ok := byNodeID(setA.Snapshot())["node-b"]; ok {
+		t.Fatalf("node-b deve essere rimosso fisicamente dopo la retention")
 	}
 }
 
 func TestTimeoutTransitions(t *testing.T) {
-	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 5 * time.Second}
+	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 5 * time.Second, PruneRetention: 20 * time.Second}
 	set := NewSetWithConfig(cfg)
 	base := time.Date(2026, time.March, 19, 11, 20, 0, 0, time.UTC)
 
@@ -87,8 +95,37 @@ func TestTimeoutTransitions(t *testing.T) {
 	}
 }
 
+func TestPruneRemovesExpiredDeadPeerAndBlocksObsoleteReintroduction(t *testing.T) {
+	cfg := Config{SuspectTimeout: time.Second, DeadTimeout: 2 * time.Second, PruneRetention: 5 * time.Second}
+	set := NewSetWithConfig(cfg)
+	base := time.Date(2026, time.March, 23, 10, 0, 0, 0, time.UTC)
+
+	set.Upsert(Peer{NodeID: "node-b", Addr: "node-b:7002", Status: Dead, Incarnation: 4, LastSeen: base})
+	pruned := set.Prune(base.Add(5 * time.Second))
+	if len(pruned) != 1 || pruned[0].NodeID != "node-b" {
+		t.Fatalf("prune dead inattesa: %+v", pruned)
+	}
+	if len(set.Snapshot()) != 0 {
+		t.Fatalf("snapshot inatteso dopo prune: %+v", set.Snapshot())
+	}
+
+	set.Upsert(Peer{NodeID: "node-b", Addr: "node-b:7002", Status: Alive, Incarnation: 4, LastSeen: base.Add(6 * time.Second)})
+	if len(set.Snapshot()) != 0 {
+		t.Fatalf("peer obsoleto reintrodotto dopo prune: %+v", set.Snapshot())
+	}
+
+	set.Upsert(Peer{NodeID: "node-b", Addr: "node-b:7002", Status: Alive, Incarnation: 5, LastSeen: base.Add(7 * time.Second)})
+	peer, ok := byNodeID(set.Snapshot())["node-b"]
+	if !ok {
+		t.Fatalf("rejoin con incarnation maggiore non applicato")
+	}
+	if peer.Status != Alive || peer.Incarnation != 5 {
+		t.Fatalf("peer rejoin inatteso: %+v", peer)
+	}
+}
+
 func TestRejoinWithHigherIncarnationOverridesOldState(t *testing.T) {
-	set := NewSetWithConfig(Config{SuspectTimeout: time.Second, DeadTimeout: 2 * time.Second})
+	set := NewSetWithConfig(Config{SuspectTimeout: time.Second, DeadTimeout: 2 * time.Second, PruneRetention: 10 * time.Second})
 	base := time.Date(2026, time.March, 5, 18, 40, 0, 0, time.UTC)
 
 	set.Upsert(Peer{NodeID: "node-b", Addr: "node-b:7002", Status: Dead, Incarnation: 3, LastSeen: base})
@@ -107,7 +144,7 @@ func TestRejoinWithHigherIncarnationOverridesOldState(t *testing.T) {
 }
 
 func TestGossipUpdateMitigatesFalsePositiveToAlive(t *testing.T) {
-	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 4 * time.Second}
+	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 4 * time.Second, PruneRetention: 10 * time.Second}
 	set := NewSetWithConfig(cfg)
 	base := time.Date(2026, time.March, 5, 18, 45, 0, 0, time.UTC)
 
@@ -133,7 +170,7 @@ func TestGossipUpdateMitigatesFalsePositiveToAlive(t *testing.T) {
 }
 
 func TestLowerIncarnationIsIgnored(t *testing.T) {
-	set := NewSet()
+	set := NewSetWithConfig(Config{PruneRetention: 10 * time.Second})
 	base := time.Date(2026, time.March, 19, 11, 25, 0, 0, time.UTC)
 
 	set.Upsert(Peer{NodeID: "node-2", Addr: "node-2:7002", Status: Suspect, Incarnation: 3, LastSeen: base})

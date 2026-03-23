@@ -6,7 +6,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 ## Componenti principali
 - `cmd/node`: bootstrap del nodo (configurazione, membership, engine gossip).
 - `internal/config`: parsing/validazione configurazione YAML/JSON + override env (inclusi `join_endpoint`, `bootstrap_peers`, `seed_peers`).
-- `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`/`leave`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
+- `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`/`leave`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`), retention separata per tombstone (`PruneRetention`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
 - `internal/gossip`: loop round periodico, merge stato remoto e failure detection runtime integrata (`ApplyTimeoutTransitions`) con heartbeat implicito sul nodo origine dei messaggi gossip.
 - `internal/aggregation`: contratti comuni delle aggregazioni + factory runtime con implementazioni dedicate (`sum`, `average`, `min`, `max`).
@@ -64,8 +64,9 @@ Transizioni principali implementate:
 1. `Join`/`Upsert` inseriscono o aggiornano un peer in stato `alive`; nel bootstrap seed-only un placeholder iniziale può usare temporaneamente `host:port` come chiave finché il peer remoto non propaga il vero `node_id`.
 2. `ApplyTimeoutTransitions` degrada `alive -> suspect -> dead` in base a timeout configurabili.
    Il wiring runtime in `cmd/node/main.go` usa `membership.NewSetWithConfig(cfg.MembershipConfig())`, quindi il parametro esterno `membership_timeout_ms` viene tradotto esplicitamente in `SuspectTimeout` e `DeadTimeout` invece di lasciare i default interni del package.
-3. `Leave` pubblica tombstone `leave` per preservare convergenza e prevenire resurrect implicite.
-4. aggiornamenti con `incarnation` più alta riattivano il peer e sovrascrivono stati precedenti.
+3. `dead` e `leave` non restano nella membership attiva per sempre: vengono mantenuti come tombstone locali per una retention temporanea separata (`PruneRetention`) così da poter propagare la rimozione via gossip.
+4. `Prune(now)` rimuove fisicamente dalla membership attiva i peer `dead`/`leave` il cui `last_seen` ha superato la retention; prima della cancellazione registra un watermark locale minimale (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) usato per rifiutare digest gossip obsoleti con `incarnation` non strettamente più nuova.
+5. aggiornamenti con `incarnation` più alta riattivano il peer e sovrascrivono stati precedenti, anche dopo una prune precedente; un digest con la stessa `incarnation` di un tombstone già potato non può reintrodurre il peer.
 
 ## Formato messaggio gossip
 Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in JSON.
