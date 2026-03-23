@@ -523,3 +523,8 @@
 - **Descrizione task**: Aggiornata `docs/deployment.md` per riallineare la sezione sulle aggregazioni dei tre servizi Compose alla configurazione runtime reale del cluster M09.
 - **File modificati**: `docs/deployment.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato prima la documentazione canonica di deployment/testing, le configurazioni `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` e il test di integrazione `tests/integration/cluster_convergence_test.go`. La sezione Compose riportava ancora una combinazione `sum/sum/average` non più coerente con il runtime reale; l'ho quindi aggiornata per documentare esplicitamente che tutti e tre i nodi usano `aggregation: average` con `initial_value` rispettivamente `10`, `30`, `50`, in allineamento con README e scenario M09.
+
+## 2026-03-23 23:05:00 UTC
+- **Descrizione task**: Chiarimento delle sezioni `Prerequisiti` e `Porte usate` in `docs/deployment.md` per distinguerle tra porte interne alla rete Compose e porte host non pubblicate nel Compose canonico.
+- **File modificati**: `docs/deployment.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho confrontato il testo del documento con il `docker-compose.yml` di root, verificando che i servizi `node1`, `node2`, `node3` siano collegati solo alla rete `sdcc-net` e che il Compose canonico non definisca alcuna sezione `ports:`. Ho quindi rimosso il prerequisito fuorviante sulle porte UDP host libere e ho separato esplicitamente le porte runtime interne al cluster (`7001/7002/7003`) dagli eventuali scenari futuri o manuali in cui potrebbe esistere una pubblicazione host-side.
