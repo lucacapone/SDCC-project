@@ -8,7 +8,7 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 - `internal/config`: parsing/validazione configurazione YAML/JSON + override env (inclusi `join_endpoint`, `bootstrap_peers`, `seed_peers`).
 - `internal/membership`: vista locale dei peer con stati `Alive`/`Suspect`/`Dead`/`leave`, timeout espliciti (`SuspectTimeout`, `DeadTimeout`) e priorità tramite `Incarnation`.
 - `internal/types`: DTO e identificatori condivisi (es. `NodeID`, `MessageID`, `StateVersion`, `MessageVersion`, `GossipMessage`).
-- `internal/gossip`: loop round periodico e merge stato remoto (logica protocollo).
+- `internal/gossip`: loop round periodico, merge stato remoto e failure detection runtime integrata (`ApplyTimeoutTransitions`) con heartbeat implicito sul nodo origine dei messaggi gossip.
 - `internal/aggregation`: contratti comuni delle aggregazioni + factory runtime con implementazioni dedicate (`sum`, `average`, `min`, `max`).
 - `internal/transport`: astrazione trasporto + adapter UDP concreto con lifecycle (`Start`/`Send`/`Close`) e rispetto di `context.Context`.
 - `internal/observability`: logger strutturato coerente con `log/slog`, collector di metriche aggregate a bassa cardinalità, stato lifecycle minimo del nodo e handler/server HTTP minimo con endpoint `/health`, `/ready` e `/metrics`.
@@ -18,6 +18,8 @@ Questo documento definisce il comportamento architetturale del sottosistema goss
 Nel runtime reale il punto di integrazione primario resta `cmd/node/main.go`: il package `internal/node/` non è presente nel repository attuale e non è stato introdotto un ulteriore layer intermedio perché il wiring richiesto resta piccolo e coerente con il layout esistente.
 
 Il collector di observability viene inizializzato all'avvio del processo e segue le transizioni minime:
+
+Sul piano runtime la failure detection viene integrata direttamente dentro `internal/gossip/engine.go`: a ogni tick del round gossip l'engine applica `Membership.ApplyTimeoutTransitions(time.Now().UTC())` prima di selezionare i target, così i peer inattivi degradano automaticamente `alive -> suspect -> dead` senza supporto esterno dei test. Ogni messaggio gossip valido viene inoltre trattato come heartbeat implicito del suo `origin_node`, evitando che peer attivi degradino erroneamente solo perché il digest membership non include il mittente come entry separata. Le transizioni osservate vengono emesse come log strutturati con evento stabile `membership_transition`, utile per debugging e osservabilità operativa.
 - `startup` subito dopo il caricamento configurazione e prima del bootstrap;
 - `bootstrap_completed` dopo `membership.Bootstrap`;
 - `transport_initialized` dopo la scelta/inizializzazione del transport reale o fallback `NoopTransport`;

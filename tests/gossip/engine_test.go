@@ -88,8 +88,9 @@ func TestRoundMessageAndStateVersionAlignment(t *testing.T) {
 func TestRoundLoggingEsponeCampiStabili(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
-	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive})
-	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Suspect})
+	now := time.Now().UTC()
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: now})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Suspect, LastSeen: now})
 
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))

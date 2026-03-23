@@ -35,6 +35,12 @@ type Peer struct {
 	LastSeen    time.Time
 }
 
+// Transition descrive una transizione di stato osservata durante la failure detection.
+type Transition struct {
+	Peer     Peer
+	Previous Status
+}
+
 // Set mantiene la membership locale thread-safe.
 type Set struct {
 	mu    sync.RWMutex
@@ -171,20 +177,21 @@ func (s *Set) Snapshot() []Peer {
 }
 
 // ApplyTimeoutTransitions applica transizioni deterministiche Alive -> Suspect -> Dead.
-func (s *Set) ApplyTimeoutTransitions(now time.Time) []Peer {
+func (s *Set) ApplyTimeoutTransitions(now time.Time) []Transition {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	updated := make([]Peer, 0)
+	updated := make([]Transition, 0)
 	for id, p := range s.peers {
-		if p.Status == Left {
+		if p.Status == Left || p.LastSeen.IsZero() {
 			continue
 		}
-		next := statusForElapsed(now.Sub(p.LastSeen), s.cfg)
+		next := nextStatusForElapsed(p.Status, now.Sub(p.LastSeen), s.cfg)
 		if p.Status != next {
+			previous := p.Status
 			p.Status = next
 			s.peers[id] = p
-			updated = append(updated, p)
+			updated = append(updated, Transition{Peer: p, Previous: previous})
 		}
 	}
 	return updated
@@ -200,12 +207,18 @@ func (s *Set) findNodeIDByAddrLocked(addr string) string {
 	return ""
 }
 
-func statusForElapsed(elapsed time.Duration, cfg Config) Status {
+func nextStatusForElapsed(current Status, elapsed time.Duration, cfg Config) Status {
 	if elapsed > cfg.DeadTimeout {
 		return Dead
 	}
 	if elapsed > cfg.SuspectTimeout {
+		if current == Dead || current == Left {
+			return current
+		}
 		return Suspect
+	}
+	if current == Suspect || current == Dead || current == Left {
+		return current
 	}
 	return Alive
 }

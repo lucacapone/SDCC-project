@@ -78,6 +78,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		localEstimate := e.State.Value
 		e.mu.Unlock()
 
+		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, msg.SentAt)
 		mergeMembership(e.Membership, msg.Membership)
 		if e.Logger != nil {
 			logLevel := slog.LevelDebug
@@ -120,9 +121,11 @@ func (e *Engine) loop(ctx context.Context) {
 }
 
 func (e *Engine) round(ctx context.Context) {
+	sentAt := time.Now().UTC()
+	transitions := e.Membership.ApplyTimeoutTransitions(sentAt)
+	e.logMembershipTransitions(ctx, sentAt, transitions)
 	membershipSnapshot := e.Membership.Snapshot()
 	peers := selectGossipTargets(membershipSnapshot)
-	sentAt := time.Now().UTC()
 
 	e.mu.Lock()
 	nextRound := e.State.Round + 1
@@ -162,6 +165,34 @@ func (e *Engine) round(ctx context.Context) {
 			"estimate", msg.State.Value,
 			"message_id", msg.MessageID,
 			"membership_entries", len(msg.Membership),
+		)
+	}
+}
+
+// markPeerAlive tratta un messaggio gossip valido come heartbeat implicito del nodo origine.
+func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, seenAt time.Time) {
+	if set == nil || originID == "" || originID == selfID {
+		return
+	}
+	set.Touch(string(originID), seenAt)
+}
+
+// logMembershipTransitions emette un log strutturato per ogni degrado osservato dalla failure detection runtime.
+func (e *Engine) logMembershipTransitions(ctx context.Context, now time.Time, transitions []membership.Transition) {
+	if e.Logger == nil {
+		return
+	}
+	for _, transition := range transitions {
+		e.Logger.Info("transizione membership rilevata",
+			"event", "membership_transition",
+			"node_id", string(e.NodeID),
+			"peer_id", transition.Peer.NodeID,
+			"peer_addr", transition.Peer.Addr,
+			"previous_status", string(transition.Previous),
+			"status", string(transition.Peer.Status),
+			"incarnation", transition.Peer.Incarnation,
+			"last_seen", transition.Peer.LastSeen.Format(time.RFC3339Nano),
+			"elapsed_ms", now.Sub(transition.Peer.LastSeen).Milliseconds(),
 		)
 	}
 }
