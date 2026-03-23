@@ -19,8 +19,10 @@ const (
 )
 
 var (
-	NewEngine             = internalgossip.NewEngine
-	currentMessageVersion = internalgossip.CurrentMessageVersion()
+	NewEngine                        = internalgossip.NewEngine
+	MarkPeerAliveForTest             = internalgossip.MarkPeerAliveForTest
+	SerializeMembershipDigestForTest = internalgossip.SerializeMembershipDigestForTest
+	currentMessageVersion            = internalgossip.CurrentMessageVersion()
 )
 
 func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult {

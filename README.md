@@ -176,7 +176,7 @@ Flusso bootstrap all'avvio:
 - il nodo invia al bootstrap una `JoinRequest` con `node_id` logico e `addr` reale (`host:port`) ricavato da `advertise_addr` oppure, in fallback locale, da `bind_address:node_port`;
 - il nodo prova `join_endpoint` per ottenere snapshot/delta membership iniziale;
 - se il join non è disponibile, usa `bootstrap_peers` (o `seed_peers` come fallback compatibile) come elenco di endpoint reali `host:port`;
-- eventuali seed placeholder creati dal fallback vengono riallineati al vero `node_id` non appena il peer remoto propaga la membership completa;
+- eventuali seed placeholder creati dal fallback vengono riallineati al vero `node_id` non appena arriva gossip dal peer canonico oppure un digest membership che espone lo stesso `addr`;
 - il bootstrap non è autoritativo: dopo discovery iniziale la membership evolve solo via gossip peer-to-peer.
 
 Convenzione unica adottata:
