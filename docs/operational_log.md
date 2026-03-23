@@ -427,3 +427,8 @@
 - **Descrizione task**: Riallineamento di roadmap, task M02, README e guida ai test agli entrypoint reali della suite esterna per la membership.
 - **File modificati**: `ROADMAP.md`, `README.md`, `docs/testing.md`, `docs/task/M02.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato la struttura reale dei test sotto `tests/` e ho rimosso i riferimenti fuorvianti a package interni senza file `*_test.go`, distinguendo esplicitamente tre livelli di verifica per M02: suite unitaria membership, suite gossip membership e test di integrazione runtime. Ho inoltre uniformato i comandi canonici con `-count=1` per evitare ambiguità rispetto alla cache dei test e mantenere la documentazione coerente con il layout corrente del repository.
+
+## 2026-03-23 19:49:59 UTC
+- **Descrizione task**: Allineamento dei riferimenti documentali M03 al package reale della suite `TestTransportContract`.
+- **File modificati**: `ROADMAP.md`, `docs/task/M03.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato tutti i riferimenti testuali a `TestTransportContract` nel repository e ho corretto le occorrenze documentali che puntavano ancora a `./internal/...`, uniformando il comando canonico M03 a `go test ./tests/transport -run TestTransportContract` per riflettere il package reale dei test senza introdurre divergenze tra roadmap e task milestone.
