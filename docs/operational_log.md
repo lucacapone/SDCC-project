@@ -532,3 +532,8 @@
 - **Descrizione task**: Allineamento della sezione di testing sul bootstrap via join endpoint reale al comportamento effettivo della suite di integrazione.
 - **File modificati**: `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiornato la documentazione per descrivere il flusso reale del test `TestNodeBootstrapViaJoinEndpointPopulatesInitialMembership`, esplicitando build del binario temporaneo da `./cmd/node`, esecuzione via `exec.CommandContext(...)` con `--config` su file temporaneo, override `OBSERVABILITY_ADDR=127.0.0.1:0` e doppia evidenza osservabile richiesta: `JoinRequest` HTTP + almeno un payload gossip UDP verso il peer restituito nella `JoinResponse`.
+
+## 2026-03-23 23:00:28 UTC
+- **Descrizione task**: Normalizzazione della membership gossip per promuovere alias seed `host:port` alla forma canonica `node_id` e filtrare digest obsoleti.
+- **File modificati**: `internal/membership/membership.go`, `internal/gossip/engine.go`, `tests/membership/bootstrap_test.go`, `tests/gossip/reexport.go`, `tests/gossip/membership_convergence_test.go`, `README.md`, `docs/architecture.md`, `docs/configuration.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho analizzato il flusso bootstrap/gossip esistente e ho introdotto una promozione esplicita dei placeholder seed tramite `TouchOrUpsertCanonical`, cosi' il primo heartbeat o digest che rivela il `node_id` reale unifica il record `host:port` con il peer canonico. Ho inoltre filtrato i digest membership per non ripropagare alias gia' superseduti e ho fissato test mirati per bootstrap seed-only, heartbeat canonico, sostituzione dell'alias e assenza di nuove transizioni `suspect/dead` dovute al placeholder dopo la normalizzazione.

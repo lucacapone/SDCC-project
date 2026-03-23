@@ -169,7 +169,7 @@ func (s *Set) LeaveAt(nodeID string, now time.Time) {
 	s.peers[nodeID] = peer
 }
 
-// Touch aggiorna heartbeat di un peer.
+// Touch aggiorna heartbeat di un peer gia' noto senza tentare riconciliazioni canoniche.
 func (s *Set) Touch(nodeID string, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -179,6 +179,51 @@ func (s *Set) Touch(nodeID string, now time.Time) {
 	}
 	peer.LastSeen = now
 	peer.Status = Alive
+	s.peers[nodeID] = peer
+}
+
+// TouchOrUpsertCanonical aggiorna il peer canonico e promuove eventuali placeholder host:port.
+func (s *Set) TouchOrUpsertCanonical(nodeID, addr string, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if nodeID == "" {
+		return
+	}
+	if addr == "" {
+		addr = nodeID
+	}
+
+	resolvedNodeID := nodeID
+	peer, ok := s.peers[nodeID]
+	if !ok && addr != "" {
+		if aliasNodeID := s.findNodeIDByAddrLocked(addr); aliasNodeID != "" {
+			resolvedNodeID = aliasNodeID
+			peer = s.peers[aliasNodeID]
+			ok = true
+		}
+	}
+
+	if !ok {
+		s.peers[nodeID] = Peer{
+			NodeID:   nodeID,
+			Addr:     addr,
+			Status:   Alive,
+			LastSeen: now,
+		}
+		return
+	}
+
+	peer.NodeID = nodeID
+	if addr != "" {
+		peer.Addr = addr
+	}
+	peer.LastSeen = now
+	peer.Status = Alive
+
+	if resolvedNodeID != nodeID {
+		delete(s.peers, resolvedNodeID)
+	}
 	s.peers[nodeID] = peer
 }
 
