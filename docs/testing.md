@@ -254,6 +254,26 @@ Comando operativo mirato:
 go test ./internal/observability -run TestMetricsExposure -count=1
 ```
 
+## Test di integrazione bootstrap via join endpoint reale
+
+La suite di integrazione include anche il test mirato:
+
+- **nome canonico**: `TestNodeBootstrapViaJoinEndpointPopulatesInitialMembership`;
+- **file**: `tests/integration/join_endpoint_bootstrap_test.go`.
+
+Scenario verificato:
+
+- il test avvia un endpoint HTTP di join reale con `httptest`;
+- il processo `go run ./cmd/node` viene eseguito con `join_endpoint` valorizzato e senza peer statici di bootstrap;
+- il server di join restituisce una `JoinResponse` con uno snapshot membership iniziale contenente un peer UDP reale;
+- il test considera il bootstrap corretto solo se osserva sia la `JoinRequest` HTTP inviata dal nodo sia almeno un payload gossip UDP verso il peer restituito dal join endpoint.
+
+Comando operativo mirato:
+
+```bash
+go test ./tests/integration -run TestNodeBootstrapViaJoinEndpointPopulatesInitialMembership -count=1
+```
+
 ## Helper script per cluster locale Docker Compose
 
 Per la validazione operativa/manuale del cluster locale multi-nodo con Docker Compose, il repository ora include helper minimi in `scripts/` progettati per essere **idempotenti**, robusti rispetto a container residui e leggibili in caso di errore:

@@ -52,13 +52,14 @@ func main() {
 		}
 	}()
 	mset := membership.NewSet()
+	joinClient := selectJoinClient(cfg)
 	bootstrapRes := membership.Bootstrap(
 		context.Background(),
 		mset,
 		membership.JoinRequest{NodeID: cfg.NodeID, Addr: selfAdvertiseAddr},
 		cfg.JoinEndpoint,
 		cfg.DiscoveryPeers(),
-		membership.NoopJoinClient{},
+		joinClient,
 		time.Now().UTC(),
 	)
 	collector.AdvanceNodeState(observability.NodeStateBootstrapCompleted)
@@ -149,6 +150,15 @@ func main() {
 
 	_ = eng.Stop()
 	_ = metricsServer.Shutdown(5 * time.Second)
+}
+
+// selectJoinClient usa il client HTTP reale quando join_endpoint è configurato,
+// mantenendo il fallback storico sul client noop negli altri casi.
+func selectJoinClient(cfg config.Config) membership.JoinClient {
+	if strings.TrimSpace(cfg.JoinEndpoint) == "" {
+		return membership.NoopJoinClient{}
+	}
+	return membership.NewHTTPJoinClient(3 * time.Second)
 }
 
 // observabilityAddress restituisce l'indirizzo del server HTTP di observability.
