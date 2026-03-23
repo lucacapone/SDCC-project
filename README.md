@@ -57,7 +57,7 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M05**: completata lato repository/documentazione per estensione e consolidamento `average`/`min`/`max`, regressione multi-aggregazione e verifica coerenza architetturale.
 - **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
 - **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
-- **M10**: completata lato repository/documentazione con test canonico `tests/integration/TestNodeCrashAndRestart`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
+- **M10**: completata lato repository/documentazione con suite reale `tests/integration/TestNodeCrashAndRestart` su cluster Compose locale, variante rapida `tests/integration/TestNodeCrashAndRestartInMemory`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
 - **M11**: completata lato documentazione operativa dell'observability con guida dedicata `docs/observability.md`, task report `docs/task/M11.md` e comando canonico di verifica `go test ./tests/observability -run TestMetricsExposure`.
 
 Comandi di verifica milestone:
@@ -233,7 +233,8 @@ make test-crash-restart
 
 Differenza operativa tra i target crash:
 - `make test-crash`: **target interno/debug** che resta puntato ai test in-memory del package `tests/gossip`.
-- `make test-crash-restart` / `make test-m10`: **target canonico milestone M10** che esegue `tests/integration/TestNodeCrashAndRestart`.
+- `make test-crash-restart` / `make test-m10`: **target canonico milestone M10** che esegue `tests/integration/TestNodeCrashAndRestart` sul cluster Compose reale.
+- `make test-crash-restart-internal`: variante rapida/deterministica che esegue `tests/integration/TestNodeCrashAndRestartInMemory`.
 
 ## Test di integrazione end-to-end M09
 Documento canonico dei test di integrazione e dei comandi operativi:
@@ -243,16 +244,17 @@ Test canonico M09 disponibile:
 - `tests/integration/cluster_convergence_test.go` (`TestClusterConvergence`)
 
 Test canonico M10 disponibile:
-- `tests/integration/node_crash_restart_test.go` (`TestNodeCrashAndRestart`)
+- `tests/integration/node_crash_restart_compose_test.go` (`TestNodeCrashAndRestart`)
+- `tests/integration/node_crash_restart_test.go` (`TestNodeCrashAndRestartInMemory`)
 
-Il target `make test-integration` punta ufficialmente alla suite di integrazione in `tests/integration`; nel repository la chiamiamo **suite di integrazione end-to-end M09** perché valida il comportamento osservabile del cluster a tre nodi come scenario black-box di milestone; allo stesso tempo l'harness usato dal test resta in-memory, quindi non sostituisce i controlli manuali su **cluster locale multi-nodo con Docker Compose**.
+Il target `make test-integration` punta ufficialmente alla suite di integrazione M09 in `tests/integration` e oggi esegue il **cluster Compose reale** tramite gli script canonici della repository. La variante veloce `TestClusterConvergenceInMemory` resta disponibile per debugging locale, ma non sostituisce lo scenario end-to-end reale.
 
 Sintesi criteri M09:
 - scenario congelato a **3 nodi** (`node-1`, `node-2`, `node-3`);
 - aggregazione attiva: `average`;
 - valori iniziali: `10`, `30`, `50`;
 - criterio di successo: banda cluster `max(values) - min(values) <= 0.05`;
-- timeout esplicito: `350ms`, derivato da `gossip_interval = 10ms`, allowance di bootstrap `50ms` e buffer locale/CI `300ms`;
+- timeout Compose espliciti: `composeReadyTimeout = 90s`, `composeConvergenceTimeout = 18s`, `composeShutdownTimeout = 40s`;
 - report finale per nodo: `node_id`, `observed_value`, `expected_delta`, `common_band`.
 
 Comando ufficiale M09:
@@ -264,25 +266,30 @@ make test-integration
 Comando ufficiale M10:
 ```bash
 go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
 make test-crash-restart
+make test-crash-restart-internal
 # alias equivalente: make test-m10
 ```
 
 Distinzione esplicita dei target crash/restart:
 - `make test-crash` continua a rappresentare il livello **interno/debug** del package `tests/gossip`.
-- `make test-crash-restart` e `make test-m10` rappresentano il livello **canonico milestone M10** nella suite `tests/integration`.
+- `make test-crash-restart` e `make test-m10` rappresentano il livello **canonico milestone M10** nella suite `tests/integration` su cluster Compose reale.
+- `make test-crash-restart-internal` mantiene una variante veloce in-memory per debugging locale.
 
 Sintesi criteri M10:
-- crash osservabile di **1 nodo su 3** durante round gossip già attivi;
-- convergenza del **cluster residuo** (`node-2`, `node-3`) entro banda `<= 0.05` e stabilizzazione su più snapshot consecutivi;
-- restart del nodo crashato con nuova registrazione sulla rete di test;
-- **rejoin reale** verificato osservando che il nodo riavviato si allontana dal valore di restart artificiale;
-- convergenza finale del nodo rientrato entro banda cluster `<= 0.08` dopo il rejoin.
+- stop/start reale di **1 servizio Compose su 3** tramite `scripts/fault_injection/node_stop_start.sh`;
+- evidenza del **cluster residuo** (`node2`, `node3`) tramite endpoint `/metrics` con `sdcc_node_rounds_total` crescente e nodi ancora `ready`;
+- raccolta di snapshot diagnostici `after-stop` e `after-restart` con `scripts/fault_injection/collect_debug_snapshot.sh`;
+- **rejoin reale** verificato osservando che il nodo riavviato torna `ready`, completa round gossip e si allontana dal proprio valore iniziale locale;
+- convergenza finale del cluster entro banda `<= 0.05`, verificata sia live sia nel teardown finale.
 
 Comando ufficiale M10:
 ```bash
 go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
 make test-crash-restart
+make test-crash-restart-internal
 # alias equivalente: make test-m10
 ```
 
@@ -349,7 +356,7 @@ AFTER_STOP_SLEEP_SECONDS=5 scripts/fault_injection/node_stop_start.sh bounce nod
 SNAPSHOT_LABEL=post-restart scripts/fault_injection/collect_debug_snapshot.sh node2
 ```
 
-Nota importante: il test automatico canonico di crash/restart continua a vivere in `tests/integration` come suite **in-memory**; gli script in `scripts/fault_injection/` sono supporti operativi/manuali per debug e validazione locale del cluster Compose, non dipendenze hard della suite Go.
+Nota importante: il test automatico canonico di crash/restart vive ora in `tests/integration` come suite **Compose reale** (`TestNodeCrashAndRestart`), mentre la variante veloce `TestNodeCrashAndRestartInMemory` resta disponibile per debugging locale. Gli script in `scripts/fault_injection/` sono inoltre usati dalla suite reale per pilotare lo stop/start e raccogliere artefatti coerenti con il deployment Compose.
 
 ## Script/comandi standard
 È disponibile `Makefile` con target per esecuzioni riproducibili locali e Docker:

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -30,6 +31,12 @@ const (
 )
 
 var composeServices = []string{"node1", "node2", "node3"}
+
+var composeServiceNodeIDs = map[string]string{
+	"node1": "node-1",
+	"node2": "node-2",
+	"node3": "node-3",
+}
 
 var shutdownEstimatePattern = regexp.MustCompile(`node_id=([^ ]+) .*estimate=([-+0-9.eE]+)`)
 
@@ -213,6 +220,12 @@ func (h *composeHarness) runScriptWithEnv(timeout time.Duration, extraEnv map[st
 
 // execScript centralizza l'esecuzione shell degli script canonici in modo leggibile per il test.
 func (h *composeHarness) execScript(timeout time.Duration, extraEnv map[string]string, scriptName string) error {
+	_, err := h.execScriptCapture(timeout, extraEnv, scriptName)
+	return err
+}
+
+// execScriptCapture esegue uno script e restituisce anche l'output aggregato utile per artefatti e debug.
+func (h *composeHarness) execScriptCapture(timeout time.Duration, extraEnv map[string]string, scriptName string) (string, error) {
 	scriptPath := filepath.Join(h.scriptsDir, scriptName)
 	cmd := exec.Command("bash", scriptPath)
 	cmd.Dir = h.repoRoot
@@ -226,7 +239,7 @@ func (h *composeHarness) execScript(timeout time.Duration, extraEnv map[string]s
 	cmd.Stderr = &output
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("avvio %s: %w", scriptName, err)
+		return "", fmt.Errorf("avvio %s: %w", scriptName, err)
 	}
 
 	done := make(chan error, 1)
@@ -237,14 +250,236 @@ func (h *composeHarness) execScript(timeout time.Duration, extraEnv map[string]s
 	select {
 	case err := <-done:
 		if err != nil {
-			return fmt.Errorf("script %s fallito: %w\noutput:\n%s", scriptName, err, output.String())
+			return output.String(), fmt.Errorf("script %s fallito: %w\noutput:\n%s", scriptName, err, output.String())
 		}
-		return nil
+		return output.String(), nil
 	case <-time.After(timeout):
 		_ = cmd.Process.Kill()
 		<-done
-		return fmt.Errorf("script %s in timeout dopo %s\noutput:\n%s", scriptName, timeout, output.String())
+		return output.String(), fmt.Errorf("script %s in timeout dopo %s\noutput:\n%s", scriptName, timeout, output.String())
 	}
+}
+
+// composeNodeMetrics raccoglie il sottoinsieme di metriche runtime usato dai test Compose reali.
+type composeNodeMetrics struct {
+	Estimate float64
+	Rounds   uint64
+	Ready    bool
+}
+
+// readLiveObservation legge i valori correnti esposti via /metrics per un sottoinsieme di servizi Compose.
+func (h *composeHarness) readLiveObservation(expectedValue float64, services []string) (clusterObservation, map[string]composeNodeMetrics, error) {
+	values := make(map[string]float64, len(services))
+	metricsByNode := make(map[string]composeNodeMetrics, len(services))
+	for _, service := range services {
+		nodeID, ok := composeServiceNodeIDs[service]
+		if !ok {
+			return clusterObservation{}, nil, fmt.Errorf("mapping node_id assente per il servizio %s", service)
+		}
+
+		metrics, err := h.readServiceMetrics(service)
+		if err != nil {
+			return clusterObservation{}, nil, err
+		}
+		values[nodeID] = metrics.Estimate
+		metricsByNode[nodeID] = metrics
+	}
+
+	return clusterObservation{
+		values:             values,
+		referenceValue:     expectedValue,
+		maxDelta:           observationMaxDelta(values),
+		referenceMaxOffset: observationMaxDistance(values, expectedValue),
+	}, metricsByNode, nil
+}
+
+// readServiceMetrics estrae le metriche osservabili di un servizio Compose reale.
+func (h *composeHarness) readServiceMetrics(service string) (composeNodeMetrics, error) {
+	baseURL, err := h.serviceBaseURL(service)
+	if err != nil {
+		return composeNodeMetrics{}, err
+	}
+
+	resp, err := http.Get(baseURL + "/metrics")
+	if err != nil {
+		return composeNodeMetrics{}, fmt.Errorf("GET %s/metrics: %w", baseURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return composeNodeMetrics{}, fmt.Errorf("GET %s/metrics: status=%d", baseURL, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return composeNodeMetrics{}, fmt.Errorf("lettura body %s/metrics: %w", baseURL, err)
+	}
+
+	return parseComposeMetrics(body)
+}
+
+// parseComposeMetrics traduce il formato line-based delle metriche in una struttura minima per i test.
+func parseComposeMetrics(raw []byte) (composeNodeMetrics, error) {
+	metrics := composeNodeMetrics{}
+	var (
+		foundEstimate bool
+		foundRounds   bool
+		foundReady    bool
+	)
+
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+
+		switch fields[0] {
+		case "sdcc_node_estimate":
+			value, err := strconv.ParseFloat(fields[1], 64)
+			if err != nil {
+				return composeNodeMetrics{}, fmt.Errorf("estimate non parseabile: %w", err)
+			}
+			metrics.Estimate = value
+			foundEstimate = true
+		case "sdcc_node_rounds_total":
+			value, err := strconv.ParseUint(fields[1], 10, 64)
+			if err != nil {
+				return composeNodeMetrics{}, fmt.Errorf("rounds_total non parseabile: %w", err)
+			}
+			metrics.Rounds = value
+			foundRounds = true
+		case "sdcc_node_ready":
+			value, err := strconv.ParseFloat(fields[1], 64)
+			if err != nil {
+				return composeNodeMetrics{}, fmt.Errorf("ready gauge non parseabile: %w", err)
+			}
+			metrics.Ready = value >= 1
+			foundReady = true
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return composeNodeMetrics{}, fmt.Errorf("scansione metrics: %w", err)
+	}
+	if !foundEstimate || !foundRounds || !foundReady {
+		return composeNodeMetrics{}, fmt.Errorf("metriche incomplete: estimate=%t rounds=%t ready=%t", foundEstimate, foundRounds, foundReady)
+	}
+	return metrics, nil
+}
+
+// waitForServiceDown attende che un servizio non risponda più via endpoint HTTP.
+func (h *composeHarness) waitForServiceDown(service string, timeout time.Duration, pollEvery time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		baseURL, err := h.serviceBaseURL(service)
+		if err != nil {
+			return nil
+		}
+		resp, err := http.Get(baseURL + "/health")
+		if err != nil {
+			return nil
+		}
+		_ = resp.Body.Close()
+		time.Sleep(pollEvery)
+	}
+	return fmt.Errorf("il servizio %s risulta ancora raggiungibile dopo %s", service, timeout)
+}
+
+// waitForServiceReady attende che il servizio riparta e torni esplicitamente ready.
+func (h *composeHarness) waitForServiceReady(service string, timeout time.Duration, pollEvery time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		baseURL, err := h.serviceBaseURL(service)
+		if err == nil {
+			resp, reqErr := http.Get(baseURL + "/ready")
+			if reqErr == nil {
+				_ = resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					return nil
+				}
+			}
+		}
+		time.Sleep(pollEvery)
+	}
+	return fmt.Errorf("il servizio %s non è tornato ready entro %s", service, timeout)
+}
+
+// runFaultScript invoca gli helper di fault injection canonici sotto scripts/fault_injection/.
+func (h *composeHarness) runFaultScript(timeout time.Duration, action string, service string, extraEnv map[string]string) {
+	h.t.Helper()
+	env := map[string]string{
+		"ACTION":  action,
+		"SERVICE": service,
+	}
+	for key, value := range extraEnv {
+		env[key] = value
+	}
+	h.runScriptWithEnv(timeout, env, filepath.Join("fault_injection", "node_stop_start.sh"))
+}
+
+// collectDebugSnapshot salva uno snapshot diagnostico e restituisce l'output dello script per i log del test.
+func (h *composeHarness) collectDebugSnapshot(timeout time.Duration, service string, label string) string {
+	h.t.Helper()
+	output, err := h.execScriptCapture(timeout, map[string]string{
+		"SERVICE":        service,
+		"SNAPSHOT_LABEL": label,
+	}, filepath.Join("fault_injection", "collect_debug_snapshot.sh"))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return strings.TrimSpace(output)
+}
+
+// waitForLiveObservationConvergence richiede convergenza via endpoint runtime senza fermare il cluster.
+func (h *composeHarness) waitForLiveObservationConvergence(expectedValue float64, threshold float64, timeout time.Duration, pollEvery time.Duration) (clusterObservation, map[string]composeNodeMetrics, bool) {
+	var lastObservation clusterObservation
+	var lastMetrics map[string]composeNodeMetrics
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		observation, metricsByNode, err := h.readLiveObservation(expectedValue, composeServices)
+		if err == nil {
+			lastObservation = observation
+			lastMetrics = metricsByNode
+			if isClusterConverged(observation, threshold) {
+				return observation, metricsByNode, true
+			}
+		}
+		time.Sleep(pollEvery)
+	}
+	return lastObservation, lastMetrics, false
+}
+
+// waitForResidualActivity prova che il cluster residuo continua a fare round gossip dopo lo stop del nodo target.
+func (h *composeHarness) waitForResidualActivity(services []string, baseline map[string]composeNodeMetrics, timeout time.Duration, pollEvery time.Duration) (clusterObservation, map[string]composeNodeMetrics, bool) {
+	var lastObservation clusterObservation
+	var lastMetrics map[string]composeNodeMetrics
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		observation, metricsByNode, err := h.readLiveObservation(averageOf([]float64{30, 50}), services)
+		if err == nil {
+			lastObservation = observation
+			lastMetrics = metricsByNode
+			active := true
+			for _, service := range services {
+				nodeID := composeServiceNodeIDs[service]
+				if !metricsByNode[nodeID].Ready || metricsByNode[nodeID].Rounds <= baseline[nodeID].Rounds {
+					active = false
+					break
+				}
+			}
+			if active {
+				return observation, metricsByNode, true
+			}
+		}
+		time.Sleep(pollEvery)
+	}
+	return lastObservation, lastMetrics, false
 }
 
 // parseShutdownEstimates ricostruisce il mapping node_id -> estimate a partire dai log finali strutturati.

@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration test-integration-internal test-crash test-crash-restart test-m10 docker-test
+.PHONY: test test-unit test-integration test-integration-internal test-crash test-crash-restart test-crash-restart-internal test-m10 docker-test
 
 test:
 	go test ./... -count=1
@@ -17,6 +17,10 @@ test-crash:
 
 test-crash-restart:
 	go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+
+# Variante rapida/deterministica del vecchio scenario M10 in-memory.
+test-crash-restart-internal:
+	go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
 
 test-m10: test-crash-restart
 
