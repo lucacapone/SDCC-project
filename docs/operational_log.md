@@ -513,3 +513,8 @@
 - **Descrizione task**: Aggiornamento della milestone M11 in `ROADMAP.md` per riallineare i riferimenti observability al bootstrap runtime reale del nodo e rimuovere il package legacy inesistente.
 - **File modificati**: `ROADMAP.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato prima la documentazione architetturale e il wiring reale in `cmd/node/main.go`, confermando che l'integrazione runtime dell'observability avviene nel bootstrap del nodo tramite collector, metrics handler e transizioni di lifecycle condivise con `internal/gossip/engine.go`. Ho quindi corretto la milestone M11 sostituendo il riferimento inesistente a `internal/node/` con `cmd/node/main.go` e aggiornando il testo dei criteri di completamento per descrivere il punto di integrazione runtime effettivo già documentato in `docs/architecture.md`.
+
+## 2026-03-23 22:35:37 UTC
+- **Descrizione task**: Aggiornata la sezione M07 in `ROADMAP.md` per sostituire il riferimento generico alla cartella Compose con i path reali presenti nel repository.
+- **File modificati**: `ROADMAP.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato prima la documentazione di deployment, il task M07 e gli artefatti reali di repository; quindi ho riallineato il campo "File/cartelle coinvolti" della roadmap ai file effettivamente presenti e pertinenti per la milestone Compose/networking, mantenendo `docs/deployment.md` come riferimento documentale canonico.

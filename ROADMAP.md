@@ -114,7 +114,7 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 
 ### M07 — Compose + networking
 - **Obiettivo**: predisporre ambiente Docker Compose multi-nodo con networking riproducibile.
-- **File/cartelle coinvolti**: `docker-compose.yml`, `Dockerfile`, `deploy/compose/`, `docs/deployment.md`.
+- **File/cartelle coinvolti**: `docker-compose.yml`, `deploy/docker-compose.yml`, `Dockerfile`, `scripts/m07_collect_compose_evidence.sh`, `docs/deployment.md`.
 - **Comando di verifica**: `docker compose up -d --build && docker compose ps`.
 - **Done criteria**:
   - almeno 3 nodi avviati e raggiungibili;
