@@ -68,11 +68,12 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 
 ### M04 — Aggregazione #1
 - **Obiettivo**: implementare la prima aggregazione globale (es. `sum`).
-- **File/cartelle coinvolti**: `internal/aggregation/sum/`, `internal/aggregation/`, `internal/gossip/`.
-- **Comando di verifica**: `go test ./internal/aggregation/sum -run TestSumConvergence`.
+- **File/cartelle coinvolti**: `internal/aggregation/sum/` (algoritmo base), `internal/aggregation/`, `internal/gossip/state.go` (merge gossip distribuito/idempotente), `tests/aggregation/sum/sum_convergence_test.go` (suite canonica di convergenza).
+- **Comando di verifica**: `go test ./tests/aggregation/sum -run TestSumConvergence`.
 - **Done criteria**:
-  - algoritmo deterministico e idempotente;
-  - convergenza verificata su N nodi;
+  - algoritmo base deterministico in `internal/aggregation/sum/`;
+  - convergenza distribuita/idempotente verificata nel merge gossip di `internal/gossip/state.go`;
+  - convergenza verificata su N nodi dalla suite canonica `tests/aggregation/sum/sum_convergence_test.go`;
   - errore finale entro tolleranza definita (se applicabile).
 - **Rischi/edge cases**:
   - overflow numerico;
