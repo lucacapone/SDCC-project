@@ -86,9 +86,10 @@ func TestNodeBootstrapViaJoinEndpointPopulatesInitialMembership(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	repoRoot := joinBootstrapRepoRoot(t)
 	binaryPath := buildNodeBinary(t)
 	cmd := exec.CommandContext(ctx, binaryPath, "--config", configPath)
-	cmd.Dir = "/workspace/SDCC-project"
+	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "OBSERVABILITY_ADDR=127.0.0.1:0")
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -169,12 +170,17 @@ log_level: info
 	return path
 }
 
+func joinBootstrapRepoRoot(t *testing.T) string {
+	t.Helper()
+	return integrationRepoRoot(t)
+}
+
 func buildNodeBinary(t *testing.T) string {
 	t.Helper()
 
 	binaryPath := filepath.Join(t.TempDir(), "sdcc-node-test")
 	buildCmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/node")
-	buildCmd.Dir = "/workspace/SDCC-project"
+	buildCmd.Dir = joinBootstrapRepoRoot(t)
 	output, err := buildCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("build node binary: %v\noutput:\n%s", err, string(output))
