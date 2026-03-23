@@ -252,9 +252,11 @@ La suite di integrazione include anche il test mirato:
 Scenario verificato:
 
 - il test avvia un endpoint HTTP di join reale con `httptest`;
-- il processo `go run ./cmd/node` viene eseguito con `join_endpoint` valorizzato e senza peer statici di bootstrap;
+- il test costruisce prima un binario temporaneo del nodo da `./cmd/node` tramite l'helper `buildNodeBinary(...)`;
+- il processo viene poi eseguito con `exec.CommandContext(...)` sul binario generato, passando `--config <file temporaneo>` con `join_endpoint` valorizzato e senza peer statici di bootstrap;
+- l'ambiente del processo imposta esplicitamente `OBSERVABILITY_ADDR=127.0.0.1:0` per evitare collisioni sulle porte osservability durante la suite;
 - il server di join restituisce una `JoinResponse` con uno snapshot membership iniziale contenente un peer UDP reale;
-- il test considera il bootstrap corretto solo se osserva sia la `JoinRequest` HTTP inviata dal nodo sia almeno un payload gossip UDP verso il peer restituito dal join endpoint.
+- il test considera il bootstrap corretto solo se osserva sia la `JoinRequest` HTTP inviata dal nodo sia almeno un payload gossip UDP verso il peer restituito dal join endpoint nella `JoinResponse`.
 
 Comando operativo mirato:
 
