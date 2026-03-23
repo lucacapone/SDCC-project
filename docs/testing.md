@@ -367,3 +367,11 @@ Questo comando resta utile per confermare che il test M09 non introduca regressi
 
 
 Nota runtime: `cmd/node/main.go` avvia anche il piccolo server HTTP di observability sul binding `OBSERVABILITY_ADDR` se presente, altrimenti `:8080`.
+
+## Failure detection runtime nel cluster di test
+Lo scenario `TestRuntimeMembershipFailureDetection` verifica che il loop gossip degradi automaticamente un peer fermato dal runtime del cluster di test senza invocare manualmente `ApplyTimeoutTransitions` dal test stesso. Il test riduce i timeout membership per mantenere la suite rapida e osserva, su un nodo superstite, la sequenza `alive -> suspect -> dead` del peer inattivo dopo lo stop del relativo engine.
+
+Comando operativo dedicato:
+```bash
+go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
+```

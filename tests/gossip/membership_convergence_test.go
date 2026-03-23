@@ -13,8 +13,8 @@ import (
 func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
-	base := time.Date(2026, time.March, 19, 11, 30, 0, 0, time.UTC)
-	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2", Status: membership.Suspect, Incarnation: 7, LastSeen: base.Add(1 * time.Second)})
+	base := time.Now().UTC()
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2", Status: membership.Suspect, Incarnation: 7, LastSeen: base})
 
 	eng := NewEngine("node-1", "average", tr, m, nil, time.Second)
 	eng.RoundOnce(context.Background())

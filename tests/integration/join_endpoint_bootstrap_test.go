@@ -47,7 +47,7 @@ func TestNodeBootstrapViaJoinEndpointPopulatesInitialMembership(t *testing.T) {
 	defer peerListener.Close()
 
 	joinRequests := make(chan observedJoinRequest, 1)
-	base := time.Date(2026, time.March, 23, 12, 0, 0, 0, time.UTC)
+	base := time.Now().UTC()
 	joinServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

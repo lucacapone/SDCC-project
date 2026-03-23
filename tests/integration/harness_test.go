@@ -200,7 +200,7 @@ func restartClusterNode(t *testing.T, network *integrationNetwork, address strin
 // fullMeshMembership costruisce la membership locale iniziale escludendo il nodo corrente.
 func fullMeshMembership(self string, addresses []string) *membership.Set {
 	set := membership.NewSet()
-	now := time.Date(2026, 3, 19, 0, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	for _, address := range addresses {
 		if address == self {
 			continue
