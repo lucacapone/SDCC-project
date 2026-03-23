@@ -147,3 +147,147 @@ func membershipByNodeID(peers []membership.Peer) map[string]membership.Peer {
 	}
 	return out
 }
+
+func TestMergeMembershipRecoversSuspectWithHigherAliveIncarnation(t *testing.T) {
+	base := time.Date(2026, time.March, 23, 19, 30, 0, 0, time.UTC)
+	set := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 10 * time.Second,
+	})
+
+	set.Upsert(membership.Peer{
+		NodeID:      "node-b",
+		Addr:        "node-b:7002",
+		Status:      membership.Alive,
+		Incarnation: 2,
+		LastSeen:    base,
+	})
+	set.ApplyTimeoutTransitions(base.Add(1500 * time.Millisecond))
+
+	peer, ok := membershipByNodeID(set.Snapshot())["node-b"]
+	if !ok || peer.Status != membership.Suspect {
+		t.Fatalf("precondizione non soddisfatta: peer suspect atteso, got=%+v", peer)
+	}
+
+	mergeMembership(set, []shared.MembershipEntry{{
+		NodeID:      "node-b",
+		Addr:        "node-b:7002",
+		Status:      string(membership.Alive),
+		Incarnation: 3,
+		LastSeen:    base.Add(1600 * time.Millisecond),
+	}})
+
+	peer = membershipByNodeID(set.Snapshot())["node-b"]
+	if peer.Status != membership.Alive {
+		t.Fatalf("update alive con incarnation maggiore deve recuperare il peer: %+v", peer)
+	}
+	if peer.Incarnation != 3 {
+		t.Fatalf("incarnation inattesa dopo il recupero: got=%d want=3", peer.Incarnation)
+	}
+}
+
+func TestMergeMembershipIgnoresRejoinWithLowerIncarnation(t *testing.T) {
+	base := time.Date(2026, time.March, 23, 19, 35, 0, 0, time.UTC)
+	set := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 5 * time.Second,
+	})
+
+	set.Upsert(membership.Peer{
+		NodeID:      "node-b",
+		Addr:        "node-b:7002",
+		Status:      membership.Left,
+		Incarnation: 5,
+		LastSeen:    base,
+	})
+	pruned := set.Prune(base.Add(5 * time.Second))
+	if len(pruned) != 1 {
+		t.Fatalf("prune inattesa: %+v", pruned)
+	}
+
+	mergeMembership(set, []shared.MembershipEntry{{
+		NodeID:      "node-b",
+		Addr:        "node-b:7002",
+		Status:      string(membership.Alive),
+		Incarnation: 4,
+		LastSeen:    base.Add(6 * time.Second),
+	}})
+
+	if len(set.Snapshot()) != 0 {
+		t.Fatalf("rejoin con incarnation obsoleta deve essere ignorato: %+v", set.Snapshot())
+	}
+}
+
+func TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID(t *testing.T) {
+	base := time.Date(2026, time.March, 23, 19, 40, 0, 0, time.UTC)
+	set := membership.NewSet()
+
+	// Il bootstrap seed-only crea un placeholder `host:port` usato come chiave provvisoria.
+	set.Join("seed-a:7001", base)
+
+	mergeMembership(set, []shared.MembershipEntry{{
+		NodeID:      "node-a",
+		Addr:        "seed-a:7001",
+		Status:      string(membership.Alive),
+		Incarnation: 2,
+		LastSeen:    base.Add(time.Second),
+	}})
+
+	snapshot := membershipByNodeID(set.Snapshot())
+	if _, exists := snapshot["seed-a:7001"]; exists {
+		t.Fatalf("il placeholder seed host:port deve sparire dopo il riallineamento: %+v", set.Snapshot())
+	}
+	peer, ok := snapshot["node-a"]
+	if !ok {
+		t.Fatalf("node_id canonico non presente dopo il riallineamento: %+v", set.Snapshot())
+	}
+	if peer.Addr != "seed-a:7001" || peer.Status != membership.Alive || peer.Incarnation != 2 {
+		t.Fatalf("peer riallineato inatteso: %+v", peer)
+	}
+}
+
+func TestMergeMembershipReconvergesAfterTemporaryPartition(t *testing.T) {
+	base := time.Date(2026, time.March, 23, 19, 55, 0, 0, time.UTC)
+
+	leftNode := membership.NewSet()
+	rightNode := membership.NewSet()
+
+	// Durante la partizione i due sottoinsiemi sviluppano viste diverse della stessa membership.
+	mergeMembership(leftNode, []shared.MembershipEntry{
+		{NodeID: "node-2", Addr: "node-2:7002", Status: string(membership.Alive), Incarnation: 2, LastSeen: base.Add(1 * time.Second)},
+		{NodeID: "node-3", Addr: "node-3:7003", Status: string(membership.Suspect), Incarnation: 3, LastSeen: base.Add(2 * time.Second)},
+		{NodeID: "node-4", Addr: "node-4:7004", Status: string(membership.Suspect), Incarnation: 3, LastSeen: base.Add(2 * time.Second)},
+	})
+	mergeMembership(rightNode, []shared.MembershipEntry{
+		{NodeID: "node-1", Addr: "node-1:7001", Status: string(membership.Suspect), Incarnation: 3, LastSeen: base.Add(2 * time.Second)},
+		{NodeID: "node-2", Addr: "node-2:7002", Status: string(membership.Suspect), Incarnation: 3, LastSeen: base.Add(2 * time.Second)},
+		{NodeID: "node-4", Addr: "node-4:7004", Status: string(membership.Alive), Incarnation: 2, LastSeen: base.Add(1 * time.Second)},
+	})
+
+	// Quando la partizione si chiude, ogni lato riceve update gossip `alive` con incarnation maggiore
+	// provenienti dai peer tornati raggiungibili; duplicati e ordine invertito non devono impedire la riconvergenza.
+	recoveryDigest := []shared.MembershipEntry{
+		{NodeID: "node-1", Addr: "node-1:7001", Status: string(membership.Alive), Incarnation: 4, LastSeen: base.Add(3 * time.Second)},
+		{NodeID: "node-2", Addr: "node-2:7002", Status: string(membership.Alive), Incarnation: 4, LastSeen: base.Add(3 * time.Second)},
+		{NodeID: "node-3", Addr: "node-3:7003", Status: string(membership.Alive), Incarnation: 4, LastSeen: base.Add(3 * time.Second)},
+		{NodeID: "node-4", Addr: "node-4:7004", Status: string(membership.Alive), Incarnation: 4, LastSeen: base.Add(3 * time.Second)},
+	}
+
+	mergeMembership(leftNode, recoveryDigest)
+	mergeMembership(leftNode, recoveryDigest) // duplicato intenzionale
+	mergeMembership(rightNode, recoveryDigest)
+	mergeMembership(rightNode, []shared.MembershipEntry{
+		{NodeID: "node-3", Addr: "node-3:7003", Status: string(membership.Suspect), Incarnation: 3, LastSeen: base.Add(2500 * time.Millisecond)},
+	})
+
+	expected := map[string]membership.Peer{
+		"node-1": {NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, Incarnation: 4},
+		"node-2": {NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, Incarnation: 4},
+		"node-3": {NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, Incarnation: 4},
+		"node-4": {NodeID: "node-4", Addr: "node-4:7004", Status: membership.Alive, Incarnation: 4},
+	}
+	assertMembership(t, leftNode.Snapshot(), expected)
+	assertMembership(t, rightNode.Snapshot(), expected)
+}
