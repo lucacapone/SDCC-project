@@ -458,3 +458,20 @@
 - **Descrizione task**: Rafforzamento del load config M06 per rendere fail-fast gli override environment numerici/CSV malformati, con aggiornamento test di regressione e documentazione coerente.
 - **File modificati**: `internal/config/config.go`, `tests/config/config_test.go`, `docs/configuration.md`, `README.md`, `docs/task/M06.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho mantenuto la precedence `Default() -> file -> env -> Validate()` ma ho trasformato gli helper di override env numerici/CSV in controlli espliciti che falliscono subito quando una variabile presente contiene valori non parseabili o CSV con item vuoti. Ho poi aggiornato la suite M06 per congelare i casi `NODE_PORT=abc`, `FANOUT=abc`, `ENABLED_AGGREGATIONS=sum,,max` e `BOOTSTRAP_PEERS=node-1:7001,` come errori attesi, e ho riallineato la documentazione utente/canonica alla nuova semantica fail-fast.
+
+## 2026-03-23 21:05:48 UTC
+- **Descrizione task**: Introduzione di un artefatto ripetibile di verifica per M07 basato sul flusso Compose canonico, con raccolta minima di  e log dei tre nodi, più aggiornamento dei criteri osservabili in documentazione.
+- **File modificati**: , , , , .
+- **Reasoning summary**: Ho prima ricostruito il flusso Compose canonico e i marker di log già presenti nel runtime (, , , ) per evitare di introdurre nuove superfici o claim non supportati. Ho quindi aggiunto uno script dedicato che esegue dalla root , attende i primi round e salva in  lo stato dei servizi e una quota minima di log per , , ; infine ho documentato in modo esplicito quali evidenze nei log dimostrano bootstrap completato, discovery tramite service name Compose e membership iniziale non vuota o convergente. La validazione strutturale dello script è stata eseguita con , mentre la verifica runtime Docker non è risultata eseguibile nell'ambiente corrente perché il comando  non è disponibile nel PATH.
+
+
+## 2026-03-23 21:05:59 UTC
+- **Descrizione task**: Introduzione di un artefatto ripetibile di verifica per M07 basato sul flusso Compose canonico, con raccolta minima di `docker compose ps` e log dei tre nodi, più aggiornamento dei criteri osservabili in documentazione.
+- **File modificati**: `.gitignore`, `scripts/m07_collect_compose_evidence.sh`, `docs/deployment.md`, `docs/task/M07.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho prima ricostruito il flusso Compose canonico e i marker di log già presenti nel runtime (`gossip bootstrap completato`, `transport gossip avviato`, `remote_merge`, `gossip_round`) per evitare di introdurre nuove superfici o claim non supportati. Ho quindi aggiunto uno script dedicato che esegue dalla root `docker compose up -d --build`, attende i primi round e salva in `artifacts/m07/` lo stato dei servizi e una quota minima di log per `node1`, `node2`, `node3`; infine ho documentato in modo esplicito quali evidenze nei log dimostrano bootstrap completato, discovery tramite service name Compose e membership iniziale non vuota o convergente. La validazione strutturale dello script è stata eseguita con `bash -n`, mentre la verifica runtime Docker non è risultata eseguibile nell'ambiente corrente perché il comando `docker` non è disponibile nel PATH.
+
+
+## 2026-03-23 21:06:08 UTC
+- **Descrizione task**: Chiarimento del log operativo M07 per invalidare l'entry tecnica parziale generata durante l'append automatica precedente.
+- **File modificati**: `docs/operational_log.md`.
+- **Reasoning summary**: Durante il primo append del log operativo una here-doc non quotata ha prodotto un'entry parziale con backtick espansi dalla shell. In conformità con la regola di append-only non ho alterato la riga precedente, ma aggiungo questa nota esplicita: l'entry `2026-03-23 21:05:48 UTC` è da considerare non valida e va ignorata; la descrizione corretta dell'attività M07 è quella registrata nell'entry `2026-03-23 21:05:59 UTC`.

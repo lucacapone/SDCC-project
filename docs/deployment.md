@@ -82,6 +82,34 @@ docker compose ps
 
 L'output atteso deve mostrare i tre servizi Compose del cluster in stato attivo. Se un container è in restart loop o exited, consultare subito i log del servizio interessato.
 
+## Artefatto ripetibile di verifica M07
+Per rendere ripetibile la verifica minima della milestone M07 è disponibile lo script:
+
+```bash
+scripts/m07_collect_compose_evidence.sh
+```
+
+Lo script esegue dalla root il flusso canonico richiesto:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs --no-color --tail 120 node1
+docker compose logs --no-color --tail 120 node2
+docker compose logs --no-color --tail 120 node3
+```
+
+L'output viene salvato in `artifacts/m07/<timestamp>/` con i file principali:
+
+- `compose-up.txt`;
+- `compose-ps.txt`;
+- `node1.log`;
+- `node2.log`;
+- `node3.log`;
+- `summary.txt`.
+
+Il link simbolico `artifacts/m07/latest` punta sempre all'ultima esecuzione raccolta.
+
 ## Consultazione dei log
 Per seguire i log di un singolo nodo, ad esempio `node1`:
 
@@ -230,6 +258,41 @@ docker compose up -d --build
 - ricontrollare `gossip_interval_ms`, `membership_timeout_ms`, `seed_peers`, `aggregation` e `enabled_aggregations`;
 - assicurarsi che i peer configurati siano risolvibili via DNS Compose;
 - rifare un avvio pulito del cluster dopo ogni modifica strutturale alla configurazione.
+
+## Evidenze osservabili nei log per M07
+Le evidenze minime da cercare nei log raccolti da Compose sono le seguenti.
+
+### 1. Bootstrap completato
+Il marker principale è la riga con messaggio `gossip bootstrap completato` ed evento strutturato `event=node_bootstrap`.
+
+Segnali utili da verificare sulla stessa riga:
+
+- `node_id=node-1|node-2|node-3`, per confermare il nodo logico corretto;
+- `advertise_addr=node1:7001` oppure gli equivalenti `node2:7002`, `node3:7003`;
+- `peers=<n>` con valore maggiore di zero quando il bootstrap statico ha già caricato i peer seed dal file YAML;
+- `fallback_used=true`, coerente con il deployment Compose corrente che non configura `join_endpoint`.
+
+Questa combinazione dimostra che il nodo ha caricato la configurazione, ha costruito la membership iniziale e ha concluso la fase di bootstrap applicativo.
+
+### 2. Peer discovery via service name Compose
+Nel deployment locale la discovery usa i service name Docker Compose come hostname. L'evidenza minima nei log consiste nella presenza degli endpoint `node1:7001`, `node2:7002`, `node3:7003` nei campi strutturati, in particolare:
+
+- `advertise_addr=nodeX:700X` nel log di bootstrap;
+- `advertise_address=udp://nodeX:700X` nel log `transport gossip avviato`;
+- eventuali `peer_addr=nodeX:700X` nelle transizioni membership;
+- riferimenti a `membership_entries=<n>` o merge remoti che arrivano da nodi il cui indirizzo è stato risolto tramite quei service name.
+
+Se i log mostrano hostname Compose e non IP hardcoded o nomi arbitrari, la discovery tramite DNS interno della rete Compose è osservabile e coerente con la configurazione dichiarata.
+
+### 3. Membership iniziale non vuota o convergente
+L'evidenza minima è una delle seguenti condizioni, osservabile già nei tail iniziali salvati negli artefatti:
+
+- il log `gossip bootstrap completato` riporta `peers>0`, quindi la membership iniziale non è vuota;
+- il log `transport gossip avviato` riporta ancora `peers>0`, confermando che il nodo parte con peer già noti;
+- i log successivi mostrano `event=remote_merge` con `membership_entries=<n>` oppure `event=gossip_round` con `membership_entries=<n>` coerenti con la vista locale;
+- eventuali `event=membership_transition` mostrano peer reali (`peer_id`, `peer_addr`) entrati nella vista runtime e poi monitorati dalla failure detection.
+
+Dal punto di vista operativo, per M07 è sufficiente che almeno uno dei tre nodi mostri una membership iniziale non vuota e che i log dei round/merge successivi non indichino isolamento permanente del cluster.
 
 ## Procedura operativa consigliata
 Sequenza minima consigliata per un ciclo standard di verifica locale:
