@@ -518,3 +518,8 @@
 - **Descrizione task**: Aggiornata la sezione M07 in `ROADMAP.md` per sostituire il riferimento generico alla cartella Compose con i path reali presenti nel repository.
 - **File modificati**: `ROADMAP.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato prima la documentazione di deployment, il task M07 e gli artefatti reali di repository; quindi ho riallineato il campo "File/cartelle coinvolti" della roadmap ai file effettivamente presenti e pertinenti per la milestone Compose/networking, mantenendo `docs/deployment.md` come riferimento documentale canonico.
+
+## 2026-03-23 22:43:56 UTC
+- **Descrizione task**: Aggiornata `docs/deployment.md` per riallineare la sezione sulle aggregazioni dei tre servizi Compose alla configurazione runtime reale del cluster M09.
+- **File modificati**: `docs/deployment.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato prima la documentazione canonica di deployment/testing, le configurazioni `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` e il test di integrazione `tests/integration/cluster_convergence_test.go`. La sezione Compose riportava ancora una combinazione `sum/sum/average` non più coerente con il runtime reale; l'ho quindi aggiornata per documentare esplicitamente che tutti e tre i nodi usano `aggregation: average` con `initial_value` rispettivamente `10`, `30`, `50`, in allineamento con README e scenario M09.
