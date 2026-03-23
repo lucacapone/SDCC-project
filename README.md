@@ -108,7 +108,7 @@ La configurazione segue tre leve operative:
 La validazione fallisce se `aggregation` non appartiene a `enabled_aggregations`.
 Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate in `sum`, `average`, `min` e `max`.
 - **Stato reale `sum`**: algoritmo base in `internal/aggregation/sum/`; il merge gossip usa `state.aggregation_data.sum` con contributi/versioni per nodo ed è implementato in `internal/gossip/state.go`, dove mantiene semantica idempotente su duplicati/out-of-order; la suite canonica di convergenza è `tests/aggregation/sum/sum_convergence_test.go` con `TestSumConvergence`.
-- **Stato reale `average`**: merge gossip convergente con metadati `state.aggregation_data.average` (`contributions.sum/count` + `versions` per nodo), evitando la deriva della media pairwise.
+- **Stato reale `average`**: merge gossip convergente con metadati `state.aggregation_data.average` (`contributions.sum/count` + `versions` per nodo); ogni nodo conserva inoltre il proprio contributo locale originario in stato runtime separato, evitando che round successivi sostituiscano il contributo con la media corrente del cluster.
 - **Stato reale `min`/`max`**: merge gossip monotono robusto con metadati opzionali `state.aggregation_data.min/max.versions` per nodo e fallback retrocompatibile su payload legacy senza metadati.
 - Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 

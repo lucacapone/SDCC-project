@@ -115,6 +115,32 @@ func TestRoundLoggingEsponeCampiStabili(t *testing.T) {
 	}
 }
 
+func TestAverageRoundPreservaContributoLocaleOriginario(t *testing.T) {
+	tr := &captureTransport{}
+	m := membership.NewSet()
+	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Second)
+	eng.State.LocalValue = 10
+	eng.State.Value = 30
+	eng.State.EnsureAverageMetadata()
+	eng.State.AggregationData.Average.Contributions["node-1"] = shared.AverageContribution{Sum: 10, Count: 1}
+	eng.State.AggregationData.Average.Contributions["node-2"] = shared.AverageContribution{Sum: 30, Count: 1}
+	eng.State.AggregationData.Average.Contributions["node-3"] = shared.AverageContribution{Sum: 50, Count: 1}
+	eng.State.AggregationData.Average.Versions["node-1"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Average.Versions["node-2"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Average.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+
+	eng.RoundOnce(context.Background())
+	eng.RoundOnce(context.Background())
+
+	localContribution := eng.State.AggregationData.Average.Contributions["node-1"]
+	if localContribution != (shared.AverageContribution{Sum: 10, Count: 1}) {
+		t.Fatalf("contributo locale riscritto impropriamente: got=%+v", localContribution)
+	}
+	if eng.State.Value != 30 {
+		t.Fatalf("media cluster inattesa dopo round multipli: got=%v want=30", eng.State.Value)
+	}
+}
+
 func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 	tr := &spyTransportEngine{}
 	var logBuffer bytes.Buffer

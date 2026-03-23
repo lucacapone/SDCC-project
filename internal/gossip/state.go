@@ -209,15 +209,6 @@ func mergeAverageState(local, remote shared.GossipState) shared.GossipState {
 		local.AggregationData.Average.Contributions[nodeID] = remote.AggregationData.Average.Contributions[nodeID]
 	}
 
-	if remote.NodeID != "" {
-		remoteContributionVersion := normalizeVersion(remote)
-		localContributionVersion := local.AggregationData.Average.Versions[remote.NodeID]
-		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
-			local.AggregationData.Average.Versions[remote.NodeID] = remoteContributionVersion
-			local.AggregationData.Average.Contributions[remote.NodeID] = shared.AverageContribution{Sum: remote.Value, Count: 1}
-		}
-	}
-
 	local.Value = averageFromContributions(local.AggregationData.Average.Contributions)
 	return local
 }
@@ -231,11 +222,20 @@ func ensureIncomingAverageMetadata(state *shared.GossipState) {
 	if state.NodeID == "" {
 		return
 	}
+	// Se il payload espone gia' metadata average completi per il nodo remoto, il contributo
+	// canonico e' quello serializzato in `aggregation_data.average` e non va re-inferito da `value`.
+	if _, ok := state.AggregationData.Average.Contributions[state.NodeID]; ok {
+		if _, versionKnown := state.AggregationData.Average.Versions[state.NodeID]; versionKnown {
+			return
+		}
+	}
 	version := normalizeVersion(*state)
 	knownVersion, ok := state.AggregationData.Average.Versions[state.NodeID]
 	if !ok || compareVersion(version, knownVersion) > 0 {
 		state.AggregationData.Average.Versions[state.NodeID] = version
-		state.AggregationData.Average.Contributions[state.NodeID] = shared.AverageContribution{Sum: state.Value, Count: 1}
+		if _, hasContribution := state.AggregationData.Average.Contributions[state.NodeID]; !hasContribution {
+			state.AggregationData.Average.Contributions[state.NodeID] = shared.AverageContribution{Sum: state.Value, Count: 1}
+		}
 	}
 }
 
