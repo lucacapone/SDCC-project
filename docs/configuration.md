@@ -59,20 +59,26 @@ Default() -> parse file config -> overrideFromEnv() -> Validate()
 
 ### Nota importante sugli override env
 
-Il comportamento reale di `overrideFromEnv` non fallisce in anticipo su input env malformati per campi numerici o CSV:
+Il comportamento reale di `overrideFromEnv` è **fail-fast** per i campi numerici e CSV:
 
-- per gli interi (`NODE_PORT`, `GOSSIP_INTERVAL_MS`, `FANOUT`, `MEMBERSHIP_TIMEOUT_MS`), l'override viene applicato **solo** se `strconv.Atoi` ha successo;
-- per le liste CSV (`BOOTSTRAP_PEERS`, `SEED_PEERS`, `ENABLED_AGGREGATIONS`), l'override viene applicato **solo** se il parsing in formato lista ha successo;
-- per le stringhe, l'override viene applicato solo se la variabile esiste e non è vuota dopo `TrimSpace`.
+- per gli interi (`NODE_PORT`, `GOSSIP_INTERVAL_MS`, `FANOUT`, `MEMBERSHIP_TIMEOUT_MS`), se la variabile è presente ma non parseabile come intero, `Load` fallisce subito;
+- per le liste CSV (`BOOTSTRAP_PEERS`, `SEED_PEERS`, `ENABLED_AGGREGATIONS`), se la variabile è presente ma contiene item vuoti o sintassi malformata, `Load` fallisce subito;
+- per le stringhe, l'override continua a essere applicato solo se la variabile esiste e non è vuota dopo `TrimSpace`.
 
-Quindi un env numerico/CSV malformato non sostituisce il valore precedente; il runtime prosegue con il valore già presente e poi valida il risultato finale.
+La precedence rimane invariata:
+
+```text
+Default() -> file -> env -> Validate()
+```
+
+La differenza è che un env numerico/CSV **presente e invalido** interrompe il caricamento prima della `Validate`, con un messaggio che include il nome della variabile e il valore ricevuto.
 
 Casi espliciti fissati anche dai test di regressione:
 
-- `NODE_PORT=abc` su base/file validi: l'override viene ignorato e resta il `node_port` precedente.
-- `FANOUT=abc`: l'override viene ignorato e resta il `fanout` precedente.
-- `ENABLED_AGGREGATIONS=sum,,max`: l'override CSV viene ignorato e resta la lista precedente valida.
-- `BOOTSTRAP_PEERS=node-1:7001,`: l'override CSV viene ignorato e resta la lista precedente valida.
+- `NODE_PORT=abc` → errore esplicito che cita `NODE_PORT` e `abc`.
+- `FANOUT=abc` → errore esplicito che cita `FANOUT` e `abc`.
+- `ENABLED_AGGREGATIONS=sum,,max` → errore esplicito che cita `ENABLED_AGGREGATIONS` e il CSV ricevuto.
+- `BOOTSTRAP_PEERS=node-1:7001,` → errore esplicito che cita `BOOTSTRAP_PEERS` e il CSV ricevuto.
 
 ## Elenco completo dei campi di `internal/config.Config`
 
@@ -148,14 +154,14 @@ Il runtime supporta esattamente queste variabili ambiente:
 | `NODE_ID` | `NodeID` | stringa | Ignorata se vuota/spazi. |
 | `BIND_ADDRESS` | `BindAddress` | stringa | Ignorata se vuota/spazi. |
 | `ADVERTISE_ADDR` | `AdvertiseAddr` | stringa | Endpoint `host:porta` pubblicizzato agli altri nodi. |
-| `NODE_PORT` | `NodePort` | intero | Applicata solo se parse intero riuscito. |
+| `NODE_PORT` | `NodePort` | intero | Se presente ma non numerica fallisce il load. |
 | `JOIN_ENDPOINT` | `JoinEndpoint` | stringa | Ignorata se vuota/spazi. |
-| `BOOTSTRAP_PEERS` | `BootstrapPeers` | CSV | Interpretata come lista `a,b,c`. |
-| `SEED_PEERS` | `SeedPeers` | CSV | Interpretata come lista `a,b,c`. |
-| `GOSSIP_INTERVAL_MS` | `GossipIntervalMS` | intero | Applicata solo se parse intero riuscito. |
-| `FANOUT` | `Fanout` | intero | Applicata solo se parse intero riuscito. |
-| `MEMBERSHIP_TIMEOUT_MS` | `MembershipTimeoutMS` | intero | Applicata solo se parse intero riuscito. |
-| `ENABLED_AGGREGATIONS` | `EnabledAggregations` | CSV | Interpretata come lista `a,b,c`. |
+| `BOOTSTRAP_PEERS` | `BootstrapPeers` | CSV | Interpretata come lista `a,b,c`; se presente ma malformata fallisce il load. |
+| `SEED_PEERS` | `SeedPeers` | CSV | Interpretata come lista `a,b,c`; se presente ma malformata fallisce il load. |
+| `GOSSIP_INTERVAL_MS` | `GossipIntervalMS` | intero | Se presente ma non numerica fallisce il load. |
+| `FANOUT` | `Fanout` | intero | Se presente ma non numerica fallisce il load. |
+| `MEMBERSHIP_TIMEOUT_MS` | `MembershipTimeoutMS` | intero | Se presente ma non numerica fallisce il load. |
+| `ENABLED_AGGREGATIONS` | `EnabledAggregations` | CSV | Interpretata come lista `a,b,c`; se presente ma malformata fallisce il load. |
 | `AGGREGATION` | `Aggregation` | stringa | Ignorata se vuota/spazi. |
 | `LOG_LEVEL` | `LogLevel` | stringa | Ignorata se vuota/spazi. |
 

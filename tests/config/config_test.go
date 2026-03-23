@@ -281,7 +281,7 @@ node_port: 7100
 		}
 	})
 
-	t.Run("override env malformati vengono ignorati esplicitamente", func(t *testing.T) {
+	t.Run("override env malformati falliscono in modo esplicito", func(t *testing.T) {
 		path := writeTempConfig(t, "env-invalid-override.yaml", `node_id: file-node
 bind_address: 127.0.0.1
 advertise_addr: file-node:7100
@@ -297,61 +297,44 @@ log_level: debug
 `)
 
 		tests := []struct {
-			name      string
-			envName   string
-			envValue  string
-			assertCfg func(*testing.T, Config)
+			name        string
+			envName     string
+			envValue    string
+			errContains []string
 		}{
 			{
-				name:     "NODE_PORT abc mantiene il valore del file valido",
-				envName:  "NODE_PORT",
-				envValue: "abc",
-				assertCfg: func(t *testing.T, cfg Config) {
-					t.Helper()
-					if cfg.NodePort != 7100 {
-						t.Fatalf("NODE_PORT malformato non ignorato: %+v", cfg)
-					}
-				},
+				name:        "NODE_PORT abc restituisce errore chiaro",
+				envName:     "NODE_PORT",
+				envValue:    "abc",
+				errContains: []string{"NODE_PORT", "abc", "intero"},
 			},
 			{
-				name:     "FANOUT abc mantiene il valore del file valido",
-				envName:  "FANOUT",
-				envValue: "abc",
-				assertCfg: func(t *testing.T, cfg Config) {
-					t.Helper()
-					if cfg.Fanout != 4 {
-						t.Fatalf("FANOUT malformato non ignorato: %+v", cfg)
-					}
-				},
+				name:        "FANOUT abc restituisce errore chiaro",
+				envName:     "FANOUT",
+				envValue:    "abc",
+				errContains: []string{"FANOUT", "abc", "intero"},
 			},
 			{
-				name:     "ENABLED_AGGREGATIONS con item vuoto mantiene la lista del file valida",
-				envName:  "ENABLED_AGGREGATIONS",
-				envValue: "sum,,max",
-				assertCfg: func(t *testing.T, cfg Config) {
-					t.Helper()
-					assertSliceEqual(t, "enabled_aggregations", cfg.EnabledAggregations, []string{"sum", "average", "max"})
-				},
+				name:        "ENABLED_AGGREGATIONS con item vuoto restituisce errore chiaro",
+				envName:     "ENABLED_AGGREGATIONS",
+				envValue:    "sum,,max",
+				errContains: []string{"ENABLED_AGGREGATIONS", "sum,,max", "item vuoto"},
 			},
 			{
-				name:     "BOOTSTRAP_PEERS con item vuoto mantiene la lista del file valida",
-				envName:  "BOOTSTRAP_PEERS",
-				envValue: "node-1:7001,",
-				assertCfg: func(t *testing.T, cfg Config) {
-					t.Helper()
-					assertSliceEqual(t, "bootstrap_peers", cfg.BootstrapPeers, []string{"node-1:7001", "node-2:7002"})
-				},
+				name:        "BOOTSTRAP_PEERS con item vuoto restituisce errore chiaro",
+				envName:     "BOOTSTRAP_PEERS",
+				envValue:    "node-1:7001,",
+				errContains: []string{"BOOTSTRAP_PEERS", "node-1:7001,", "item vuoto"},
 			},
 		}
 
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Setenv(tc.envName, tc.envValue)
-				cfg, err := Load(path)
-				if err != nil {
-					t.Fatalf("load config con override env malformato: %v", err)
+				_, err := Load(path)
+				for _, fragment := range tc.errContains {
+					assertErrorContains(t, err, fragment)
 				}
-				tc.assertCfg(t, cfg)
 			})
 		}
 	})
