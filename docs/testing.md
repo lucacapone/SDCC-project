@@ -247,18 +247,26 @@ Per il consolidamento M02 i casi rischiosi dichiarati nel task vengono verificat
 
 ### Comandi canonici M02
 
+Separiamo esplicitamente gli entrypoint per evitare riferimenti fuorvianti a package interni senza file `*_test.go` e per rendere chiaro il livello di garanzia ottenuto.
+
+```bash
+# verifica unitaria membership
+go test ./tests/membership -run 'TestJoinLeave|TestTimeoutTransitions|TestPruneRemovesExpiredDeadPeerAndBlocksObsoleteReintroduction' -count=1
+
+# verifica gossip membership
+go test ./tests/gossip -run 'TestMergeMembership|TestRoundSerializzaMembershipConIncarnation' -count=1
+
+# eventuale verifica integrazione runtime
+go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
+```
+
+Se serve analizzare un singolo rischio M02, restano disponibili anche i comandi puntuali sui test gossip dedicati:
+
 ```bash
 go test ./tests/gossip -run TestMergeMembershipReconvergesAfterTemporaryPartition -count=1
 go test ./tests/gossip -run TestMergeMembershipRecoversSuspectWithHigherAliveIncarnation -count=1
 go test ./tests/gossip -run TestMergeMembershipIgnoresRejoinWithLowerIncarnation -count=1
 go test ./tests/gossip -run TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID -count=1
-```
-
-Per una verifica rapida dell’intero consolidamento membership/gossip M02 è anche utile eseguire in sequenza:
-
-```bash
-go test ./tests/gossip -run 'TestMergeMembership|TestRoundSerializzaMembershipConIncarnation' -count=1
-go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
 ```
 
 ## Test canonico observability

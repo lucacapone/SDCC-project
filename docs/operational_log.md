@@ -422,3 +422,8 @@
 - **Descrizione task**: Consolidamento M02 con test dedicati ai casi rischiosi di membership gossip e aggiornamento della documentazione canonica dei comandi di verifica.
 - **File modificati**: `tests/gossip/membership_convergence_test.go`, `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiunto quattro scenari mirati per congelare i rischi dichiarati di M02: riconvergenza dopo partizione temporanea modellata come viste membership divergenti tra sottoinsiemi di nodi, recupero di un peer `suspect` tramite update `alive` con `incarnation` maggiore, rejoin obsoleto con `incarnation` minore ignorato e riallineamento tra placeholder seed `host:port` e `node_id` canonico. Ho inoltre aggiornato `docs/testing.md` con la sezione canonica dei comandi M02 per mantenere allineati test automatici e documentazione operativa.
+
+## 2026-03-23 19:25:50 UTC
+- **Descrizione task**: Riallineamento di roadmap, task M02, README e guida ai test agli entrypoint reali della suite esterna per la membership.
+- **File modificati**: `ROADMAP.md`, `README.md`, `docs/testing.md`, `docs/task/M02.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato la struttura reale dei test sotto `tests/` e ho rimosso i riferimenti fuorvianti a package interni senza file `*_test.go`, distinguendo esplicitamente tre livelli di verifica per M02: suite unitaria membership, suite gossip membership e test di integrazione runtime. Ho inoltre uniformato i comandi canonici con `-count=1` per evitare ambiguità rispetto alla cache dei test e mantenere la documentazione coerente con il layout corrente del repository.
