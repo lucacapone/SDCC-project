@@ -32,7 +32,7 @@ Nel deployment corrente i nodi usano queste porte applicative:
 - `7002/udp` per `node2`;
 - `7003/udp` per `node3`.
 
-Queste porte sono dichiarate nei file `configs/node*.yaml` tramite `node_port` e vengono anche ribadite dagli override ambiente definiti nel `docker-compose.yml`.
+Queste porte sono dichiarate nei file `configs/node*.yaml` tramite `node_port`, che nel deployment locale rappresenta la sorgente di verità runtime per ogni nodo. Il `docker-compose.yml` canonico di root non ribadisce questi valori tramite `environment:`: si limita a montare il file corretto per ciascun servizio.
 
 ## Topologia del cluster locale
 Il cluster Compose reale prevede tre servizi:
@@ -41,11 +41,11 @@ Il cluster Compose reale prevede tre servizi:
 - `node2`
 - `node3`
 
-La configurazione corrente è coerente tra Compose e file YAML:
+La configurazione corrente è coerente tra i servizi Compose e i file YAML montati:
 
-- `node1` usa `node_port: 7001`, `advertise_addr: node1:7001` e seed `node2:7002`, `node3:7003`;
-- `node2` usa `node_port: 7002`, `advertise_addr: node2:7002` e seed `node1:7001`, `node3:7003`;
-- `node3` usa `node_port: 7003`, `advertise_addr: node3:7003` e seed `node1:7001`, `node2:7002`.
+- `node1` monta `configs/node1.yaml` e usa `node_port: 7001`, `advertise_addr: node1:7001` e seed `node2:7002`, `node3:7003`;
+- `node2` monta `configs/node2.yaml` e usa `node_port: 7002`, `advertise_addr: node2:7002` e seed `node1:7001`, `node3:7003`;
+- `node3` monta `configs/node3.yaml` e usa `node_port: 7003`, `advertise_addr: node3:7003` e seed `node1:7001`, `node2:7002`.
 
 Convenzione operativa adottata per bootstrap e discovery:
 
@@ -162,9 +162,9 @@ Per questo motivo i file `configs/node*.yaml` usano gli stessi hostname Compose 
 ## Allineamento tra Compose e configurazione runtime
 Nel deployment corrente il file Compose canonico monta un solo livello di sorgente di verità per i nodi applicativi:
 
-1. **file YAML montato** (`configs/node*.yaml`).
+1. **file YAML montato** (`configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`).
 
-Il runtime del progetto supporta comunque override via environment. Se si introducono override custom, bisogna mantenere coerenti in particolare:
+Il runtime del progetto supporta comunque override via environment, ma il `docker-compose.yml` canonico di root non usa la sezione `environment:` per duplicare i parametri dei nodi. Se in ambienti derivati si introducono override custom, bisogna mantenere coerenti in particolare:
 
 - `NODE_ID` ↔ `node_id`;
 - `NODE_PORT` ↔ `node_port`;
@@ -209,21 +209,21 @@ docker compose up -d --build
 
 - usare il file `docker-compose.yml` della root;
 - verificare che i peer siano esattamente `node1`, `node2`, `node3` con le rispettive porte;
-- controllare che i file `configs/node*.yaml` e le variabili `SEED_PEERS` del Compose coincidano.
+- controllare che `configs/node1.yaml`, `configs/node2.yaml` e `configs/node3.yaml` usino i service name e le porte corrette per i peer dichiarati.
 
 ### 3. Mismatch porte/configurazione
 **Sintomo:** i container risultano avviati, ma la comunicazione tra nodi non avanza o si osservano errori di bind/invio verso porte sbagliate.
 
 **Cause probabili:**
 
-- `node_port` nel file YAML differente da `NODE_PORT` nell'environment del servizio;
+- `node_port` o `advertise_addr` modificati in uno dei file YAML senza riallineare i peer che lo referenziano;
 - `seed_peers` configurati con porte diverse da quelle realmente usate dai peer;
 - modifica parziale di un solo nodo senza aggiornare tutti i riferimenti incrociati.
 
 **Azioni consigliate:**
 
 - confrontare `docker-compose.yml` con `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`;
-- mantenere allineati i valori duplicati tra YAML e variabili ambiente;
+- mantenere allineati tra loro i tre file `configs/node*.yaml`, perché nel Compose canonico sono l'unica configurazione runtime montata nei container;
 - dopo correzioni, ricreare i container con `docker compose up -d --build`.
 
 ### 4. Differenze tra ambienti Docker locali
@@ -248,7 +248,7 @@ docker compose up -d --build
 **Cause probabili:**
 
 - bootstrap iniziale incompleto non recuperato nei round successivi;
-- peer list incoerente tra YAML ed environment;
+- peer list incoerente tra i file YAML dei nodi;
 - timeout o intervalli gossip configurati in modo incoerente rispetto al contesto locale;
 - modifica manuale di aggregazione o peer senza riallineamento documentale/configurativo.
 
