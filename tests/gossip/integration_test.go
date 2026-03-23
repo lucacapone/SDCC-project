@@ -155,7 +155,7 @@ func TestCrashRestartRejoinOptional(t *testing.T) {
 	}
 
 	rejoinTransport := network.newTransport("node-3")
-	rejoined := NewEngine("node-3", "average", rejoinTransport, fullMeshMembership("node-3", []string{"node-1", "node-2"}), slog.Default(), 10*time.Millisecond)
+	rejoined := NewEngine("node-3", "average", rejoinTransport, fullMeshMembership("node-3", []string{"node-1", "node-2"}), slog.Default(), nil, 10*time.Millisecond)
 	rejoined.State.Value = 90
 	if err := rejoined.Start(context.Background()); err != nil {
 		t.Fatalf("start rejoin: %v", err)
@@ -186,7 +186,7 @@ func startCluster(t *testing.T, network *inMemoryNetwork, initialValues []float6
 				peers = append(peers, candidate)
 			}
 		}
-		engine := NewEngine(addr, "average", network.newTransport(addr), fullMeshMembership(addr, peers), slog.Default(), roundEvery)
+		engine := NewEngine(addr, "average", network.newTransport(addr), fullMeshMembership(addr, peers), slog.Default(), nil, roundEvery)
 		engine.State.Value = val
 		if err := engine.Start(ctx); err != nil {
 			cancel()

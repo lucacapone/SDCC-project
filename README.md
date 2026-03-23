@@ -121,6 +121,7 @@ Sintesi operativa M11:
 - architettura minima composta da logger strutturato, collector metriche, stato lifecycle del nodo e server HTTP minimo integrato in `cmd/node/main.go`;
 - campi log stabili per gli eventi gossip principali (`event`, `node_id`, `round`, `peers`, `estimate`, `result`, `node_state`), emessi su stdout/stderr strutturato;
 - metriche e probe esposte via endpoint HTTP `/health`, `/ready` e `/metrics`;
+- il collector viene passato anche all'engine gossip, così `/metrics` cresce durante i round e i merge remoti reali invece di fermarsi a snapshot di bootstrap/shutdown;
 - binding HTTP configurabile via `OBSERVABILITY_ADDR` (default `:8080`);
 - criterio canonico di readiness: `/ready` resta `503` fino a bootstrap completato + engine gossip avviato, poi passa a `200`;
 - lifecycle del server HTTP: avvio insieme al runtime del nodo, disponibilità per tutta la vita del processo e terminazione contestuale allo shutdown;

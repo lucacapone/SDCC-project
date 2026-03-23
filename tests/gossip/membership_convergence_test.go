@@ -16,7 +16,7 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	base := time.Now().UTC()
 	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2", Status: membership.Suspect, Incarnation: 7, LastSeen: base})
 
-	eng := NewEngine("node-1", "average", tr, m, nil, time.Second)
+	eng := NewEngine("node-1", "average", tr, m, nil, nil, time.Second)
 	eng.RoundOnce(context.Background())
 
 	if len(tr.sent) != 1 {

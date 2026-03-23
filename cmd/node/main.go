@@ -119,6 +119,7 @@ func main() {
 		gossipTransport,
 		mset,
 		logger,
+		collector,
 		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,
 	)
 	eng.State.Value = cfg.InitialValue

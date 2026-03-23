@@ -30,6 +30,7 @@ Semantica degli endpoint:
 - `/health`: liveness minimale del processo HTTP/runtime, restituisce sempre `200 OK` finché il processo è vivo e include il `node_state` corrente per debugging;
 - `/ready`: readiness utile per Compose/debug locale, restituisce `503` finché il nodo non ha completato bootstrap e avvio engine, poi `200 OK` in stato `engine_started`;
 - `/metrics`: esporta sia i contatori/gauge esistenti sia la gauge `sdcc_node_state{state=...}` per rendere osservabile la fase corrente del lifecycle.
+- lo stesso `internal/observability.Collector` viene condiviso tra `cmd/node/main.go` e `internal/gossip/engine.go`, così round locali e merge remoti aggiornano in tempo reale `sdcc_node_rounds_total`, `sdcc_node_remote_merges_total`, `sdcc_node_known_peers` e `sdcc_node_estimate` usando lo stato runtime effettivo del nodo.
 
 ## Layer transport astratto e confini con gossip
 L'engine gossip è isolato dal protocollo di rete concreto: usa solo l'interfaccia `Transport` (`Start`, `Send`, `Close`) con payload `[]byte` e destinazione `string`.

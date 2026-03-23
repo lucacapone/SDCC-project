@@ -161,6 +161,7 @@ func bootstrapCluster(t *testing.T, network *integrationNetwork, aggregation str
 			transport,
 			fullMeshMembership(address, addresses),
 			slog.Default(),
+			nil,
 			roundEvery,
 		)
 		engine.State.Value = value
@@ -188,6 +189,7 @@ func restartClusterNode(t *testing.T, network *integrationNetwork, address strin
 		transport,
 		fullMeshMembership(address, peers),
 		slog.Default(),
+		nil,
 		roundEvery,
 	)
 	engine.State.Value = initialValue

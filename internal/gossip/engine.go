@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"sdcc-project/internal/membership"
+	"sdcc-project/internal/observability"
 	"sdcc-project/internal/transport"
 	shared "sdcc-project/internal/types"
 )
@@ -27,12 +28,13 @@ type Engine struct {
 	Membership  *membership.Set
 	Transport   transport.Transport
 	Logger      *slog.Logger
+	Collector   *observability.Collector
 	RoundTicker *time.Ticker
 	mu          sync.Mutex
 }
 
 // NewEngine costruisce un engine con dipendenze minime.
-func NewEngine(nodeID, aggregationType string, t transport.Transport, m *membership.Set, logger *slog.Logger, roundEvery time.Duration) *Engine {
+func NewEngine(nodeID, aggregationType string, t transport.Transport, m *membership.Set, logger *slog.Logger, collector *observability.Collector, roundEvery time.Duration) *Engine {
 	if roundEvery <= 0 {
 		roundEvery = time.Second
 	}
@@ -46,6 +48,7 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 		Membership:  m,
 		Transport:   t,
 		Logger:      logger,
+		Collector:   collector,
 		RoundTicker: time.NewTicker(roundEvery),
 	}
 }
@@ -80,6 +83,7 @@ func (e *Engine) Start(ctx context.Context) error {
 
 		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, msg.SentAt)
 		mergeMembership(e.Membership, msg.Membership)
+		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
 			logLevel := slog.LevelDebug
 			if merge.Status == MergeApplied || merge.Status == MergeConflict {
@@ -150,6 +154,7 @@ func (e *Engine) round(ctx context.Context) {
 		State:        stateSnapshot,
 		Membership:   serializeMembershipDigest(membershipSnapshot),
 	}
+	localEstimate := e.State.Value
 	e.mu.Unlock()
 
 	raw, _ := json.Marshal(msg)
@@ -157,6 +162,7 @@ func (e *Engine) round(ctx context.Context) {
 		_ = e.Transport.Send(ctx, p.Addr, raw)
 	}
 
+	e.updateObservabilityAfterRound(localEstimate)
 	if e.Logger != nil {
 		e.Logger.Debug("round gossip eseguito",
 			"event", "gossip_round",
@@ -168,6 +174,26 @@ func (e *Engine) round(ctx context.Context) {
 			"membership_entries", len(msg.Membership),
 		)
 	}
+}
+
+// updateObservabilityAfterRound riallinea il collector ai valori runtime dopo un round locale completato.
+func (e *Engine) updateObservabilityAfterRound(localEstimate float64) {
+	if e.Collector == nil {
+		return
+	}
+	e.Collector.IncTotalRounds()
+	e.Collector.SetKnownPeers(len(e.Membership.Snapshot()))
+	e.Collector.SetCurrentEstimate(localEstimate)
+}
+
+// updateObservabilityFromRuntime aggiorna il collector dopo un merge remoto usando lo stato runtime effettivo.
+func (e *Engine) updateObservabilityFromRuntime(localEstimate float64, mergeStatus string) {
+	if e.Collector == nil {
+		return
+	}
+	e.Collector.IncRemoteMergeOutcome(mergeStatus)
+	e.Collector.SetKnownPeers(len(e.Membership.Snapshot()))
+	e.Collector.SetCurrentEstimate(localEstimate)
 }
 
 // markPeerAlive tratta un messaggio gossip valido come heartbeat implicito del nodo origine.

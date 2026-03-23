@@ -70,6 +70,7 @@ Gli endpoint HTTP disponibili sono tre.
 ### `/metrics`
 - scopo: esportazione testuale delle metriche minime del nodo;
 - comportamento: rende visibili contatori/gauge aggregate del collector;
+- aggiornamento runtime: l'engine gossip incrementa `sdcc_node_rounds_total` dopo ogni round completato, aggiorna `sdcc_node_known_peers`/`sdcc_node_estimate` dopo round e merge remoti e registra `sdcc_node_remote_merges_total{result=...}` subito dopo `applyRemote(...)`.
 - uso tipico: verifica manuale via `curl`, scraping leggero e test automatico canonico di regressione.
 
 Binding HTTP:

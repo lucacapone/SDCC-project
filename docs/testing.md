@@ -231,6 +231,7 @@ La suite esterna `tests/observability` include ora il test canonico:
 La suite verifica in modo deterministico che:
 
 - l'endpoint `/metrics` esponga almeno le metriche minime del nodo (`rounds`, merge remoti per esito, peer noti, stima corrente, uptime, readiness);
+- il collector condiviso con l'engine aggiorni davvero le metriche durante l'esecuzione del nodo: i round devono far crescere `sdcc_node_rounds_total`, i merge remoti devono incrementare `sdcc_node_remote_merges_total{result=...}` e le gauge `known_peers`/`estimate` devono riflettere lo stato locale post-round/post-merge, non solo bootstrap o shutdown;
 - l'endpoint `/health` risponda positivamente con HTTP `200 OK`;
 - l'endpoint `/ready` rifletta coerentemente lo stato del collector restituendo `503` quando il nodo non è pronto e `200` quando viene marcato ready;
 - gli esiti di merge non riconosciuti vengano collassati nel bucket stabile `unknown`, evitando label ad alta cardinalità.

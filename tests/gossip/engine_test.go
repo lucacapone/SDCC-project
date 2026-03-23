@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"sdcc-project/internal/membership"
+	"sdcc-project/internal/observability"
 	"sdcc-project/internal/transport"
 	shared "sdcc-project/internal/types"
 )
@@ -21,6 +22,7 @@ func TestEngineStartStop(t *testing.T) {
 		transport.NoopTransport{},
 		membership.NewSet(),
 		slog.Default(),
+		nil,
 		10*time.Millisecond,
 	)
 
@@ -53,7 +55,7 @@ func TestRoundMessageAndStateVersionAlignment(t *testing.T) {
 	m := membership.NewSet()
 	m.Join("node-2", time.Now().UTC())
 
-	eng := NewEngine("node-1", "average", tr, m, slog.Default(), time.Second)
+	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Second)
 	eng.State.VersionCounter = 2
 	eng.State.Round = 2
 
@@ -94,7 +96,7 @@ func TestRoundLoggingEsponeCampiStabili(t *testing.T) {
 
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	eng := NewEngine("node-1", "average", tr, m, logger, time.Second)
+	eng := NewEngine("node-1", "average", tr, m, logger, nil, time.Second)
 	eng.State.Value = 42.5
 
 	eng.RoundOnce(context.Background())
@@ -118,7 +120,7 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	mset := membership.NewSet()
-	eng := NewEngine("node-1", "sum", tr, mset, logger, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -184,5 +186,89 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 		if strings.Contains(logged, forbidden) {
 			t.Fatalf("log merge contiene dettagli troppo verbosi %q: %s", forbidden, logged)
 		}
+	}
+}
+
+func TestRoundAggiornaCollectorConValoriRuntime(t *testing.T) {
+	tr := &captureTransport{}
+	mset := membership.NewSet()
+	now := time.Now().UTC()
+	mset.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: now})
+	collector := observability.NewCollector(now)
+	eng := NewEngine("node-1", "sum", tr, mset, slog.Default(), collector, time.Second)
+	eng.State.Value = 12.5
+
+	eng.RoundOnce(context.Background())
+
+	snapshot := collector.Snapshot(time.Now().UTC())
+	if snapshot.TotalRounds != 1 {
+		t.Fatalf("round osservati inattesi: got=%d want=1", snapshot.TotalRounds)
+	}
+	if snapshot.KnownPeers != 1 {
+		t.Fatalf("peer osservati inattesi: got=%d want=1", snapshot.KnownPeers)
+	}
+	if snapshot.CurrentEstimate != eng.State.Value {
+		t.Fatalf("stima osservata inattesa: got=%v want=%v", snapshot.CurrentEstimate, eng.State.Value)
+	}
+}
+
+func TestRemoteMergeAggiornaCollectorConEsitoEStatoRuntime(t *testing.T) {
+	tr := &spyTransportEngine{}
+	mset := membership.NewSet()
+	collector := observability.NewCollector(time.Now().UTC())
+	eng := NewEngine("node-1", "sum", tr, mset, slog.Default(), collector, time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	now := time.Unix(1710000000, 0).UTC()
+	incoming := shared.GossipMessage{
+		MessageID:  "m-merge-collector-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Epoch:   1,
+			Counter: 1,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           77.0,
+			VersionEpoch:    1,
+			VersionCounter:  1,
+			Round:           5,
+			UpdatedAt:       now,
+		},
+		Membership: []shared.MembershipEntry{{
+			NodeID:      "node-2",
+			Addr:        "node-2:7002",
+			Status:      string(membership.Alive),
+			Incarnation: 3,
+			LastSeen:    now,
+		}},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	snapshot := collector.Snapshot(time.Now().UTC())
+	if snapshot.RemoteMerges["applied"] != 1 {
+		t.Fatalf("merge applied osservati inattesi: got=%d want=1", snapshot.RemoteMerges["applied"])
+	}
+	if snapshot.KnownPeers != 1 {
+		t.Fatalf("peer osservati inattesi dopo merge: got=%d want=1", snapshot.KnownPeers)
+	}
+	if snapshot.CurrentEstimate != 77.0 {
+		t.Fatalf("stima osservata inattesa dopo merge: got=%v want=77", snapshot.CurrentEstimate)
 	}
 }
