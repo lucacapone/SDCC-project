@@ -475,3 +475,8 @@
 - **Descrizione task**: Chiarimento del log operativo M07 per invalidare l'entry tecnica parziale generata durante l'append automatica precedente.
 - **File modificati**: `docs/operational_log.md`.
 - **Reasoning summary**: Durante il primo append del log operativo una here-doc non quotata ha prodotto un'entry parziale con backtick espansi dalla shell. In conformità con la regola di append-only non ho alterato la riga precedente, ma aggiungo questa nota esplicita: l'entry `2026-03-23 21:05:48 UTC` è da considerare non valida e va ignorata; la descrizione corretta dell'attività M07 è quella registrata nell'entry `2026-03-23 21:05:59 UTC`.
+
+## 2026-03-23 21:11:54 UTC
+- **Descrizione task**: Riallineamento delle sezioni iniziali di `docs/deployment.md` alla sorgente di verità runtime attuale del deployment Compose canonico.
+- **File modificati**: `docs/deployment.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato che il `docker-compose.yml` di root non definisce override via `environment:` e che la configurazione runtime dei tre nodi deriva esclusivamente dai file montati `configs/node1.yaml`, `configs/node2.yaml` e `configs/node3.yaml`. Ho quindi corretto nelle sezioni iniziali e nei punti di troubleshooting di `docs/deployment.md` i riferimenti che descrivevano `node_port` o i peer come duplicati dagli override ambiente del Compose, sostituendoli con una descrizione coerente con l'attuale sorgente di verità documentata nel repository.
