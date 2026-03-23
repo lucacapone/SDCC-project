@@ -282,7 +282,7 @@ go test ./tests/integration -run TestNodeBootstrapViaJoinEndpointPopulatesInitia
 
 Per la validazione operativa/manuale del cluster locale multi-nodo con Docker Compose, il repository ora include helper minimi in `scripts/` progettati per essere **idempotenti**, robusti rispetto a container residui e leggibili in caso di errore:
 
-- `scripts/cluster_up.sh`: cleanup preventivo del progetto Compose canonico e avvio del cluster con build locale;
+- `scripts/cluster_up.sh`: cleanup preventivo del progetto Compose canonico e avvio del cluster con build locale; se `docker compose up -d --build` fallisce, lo script stampa il comando Compose usato, l'output di `docker compose ps`, un tail dei log di `node1`/`node2`/`node3` e classifica esplicitamente i casi `plugin compose assente`, `build immagine fallita` e `container avviati ma unhealthy`;
 - `scripts/cluster_wait_ready.sh`: attesa dello stato operativo verificando sia `running` dei container sia la presenza nei log di `gossip bootstrap completato` e `transport gossip avviato`;
 - `scripts/cluster_collect_results.sh`: raccolta di `docker compose ps`, log aggregati e ultimo report di valori finali disponibile nei log;
 - `scripts/cluster_down.sh`: stop pulito del cluster, raccolta degli artefatti finali e `docker compose down --remove-orphans`.
