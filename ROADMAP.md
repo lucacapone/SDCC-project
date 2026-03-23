@@ -160,7 +160,7 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 ### M11 — Logging / observability
 - **Obiettivo**: introdurre osservabilità minima per debugging e misure sperimentali.
 - **File/cartelle coinvolti**: `internal/observability/`, `internal/node/`, `docs/observability.md`.
-- **Comando di verifica**: `go test ./internal/observability -run TestMetricsExposure`.
+- **Comando di verifica**: `go test ./tests/observability -run TestMetricsExposure`.
 - **Done criteria**:
   - log strutturati con campi chiave (node_id, round, peers, estimate);
   - metriche minime esportate (endpoint o stdout structured);

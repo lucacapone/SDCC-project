@@ -58,14 +58,14 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
 - **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
 - **M10**: completata lato repository/documentazione con test canonico `tests/integration/TestNodeCrashAndRestart`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
-- **M11**: completata lato documentazione operativa dell'observability con guida dedicata `docs/observability.md`, task report `docs/task/M11.md` e comando canonico di verifica `go test ./internal/observability -run TestMetricsExposure`.
+- **M11**: completata lato documentazione operativa dell'observability con guida dedicata `docs/observability.md`, task report `docs/task/M11.md` e comando canonico di verifica `go test ./tests/observability -run TestMetricsExposure`.
 
 Comandi di verifica milestone:
 - M03 → `go test ./tests/transport -run TestTransportContract`
 - M04 → `go test ./tests/aggregation/sum -run TestSumConvergence`
 - M05 → test merge `average`/`min`/`max` + regressione multi-aggregazione (vedi sezione test M05).
 - M08 → `go test ./... -run Test -count=1`
-- M11 → `go test ./internal/observability -run TestMetricsExposure`
+- M11 → `go test ./tests/observability -run TestMetricsExposure`
 
 Documento task:
 - `docs/task/M01.md`
@@ -124,7 +124,7 @@ Sintesi operativa M11:
 - criterio canonico di readiness: `/ready` resta `503` fino a bootstrap completato + engine gossip avviato, poi passa a `200`;
 - lifecycle del server HTTP: avvio insieme al runtime del nodo, disponibilità per tutta la vita del processo e terminazione contestuale allo shutdown;
 - comando canonico di verifica post-M11:
-  - `go test ./internal/observability -run TestMetricsExposure`
+  - `go test ./tests/observability -run TestMetricsExposure`
 
 Per istruzioni d'uso, verifica manuale, limiti noti e scelte progettuali consultare direttamente `docs/observability.md`.
 
