@@ -90,7 +90,7 @@ Perché questa scelta è la più equilibrata per il progetto:
 
 Impatto pratico previsto:
 - `join_endpoint` è già presente in configurazione come meccanismo di bootstrap opzionale;
-- nel runtime corrente (`cmd/node`) viene usato `NoopJoinClient`, quindi in pratica si applica fallback su `bootstrap_peers`/`seed_peers`;
+- nel runtime reale (`cmd/node`) il nodo usa un client HTTP concreto verso `http://<join_endpoint>/join`; se il join fallisce o non è configurato, resta attivo il fallback su `bootstrap_peers`/`seed_peers`;
 - la membership operativa resta decentralizzata e evolve via gossip peer-to-peer.
 
 ## Sezione aggregazioni
