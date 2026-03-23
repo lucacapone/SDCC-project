@@ -503,3 +503,8 @@
   Attività: Aggiornata la milestone M06 in ROADMAP.md per allineare il comando di verifica alla suite reale tests/config e chiarire che l'entrypoint canonico è tests/config/config_test.go.
   File modificati: ROADMAP.md
   Sintesi ragionamento: La roadmap riportava un comando puntato al package interno internal/config; l'allineamento documentale richiede invece di riferirsi alla suite reale nel package tests/config, coerente con TestValidateConfig già definito nel repository.
+
+## 2026-03-23 22:30:00 UTC
+- **Descrizione task**: Aggiornamento della milestone M08 in ROADMAP.md per allineare i riferimenti della suite di test alle directory reali centralizzate sotto tests/.
+- **File modificati**: `ROADMAP.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito il riferimento legacy `internal/**/**/*_test.go` con le directory effettive `tests/gossip`, `tests/membership`, `tests/config`, `tests/aggregation`, `tests/transport` e `tests/observability`, chiarendo anche che il repository adotta una strategia di test esterna ai package interni e centralizzata sotto `SDCC-project/tests`.

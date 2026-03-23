@@ -126,17 +126,21 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
   - differenze Docker Engine locali.
 
 ### M08 — Test unitari
-- **Obiettivo**: copertura unit test su componenti core (merge, membership, config, aggregazioni).
-- **File/cartelle coinvolti**: `internal/**/**/*_test.go`, `go.mod`, `go.sum`.
+- **Obiettivo**: consolidare la copertura unit/integration-style sui componenti core (merge, membership, config, aggregazioni, transport e observability) adottando la strategia repository di test esterni ai package interni.
+- **Strategia di test adottata**: la repository centralizza la test suite sotto `SDCC-project/tests`, quindi i test non sono distribuiti sotto `internal/` ma organizzati in package esterni che verificano il comportamento dei moduli interni da una superficie canonica unica.
+- **File/cartelle coinvolti**: `tests/gossip/`, `tests/membership/`, `tests/config/`, `tests/aggregation/`, `tests/transport/`, `tests/observability/`, `go.mod`, `go.sum`.
+- **Cartella canonica sintetica**: `tests/`.
 - **Comando di verifica**: `go test ./... -run Test -count=1`.
 - **Done criteria**:
-  - unit test per ogni modulo core;
+  - test centralizzati sotto `tests/` per ogni area core della milestone;
+  - copertura esplicita delle aree `merge`, `membership`, `config`, `aggregation`, `transport` e `observability`;
   - test deterministici e ripetibili;
   - no flaky test noti.
 - **Rischi/edge cases**:
   - dipendenze temporali fragili;
   - finti non realistici;
-  - copertura sbilanciata su soli casi felici.
+  - copertura sbilanciata su soli casi felici;
+  - regressioni non rilevate se la documentazione continua a puntare a percorsi legacy sotto `internal/`.
 
 ### M09 — Test integrazione / convergenza
 - **Obiettivo**: validare convergenza end-to-end su cluster locale multi-nodo.
