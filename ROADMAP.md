@@ -25,7 +25,7 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 ### M01 — Gossip design
 - **Obiettivo**: definire protocollo gossip (stato locale, formato messaggio, merge/update, convergenza attesa).
 - **File/cartelle coinvolti**: `docs/architecture.md`, `internal/gossip/`, `internal/types/`.
-- **Comando di verifica**: `go test ./internal/gossip -run TestMergeRules`.
+- **Comando di verifica**: `go test ./tests/gossip -run TestMergeRules -count=1`.
 - **Done criteria**:
   - specifica messaggi/versioning documentata;
   - regole di merge implementate e testate;
@@ -38,11 +38,16 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
 ### M02 — Membership
 - **Obiettivo**: implementare gestione membership decentralizzata (join/leave/suspect).
 - **File/cartelle coinvolti**: `internal/membership/`, `internal/gossip/`, `docs/architecture.md`.
-- **Comando di verifica**: `go test ./internal/membership -run TestJoinLeave`.
+- **Comando di verifica**: `go test ./tests/membership -run TestJoinLeave -count=1`.
 - **Done criteria**:
   - join dinamico da bootstrap funzionante;
   - peer inattivi marcati e rimossi con timeout configurabile;
-  - stato membership propagato via gossip.
+  - stato membership propagato via gossip;
+  - comandi di verifica distinti tra suite membership, suite gossip membership e integrazione runtime.
+- **Comandi utili aggiuntivi**:
+  - verifica unitaria membership → `go test ./tests/membership -run 'TestJoinLeave|TestTimeoutTransitions|TestPruneRemovesExpiredDeadPeerAndBlocksObsoleteReintroduction' -count=1`;
+  - verifica gossip membership → `go test ./tests/gossip -run 'TestMergeMembership|TestRoundSerializzaMembershipConIncarnation' -count=1`;
+  - verifica integrazione runtime → `go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1`.
 - **Rischi/edge cases**:
   - split-brain temporaneo;
   - falsi positivi di failure detection;
