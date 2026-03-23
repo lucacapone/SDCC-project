@@ -198,7 +198,7 @@ Per questo i timeout devono essere calibrati in base al profilo rete e al target
 ## Verifica assenza coordinatore centrale
 Architettura e implementazione correnti non introducono componenti di coordinamento centrale per la logica gossip:
 - ogni nodo avvia round in autonomia;
-- membership locale con tentativo opzionale di bootstrap via `join_endpoint`; in assenza di client join attivo (default runtime), viene usato il fallback su peer statici;
+- membership locale con bootstrap opzionale via `join_endpoint` attraverso un client HTTP concreto (`POST http://<join_endpoint>/join`) che invia `JoinRequest` e riceve `JoinResponse` con `snapshot` + `delta`; se il join fallisce oppure non è configurato, viene usato il fallback su peer statici;
 - scambio stato peer-to-peer.
 
 L'unico riferimento a sistemi centralizzati resta opzionale e **solo osservabile** (es. log centralizzati in deploy), non coinvolto nelle decisioni di protocollo.
