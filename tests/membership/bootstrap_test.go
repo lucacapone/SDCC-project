@@ -116,3 +116,37 @@ func TestUpsertPromotesSeedPlaceholderToLogicalNodeID(t *testing.T) {
 		t.Fatalf("addr inatteso dopo riallineamento: %+v", peer)
 	}
 }
+
+func TestTouchOrUpsertCanonicalPromotesPlaceholderAndPreventsTimeoutTransitions(t *testing.T) {
+	cfg := Config{SuspectTimeout: time.Second, DeadTimeout: 2 * time.Second, PruneRetention: 10 * time.Second}
+	set := NewSetWithConfig(cfg)
+	base := time.Date(2026, time.March, 23, 23, 30, 0, 0, time.UTC)
+
+	set.Join("seed-a:7001", base)
+	set.ApplyTimeoutTransitions(base.Add(1500 * time.Millisecond))
+
+	placeholder := byNodeID(set.Snapshot())["seed-a:7001"]
+	if placeholder.Status != Suspect {
+		t.Fatalf("precondizione non soddisfatta: placeholder suspect atteso, got=%+v", placeholder)
+	}
+
+	set.TouchOrUpsertCanonical("node-a", "seed-a:7001", base.Add(1600*time.Millisecond))
+
+	peers := byNodeID(set.Snapshot())
+	if _, exists := peers["seed-a:7001"]; exists {
+		t.Fatalf("placeholder non promosso correttamente: %+v", peers)
+	}
+	peer, ok := peers["node-a"]
+	if !ok {
+		t.Fatalf("peer canonico mancante dopo touch/upsert: %+v", peers)
+	}
+	if peer.Status != Alive {
+		t.Fatalf("peer canonico deve tornare alive: %+v", peer)
+	}
+
+	set.ApplyTimeoutTransitions(base.Add(1900 * time.Millisecond))
+	peer = byNodeID(set.Snapshot())["node-a"]
+	if peer.Status != Alive {
+		t.Fatalf("il peer normalizzato non deve degradare subito per colpa del vecchio placeholder: %+v", peer)
+	}
+}

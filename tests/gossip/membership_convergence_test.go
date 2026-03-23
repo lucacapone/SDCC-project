@@ -291,3 +291,48 @@ func TestMergeMembershipReconvergesAfterTemporaryPartition(t *testing.T) {
 	assertMembership(t, leftNode.Snapshot(), expected)
 	assertMembership(t, rightNode.Snapshot(), expected)
 }
+
+func TestMarkPeerAlivePromuoveAliasHostPortVersoNodeIDCanonico(t *testing.T) {
+	base := time.Date(2026, time.March, 23, 23, 40, 0, 0, time.UTC)
+	set := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 10 * time.Second,
+	})
+
+	set.Join("seed-a:7001", base)
+	MarkPeerAliveForTest(set, "node-self", "node-a", "seed-a:7001", base.Add(500*time.Millisecond))
+
+	snapshot := membershipByNodeID(set.Snapshot())
+	if _, exists := snapshot["seed-a:7001"]; exists {
+		t.Fatalf("l'alias host:port deve essere promosso al node_id canonico: %+v", set.Snapshot())
+	}
+	peer, ok := snapshot["node-a"]
+	if !ok {
+		t.Fatalf("peer canonico mancante dopo heartbeat implicito: %+v", set.Snapshot())
+	}
+	if peer.Addr != "seed-a:7001" || peer.Status != membership.Alive {
+		t.Fatalf("peer canonicalizzato inatteso: %+v", peer)
+	}
+
+	set.ApplyTimeoutTransitions(base.Add(1300 * time.Millisecond))
+	peer = membershipByNodeID(set.Snapshot())["node-a"]
+	if peer.Status != membership.Alive {
+		t.Fatalf("il peer canonicalizzato non deve ereditare transizioni suspect/dead del placeholder: %+v", peer)
+	}
+}
+
+func TestSerializeMembershipDigestFiltraAliasObsoletoQuandoEsisteFormaCanonica(t *testing.T) {
+	base := time.Date(2026, time.March, 23, 23, 45, 0, 0, time.UTC)
+	entries := SerializeMembershipDigestForTest([]membership.Peer{
+		{NodeID: "seed-a:7001", Addr: "seed-a:7001", Status: membership.Alive, LastSeen: base},
+		{NodeID: "node-a", Addr: "seed-a:7001", Status: membership.Alive, Incarnation: 2, LastSeen: base.Add(time.Second)},
+	})
+
+	if len(entries) != 1 {
+		t.Fatalf("digest inatteso, alias obsoleto non filtrato: %+v", entries)
+	}
+	if entries[0].NodeID != "node-a" || entries[0].Addr != "seed-a:7001" {
+		t.Fatalf("entry canonica inattesa: %+v", entries[0])
+	}
+}

@@ -81,7 +81,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		localEstimate := e.State.Value
 		e.mu.Unlock()
 
-		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, msg.SentAt)
+		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(msg), msg.SentAt)
 		mergeMembership(e.Membership, msg.Membership)
 		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
@@ -196,12 +196,25 @@ func (e *Engine) updateObservabilityFromRuntime(localEstimate float64, mergeStat
 	e.Collector.SetCurrentEstimate(localEstimate)
 }
 
+// resolveOriginAddr prova a recuperare l'endpoint reale del nodo origine dal digest ricevuto.
+func resolveOriginAddr(msg shared.GossipMessage) string {
+	for _, entry := range msg.Membership {
+		if entry.NodeID == msg.OriginNode && entry.Addr != "" {
+			return entry.Addr
+		}
+	}
+	return ""
+}
+
 // markPeerAlive tratta un messaggio gossip valido come heartbeat implicito del nodo origine.
-func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, seenAt time.Time) {
+func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAddr string, seenAt time.Time) {
 	if set == nil || originID == "" || originID == selfID {
 		return
 	}
-	set.Touch(string(originID), seenAt)
+
+	// Un messaggio valido del nodo origine vale come heartbeat del peer canonico anche
+	// quando la membership locale contiene ancora un placeholder seed `host:port`.
+	set.TouchOrUpsertCanonical(string(originID), originAddr, seenAt)
 }
 
 // logMembershipTransitions emette un log strutturato per ogni degrado osservato dalla failure detection runtime.
@@ -239,13 +252,27 @@ func selectGossipTargets(peers []membership.Peer) []membership.Peer {
 // serializeMembershipDigest converte la membership locale nel digest condiviso via gossip.
 func serializeMembershipDigest(peers []membership.Peer) []shared.MembershipEntry {
 	entries := make([]shared.MembershipEntry, 0, len(peers))
-	for _, p := range peers {
+	canonicalByAddr := make(map[string]membership.Peer, len(peers))
+
+	// Prima indicizziamo i peer canonici cosi' da poter filtrare gli alias `host:port`
+	// quando e' gia' presente la stessa entita' con `node_id` stabile.
+	for _, peer := range peers {
+		if peer.Addr == "" || peer.NodeID == peer.Addr {
+			continue
+		}
+		canonicalByAddr[peer.Addr] = peer
+	}
+
+	for _, peer := range peers {
+		if canonical, ok := canonicalByAddr[peer.Addr]; ok && peer.NodeID == peer.Addr && canonical.NodeID != peer.NodeID {
+			continue
+		}
 		entries = append(entries, shared.MembershipEntry{
-			NodeID:      shared.NodeID(p.NodeID),
-			Addr:        p.Addr,
-			Status:      string(p.Status),
-			Incarnation: p.Incarnation,
-			LastSeen:    p.LastSeen,
+			NodeID:      shared.NodeID(peer.NodeID),
+			Addr:        peer.Addr,
+			Status:      string(peer.Status),
+			Incarnation: peer.Incarnation,
+			LastSeen:    peer.LastSeen,
 		})
 	}
 	return entries
@@ -416,4 +443,14 @@ func (e *Engine) Stop() error {
 		return e.Transport.Close()
 	}
 	return nil
+}
+
+// MarkPeerAliveForTest espone il heartbeat implicito per le suite esterne del repository.
+func MarkPeerAliveForTest(set *membership.Set, selfID, originID shared.NodeID, originAddr string, seenAt time.Time) {
+	markPeerAlive(set, selfID, originID, originAddr, seenAt)
+}
+
+// SerializeMembershipDigestForTest espone il filtro del digest membership per le suite esterne.
+func SerializeMembershipDigestForTest(peers []membership.Peer) []shared.MembershipEntry {
+	return serializeMembershipDigest(peers)
 }
