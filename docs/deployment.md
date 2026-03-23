@@ -53,11 +53,13 @@ Convenzione operativa adottata per bootstrap e discovery:
 - `addr` = endpoint reale raggiungibile nel formato `host:port`;
 - nei container Compose il campo `advertise_addr` usa il **service name** come hostname (`node1`, `node2`, `node3`).
 
-Le aggregazioni configurate sono:
+Le aggregazioni configurate sono coerenti con i file `configs/node1.yaml`, `configs/node2.yaml` e `configs/node3.yaml`:
 
-- `node1`: `sum`;
-- `node2`: `sum`;
-- `node3`: `average`.
+- `node1`: `aggregation: average`, `initial_value: 10`;
+- `node2`: `aggregation: average`, `initial_value: 30`;
+- `node3`: `aggregation: average`, `initial_value: 50`.
+
+Nel deployment Compose corrente tutti e tre i nodi usano quindi **`aggregation: average`**, con valori iniziali `10`, `30`, `50`. Questo scenario è allineato anche con il test canonico `tests/integration/cluster_convergence_test.go` e con la documentazione M09 in `README.md` e `docs/testing.md`.
 
 ## Comando standard di build e avvio
 Dalla root della repository eseguire:
