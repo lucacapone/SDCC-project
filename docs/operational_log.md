@@ -547,3 +547,8 @@
 - **Descrizione task**: Rimozione dei path assoluti hardcoded dal test di integrazione del bootstrap via join endpoint usando la root repository calcolata dinamicamente.
 - **File modificati**: `tests/integration/join_endpoint_bootstrap_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato l'approccio già adottato in `tests/integration/compose_harness_test.go` e ho riallineato il test `join_endpoint_bootstrap` all'helper `integrationRepoRoot(t)` tramite una piccola helper locale riusata sia per la build di `./cmd/node` sia per l'esecuzione del binario con `--config <tempfile>`. In questo modo il test resta portabile e non assume più il path assoluto `/workspace/SDCC-project`.
+
+## 2026-03-23 23:35:40 UTC
+- **Descrizione task**: Rafforzamento della prerequisizione ambientale dei test Compose reali per verificare anche la disponibilità effettiva di `docker compose`.
+- **File modificati**: `tests/integration/compose_harness_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Dopo aver riletto documentazione, architettura, configurazione e log operativi del repository, ho esteso `requireDocker()` mantenendo la semantica di skip ambientale: oltre a `exec.LookPath("docker")` e `docker info`, il test ora esegue anche `docker compose version` e, in caso di errore, skippa la suite reale con un messaggio diagnostico che espone anche l'output del comando per distinguere plugin mancante, permessi o problemi del client/daemon.

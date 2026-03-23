@@ -61,16 +61,26 @@ func newComposeHarness(t *testing.T) *composeHarness {
 	}
 }
 
-// requireDocker verifica la prerequisizione runtime; in ambienti senza Docker il test viene skippato.
+// requireDocker verifica le prerequisizioni runtime Docker/Compose; in ambienti senza supporto reale la suite viene skippata.
 func (h *composeHarness) requireDocker() {
 	h.t.Helper()
 
 	if _, err := exec.LookPath("docker"); err != nil {
 		h.t.Skip("docker non disponibile nel PATH; suite Compose reale saltata")
 	}
-	cmd := exec.Command("docker", "info")
-	if output, err := cmd.CombinedOutput(); err != nil {
+
+	// Verifica prima la raggiungibilità del daemon Docker, così gli skip restano diagnostici ma non trasformano
+	// una prerequisizione ambientale mancante in un fallimento della suite.
+	infoCmd := exec.Command("docker", "info")
+	if output, err := infoCmd.CombinedOutput(); err != nil {
 		h.t.Skipf("docker daemon non raggiungibile; suite Compose reale saltata: %v\noutput:\n%s", err, string(output))
+	}
+
+	// La suite reale usa esplicitamente il subcommand/plugin `docker compose`; se non è disponibile skippiamo il test
+	// con un messaggio che distingua plugin mancante, problemi di permessi o errori del client.
+	composeVersionCmd := exec.Command("docker", "compose", "version")
+	if output, err := composeVersionCmd.CombinedOutput(); err != nil {
+		h.t.Skipf("docker compose non disponibile o non utilizzabile; la suite Compose reale richiede il plugin/subcommand `docker compose`: %v\noutput:\n%s", err, string(output))
 	}
 }
 
