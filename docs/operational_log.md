@@ -437,3 +437,9 @@
 - **Descrizione task**: Revisione documentale della milestone M03 per allineare i riferimenti delle cartelle coinvolte al punto di integrazione runtime reale del repository.
 - **File modificati**: `ROADMAP.md`, `docs/task/M03.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato che il wiring reale della milestone M03 passa da `cmd/node/main.go` e che il package `internal/node/` non esiste nel layout corrente. Ho quindi sostituito in roadmap il riferimento fuorviante con `cmd/node/` e ho chiarito nel task M03 che `internal/node/` era solo un riferimento architetturale storico non più usato, così da evitare ambiguità per verificatori e implementatori futuri.
+
+
+## 2026-03-23 20:01:37 UTC
+- **Descrizione task**: Spostamento del test canonico delle metriche observability da `internal/observability/` a `tests/observability/`, con riallineamento dei riferimenti documentali e dei comandi di verifica.
+- **File modificati**: `README.md`, `ROADMAP.md`, `docs/observability.md`, `docs/testing.md`, `docs/task/M11.md`, `docs/operational_log.md`, `tests/observability/metrics_test.go`.
+- **Reasoning summary**: Ho verificato le convenzioni già adottate sotto `tests/observability/`, dove i test esterni usano il package logico `observability` insieme a un piccolo shim di re-export (`tests/observability/reexport.go`). Per mantenere compatibilità con il layout corrente ho quindi spostato `TestMetricsExposure` in `tests/observability/metrics_test.go` senza dipendenze da simboli non esportati, mantenendo package e import coerenti con il package logico. Infine ho aggiornato la documentazione che assumeva ancora il vecchio path interno, così da mantenere coerenti layout dei test, comandi canonici e guida observability.

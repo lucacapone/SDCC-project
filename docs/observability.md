@@ -100,7 +100,7 @@ OBSERVABILITY_ADDR=:8080 go run ./cmd/node --config configs/example.yaml
 Il comando canonico di verifica della milestone/documentazione observability è:
 
 ```bash
-go test ./internal/observability -run TestMetricsExposure
+go test ./tests/observability -run TestMetricsExposure
 ```
 
 ### Verifica manuale rapida
@@ -137,5 +137,5 @@ Per una diagnosi locale rapida:
 - **bassa cardinalità prima della ricchezza del dato**: priorità a metriche sostenibili e log stabili, più utili per debug e CI rispetto a un output molto dettagliato ma rumoroso;
 - **soluzione ibrida fissata esplicitamente**: stdout strutturato per eventi e HTTP per metriche/probe; nessuna delle due superfici sostituisce l'altra;
 - **health/readiness separate**: `/health` segnala vita del processo, `/ready` segnala la disponibilità funzionale minima del nodo;
-- **command-centric verification**: la prova canonica resta il comando `go test ./internal/observability -run TestMetricsExposure`, così da avere una verifica ripetibile e non ambigua;
+- **command-centric verification**: la prova canonica resta il comando `go test ./tests/observability -run TestMetricsExposure`, così da avere una verifica ripetibile e non ambigua;
 - **documentazione coerente con implementazione reale**: il documento descrive solo ciò che il repository espone oggi, senza introdurre claim su stack observability non presenti.

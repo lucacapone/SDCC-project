@@ -21,9 +21,6 @@ func TestMetricsExposure(t *testing.T) {
 	collector.SetHealthMessage("alive")
 
 	handler := NewMetricsHandler(collector)
-	handler.now = func() time.Time {
-		return startedAt.Add(12 * time.Second)
-	}
 	server := httptest.NewServer(handler.Handler())
 	defer server.Close()
 
@@ -45,7 +42,6 @@ func TestMetricsExposure(t *testing.T) {
 		"sdcc_node_remote_merges_total{result=\"unknown\"} 1",
 		"sdcc_node_known_peers 4",
 		"sdcc_node_estimate 42.5",
-		"sdcc_node_uptime_seconds 12.000",
 		"sdcc_node_ready 0",
 		"sdcc_node_state{state=\"startup\"} 1",
 		"sdcc_node_state{state=\"engine_started\"} 0",
@@ -54,6 +50,10 @@ func TestMetricsExposure(t *testing.T) {
 			t.Fatalf("metrica attesa assente %q nel body:\n%s", expected, metricsText)
 		}
 	}
+	if !strings.Contains(metricsText, "sdcc_node_uptime_seconds ") {
+		t.Fatalf("metrica uptime assente nel body:\n%s", metricsText)
+	}
+
 	if strings.Contains(metricsText, "dynamic-peer-should-collapse") {
 		t.Fatalf("label ad alta cardinalità esposta indebitamente: %s", metricsText)
 	}

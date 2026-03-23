@@ -271,10 +271,10 @@ go test ./tests/gossip -run TestMergeMembershipRealignsPlaceholderSeedWithCanoni
 
 ## Test canonico observability
 
-Il package `internal/observability` include ora il test canonico:
+La suite esterna `tests/observability` include ora il test canonico:
 
 - **nome canonico**: `TestMetricsExposure`;
-- **file**: `internal/observability/metrics_test.go`.
+- **file**: `tests/observability/metrics_test.go`.
 
 La suite verifica in modo deterministico che:
 
@@ -286,7 +286,7 @@ La suite verifica in modo deterministico che:
 Comando operativo mirato:
 
 ```bash
-go test ./internal/observability -run TestMetricsExposure -count=1
+go test ./tests/observability -run TestMetricsExposure -count=1
 ```
 
 ## Test di integrazione bootstrap via join endpoint reale
