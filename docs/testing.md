@@ -234,6 +234,33 @@ Dove:
 - `expected_delta` è la differenza assoluta dal valore atteso comune (`30.0` nello scenario corrente);
 - `common_band` è la banda comune del cluster al momento del report.
 
+## Verifica canonica dei casi rischiosi M02
+
+Per il consolidamento M02 i casi rischiosi dichiarati nel task vengono verificati principalmente nel package `tests/gossip`, con un supporto mirato da `tests/integration` per la failure detection runtime, così da coprire sia le regole di merge membership sia il comportamento osservabile dei timeout membership.
+
+### Scenari coperti
+
+- **Partizione temporanea tra sottoinsiemi di nodi con riconvergenza membership**: `tests/gossip/TestMergeMembershipReconvergesAfterTemporaryPartition` modella due sottoinsiemi che sviluppano viste membership divergenti durante la partizione e verifica che, alla chiusura della partizione, update `alive` con `incarnation` maggiore riallineino entrambi i lati sulla stessa membership finale.
+- **Recupero da `suspect` tramite update gossip `alive` con `incarnation` maggiore**: `tests/gossip/TestMergeMembershipRecoversSuspectWithHigherAliveIncarnation` congela il caso di falso positivo di failure detection e verifica che l’update più fresco riattivi correttamente il peer.
+- **Rejoin con stato obsoleto ignorato**: `tests/gossip/TestMergeMembershipIgnoresRejoinWithLowerIncarnation` verifica che, dopo prune di un tombstone più nuovo, un update `alive` con `incarnation` minore non possa reintrodurre il nodo.
+- **Distinzione tra placeholder seed `host:port` e vero `node_id`**: `tests/gossip/TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID` verifica il riallineamento dal placeholder seed-only al `node_id` canonico propagato via gossip, senza mantenere duplicati logici nella membership.
+
+### Comandi canonici M02
+
+```bash
+go test ./tests/gossip -run TestMergeMembershipReconvergesAfterTemporaryPartition -count=1
+go test ./tests/gossip -run TestMergeMembershipRecoversSuspectWithHigherAliveIncarnation -count=1
+go test ./tests/gossip -run TestMergeMembershipIgnoresRejoinWithLowerIncarnation -count=1
+go test ./tests/gossip -run TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID -count=1
+```
+
+Per una verifica rapida dell’intero consolidamento membership/gossip M02 è anche utile eseguire in sequenza:
+
+```bash
+go test ./tests/gossip -run 'TestMergeMembership|TestRoundSerializzaMembershipConIncarnation' -count=1
+go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
+```
+
 ## Test canonico observability
 
 Il package `internal/observability` include ora il test canonico:
