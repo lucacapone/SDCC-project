@@ -61,6 +61,7 @@ Transizioni principali implementate:
 
 1. `Join`/`Upsert` inseriscono o aggiornano un peer in stato `alive`; nel bootstrap seed-only un placeholder iniziale può usare temporaneamente `host:port` come chiave finché il peer remoto non propaga il vero `node_id`.
 2. `ApplyTimeoutTransitions` degrada `alive -> suspect -> dead` in base a timeout configurabili.
+   Il wiring runtime in `cmd/node/main.go` usa `membership.NewSetWithConfig(cfg.MembershipConfig())`, quindi il parametro esterno `membership_timeout_ms` viene tradotto esplicitamente in `SuspectTimeout` e `DeadTimeout` invece di lasciare i default interni del package.
 3. `Leave` pubblica tombstone `leave` per preservare convergenza e prevenire resurrect implicite.
 4. aggiornamenti con `incarnation` più alta riattivano il peer e sovrascrivono stati precedenti.
 
@@ -173,7 +174,12 @@ Il versioning membership non usa contatori globali condivisi: l'ordinamento è l
 Questo schema evita dipendenze da ordering totale dei messaggi e mantiene convergenza eventuale con gossip best-effort.
 
 ## Timeout configurabili e trade-off failure detection
-La failure detection membership dipende da timeout configurabili a runtime (es. `membership_timeout_ms` e timeout interni `SuspectTimeout`/`DeadTimeout`).
+La failure detection membership dipende da timeout configurabili a runtime. Nel wiring reale del repository la mappatura è stabile e documentata così:
+
+- `SuspectTimeout = max(1ms, membership_timeout_ms / 2)`
+- `DeadTimeout = max(SuspectTimeout + 1ms, membership_timeout_ms)`
+
+In questo modo il singolo parametro utente `membership_timeout_ms` controlla davvero le transizioni `alive -> suspect -> dead` osservate dal runtime: diminuendolo, il peer entra prima in `suspect` e poi in `dead`; aumentandolo, entrambe le transizioni vengono posticipate.
 
 Trade-off principali:
 

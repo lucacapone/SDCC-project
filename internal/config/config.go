@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sdcc-project/internal/membership"
 	"strconv"
 	"strings"
 	"time"
@@ -303,6 +304,36 @@ func (c Config) AdvertiseEndpoint() string {
 
 func (c Config) MembershipTimeout() time.Duration {
 	return time.Duration(c.MembershipTimeoutMS) * time.Millisecond
+}
+
+// MembershipConfig traduce il singolo timeout runtime nei due timeout interni
+// della membership.
+//
+// Regola stabile adottata:
+//   - SuspectTimeout = max(1ms, membership_timeout_ms / 2)
+//   - DeadTimeout = max(SuspectTimeout + 1ms, membership_timeout_ms)
+//
+// Questa scelta mantiene il contratto utente "membership_timeout_ms = soglia
+// massima prima di dichiarare dead" e, allo stesso tempo, garantisce sempre la
+// presenza osservabile dello stato intermedio suspect anche per valori molto
+// piccoli (es. 1ms), evitando normalizzazioni implicite dentro membership.
+func (c Config) MembershipConfig() membership.Config {
+	totalTimeout := c.MembershipTimeout()
+	suspectTimeout := totalTimeout / 2
+	if suspectTimeout < time.Millisecond {
+		suspectTimeout = time.Millisecond
+	}
+
+	deadTimeout := totalTimeout
+	minimumDeadTimeout := suspectTimeout + time.Millisecond
+	if deadTimeout < minimumDeadTimeout {
+		deadTimeout = minimumDeadTimeout
+	}
+
+	return membership.Config{
+		SuspectTimeout: suspectTimeout,
+		DeadTimeout:    deadTimeout,
+	}
 }
 
 func Validate(cfg Config) error {

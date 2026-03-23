@@ -51,7 +51,7 @@ func main() {
 			)
 		}
 	}()
-	mset := membership.NewSet()
+	mset := membership.NewSetWithConfig(cfg.MembershipConfig())
 	joinClient := selectJoinClient(cfg)
 	bootstrapRes := membership.Bootstrap(
 		context.Background(),

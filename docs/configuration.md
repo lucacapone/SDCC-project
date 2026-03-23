@@ -94,6 +94,31 @@ La struct `Config` contiene esattamente i seguenti campi:
 | `Aggregation` | `string` | Aggregazione attiva del nodo. |
 | `LogLevel` | `string` | Livello di log del runtime. |
 
+## Mappatura runtime reale di `membership_timeout_ms`
+
+Il runtime non passa più `membership_timeout_ms` come numero isolato al package membership: `cmd/node/main.go` costruisce `membership.NewSetWithConfig(cfg.MembershipConfig())`, e `internal/config.Config.MembershipConfig()` traduce il valore in una `membership.Config` concreta.
+
+La mappatura reale e stabile è:
+
+- `SuspectTimeout = max(1ms, membership_timeout_ms / 2)`
+- `DeadTimeout = max(SuspectTimeout + 1ms, membership_timeout_ms)`
+
+### Motivazione della regola
+
+Questa regola preserva due proprietà operative:
+
+- `membership_timeout_ms` resta la soglia utente che rappresenta il tempo massimo atteso prima di classificare un peer come `dead`;
+- la membership mantiene sempre uno stato intermedio `suspect` osservabile, anche con valori molto piccoli, evitando che `DeadTimeout <= SuspectTimeout` venga corretto in modo implicito dal package membership.
+
+### Esempi concreti di traduzione
+
+| `membership_timeout_ms` | `SuspectTimeout` reale | `DeadTimeout` reale |
+|---|---:|---:|
+| `5000` | `2500ms` | `5000ms` |
+| `3000` | `1500ms` | `3000ms` |
+| `100` | `50ms` | `100ms` |
+| `1` | `1ms` | `2ms` |
+
 ## Default reali di `Default()`
 
 I default reali restituiti da `Default()` sono:
@@ -145,6 +170,7 @@ La validazione finale applica le seguenti regole.
 - `gossip_interval_ms` deve essere `> 0`.
 - `fanout` deve essere `> 0`.
 - `membership_timeout_ms` deve essere `> 0`.
+- il valore viene poi tradotto in `SuspectTimeout` e `DeadTimeout` tramite la regola runtime documentata sopra.
 - `aggregation` deve essere non vuota dopo trim.
 - `enabled_aggregations` deve contenere almeno un valore.
 
