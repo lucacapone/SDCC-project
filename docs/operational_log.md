@@ -432,3 +432,8 @@
 - **Descrizione task**: Allineamento dei riferimenti documentali M03 al package reale della suite `TestTransportContract`.
 - **File modificati**: `ROADMAP.md`, `docs/task/M03.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho verificato tutti i riferimenti testuali a `TestTransportContract` nel repository e ho corretto le occorrenze documentali che puntavano ancora a `./internal/...`, uniformando il comando canonico M03 a `go test ./tests/transport -run TestTransportContract` per riflettere il package reale dei test senza introdurre divergenze tra roadmap e task milestone.
+
+## 2026-03-23 19:55:01 UTC
+- **Descrizione task**: Revisione documentale della milestone M03 per allineare i riferimenti delle cartelle coinvolte al punto di integrazione runtime reale del repository.
+- **File modificati**: `ROADMAP.md`, `docs/task/M03.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato che il wiring reale della milestone M03 passa da `cmd/node/main.go` e che il package `internal/node/` non esiste nel layout corrente. Ho quindi sostituito in roadmap il riferimento fuorviante con `cmd/node/` e ho chiarito nel task M03 che `internal/node/` era solo un riferimento architetturale storico non più usato, così da evitare ambiguità per verificatori e implementatori futuri.
