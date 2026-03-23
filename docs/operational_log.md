@@ -508,3 +508,8 @@
 - **Descrizione task**: Aggiornamento della milestone M08 in ROADMAP.md per allineare i riferimenti della suite di test alle directory reali centralizzate sotto tests/.
 - **File modificati**: `ROADMAP.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho sostituito il riferimento legacy `internal/**/**/*_test.go` con le directory effettive `tests/gossip`, `tests/membership`, `tests/config`, `tests/aggregation`, `tests/transport` e `tests/observability`, chiarendo anche che il repository adotta una strategia di test esterna ai package interni e centralizzata sotto `SDCC-project/tests`.
+
+## 2026-03-23 22:41:00 UTC
+- **Descrizione task**: Aggiornamento della milestone M11 in `ROADMAP.md` per riallineare i riferimenti observability al bootstrap runtime reale del nodo e rimuovere il package legacy inesistente.
+- **File modificati**: `ROADMAP.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato prima la documentazione architetturale e il wiring reale in `cmd/node/main.go`, confermando che l'integrazione runtime dell'observability avviene nel bootstrap del nodo tramite collector, metrics handler e transizioni di lifecycle condivise con `internal/gossip/engine.go`. Ho quindi corretto la milestone M11 sostituendo il riferimento inesistente a `internal/node/` con `cmd/node/main.go` e aggiornando il testo dei criteri di completamento per descrivere il punto di integrazione runtime effettivo già documentato in `docs/architecture.md`.

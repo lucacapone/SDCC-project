@@ -169,13 +169,13 @@ Realizzare una piattaforma di aggregazione dati distribuita gossip-based in Go, 
   - tempi di rejoin elevati.
 
 ### M11 — Logging / observability
-- **Obiettivo**: introdurre osservabilità minima per debugging e misure sperimentali.
-- **File/cartelle coinvolti**: `internal/observability/`, `internal/node/`, `docs/observability.md`.
+- **Obiettivo**: introdurre osservabilità minima per debugging e misure sperimentali, integrata nel bootstrap runtime reale del nodo.
+- **File/cartelle coinvolti**: `internal/observability/`, `cmd/node/main.go`, `docs/observability.md`.
 - **Comando di verifica**: `go test ./tests/observability -run TestMetricsExposure`.
 - **Done criteria**:
   - log strutturati con campi chiave (node_id, round, peers, estimate);
-  - metriche minime esportate (endpoint o stdout structured);
-  - health/readiness endpoint disponibili.
+  - metriche minime esportate tramite il server HTTP di observability e aggiornate dal collector condiviso tra `cmd/node/main.go` e `internal/gossip/engine.go`;
+  - health/readiness endpoint disponibili con lifecycle runtime coerente (`startup` → `bootstrap_completed` → `transport_initialized` → `engine_started` → `shutdown`).
 - **Rischi/edge cases**:
   - overhead logging eccessivo;
   - cardinalità metriche alta;
