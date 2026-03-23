@@ -176,6 +176,7 @@ fanout: 3
 membership_timeout_ms: 6000
 enabled_aggregations: [sum,average]
 aggregation: average
+initial_value: 42.5
 log_level: debug
 `)
 
@@ -194,6 +195,7 @@ log_level: debug
 			Fanout:              3,
 			MembershipTimeoutMS: 6000,
 			Aggregation:         "average",
+			InitialValue:        42.5,
 			LogLevel:            "debug",
 		})
 		assertSliceEqual(t, "bootstrap_peers", cfg.BootstrapPeers, []string{"node-4:7004", "node-5:7005"})
@@ -215,6 +217,7 @@ log_level: debug
   "membership_timeout_ms": 5000,
   "enabled_aggregations": ["sum", "average"],
   "aggregation": "sum",
+  "initial_value": 12.25,
   "log_level": "info"
 }`)
 
@@ -233,6 +236,7 @@ log_level: debug
 			Fanout:              1,
 			MembershipTimeoutMS: 5000,
 			Aggregation:         "sum",
+			InitialValue:        12.25,
 			LogLevel:            "info",
 		})
 		assertSliceEqual(t, "bootstrap_peers", cfg.BootstrapPeers, []string{"node-7:7007"})
@@ -271,12 +275,13 @@ node_port: 7100
 		t.Setenv("AGGREGATION", "average")
 		t.Setenv("FANOUT", "5")
 		t.Setenv("NODE_PORT", "7200")
+		t.Setenv("INITIAL_VALUE", "77.5")
 
 		cfg, err := Load(path)
 		if err != nil {
 			t.Fatalf("load config con env override: %v", err)
 		}
-		if cfg.NodeID != "env-node" || cfg.AdvertiseAddr != "env-node.service:7200" || cfg.Aggregation != "average" || cfg.Fanout != 5 || cfg.NodePort != 7200 {
+		if cfg.NodeID != "env-node" || cfg.AdvertiseAddr != "env-node.service:7200" || cfg.Aggregation != "average" || cfg.Fanout != 5 || cfg.NodePort != 7200 || cfg.InitialValue != 77.5 {
 			t.Fatalf("override env non applicato correttamente: %+v", cfg)
 		}
 	})
@@ -391,6 +396,7 @@ func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("ENABLED_AGGREGATIONS", "sum,average")
 	t.Setenv("JOIN_ENDPOINT", "seed:9010")
 	t.Setenv("BOOTSTRAP_PEERS", "node-a:7001,node-b:7002")
+	t.Setenv("INITIAL_VALUE", "9.75")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -410,6 +416,9 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 	if len(cfg.BootstrapPeers) != 2 {
 		t.Fatalf("override BOOTSTRAP_PEERS non applicato: %+v", cfg)
+	}
+	if cfg.InitialValue != 9.75 {
+		t.Fatalf("override INITIAL_VALUE non applicato: %+v", cfg)
 	}
 }
 
@@ -558,6 +567,7 @@ func assertConfigCore(t *testing.T, got Config, want Config) {
 		got.Fanout != want.Fanout ||
 		got.MembershipTimeoutMS != want.MembershipTimeoutMS ||
 		got.Aggregation != want.Aggregation ||
+		got.InitialValue != want.InitialValue ||
 		got.LogLevel != want.LogLevel {
 		t.Fatalf("config scalare inattesa:\n got=%+v\nwant=%+v", got, want)
 	}

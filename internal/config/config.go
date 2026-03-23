@@ -29,6 +29,7 @@ type Config struct {
 	MembershipTimeoutMS int      `json:"membership_timeout_ms"`
 	EnabledAggregations []string `json:"enabled_aggregations"`
 	Aggregation         string   `json:"aggregation"`
+	InitialValue        float64  `json:"initial_value"`
 	LogLevel            string   `json:"log_level"`
 }
 
@@ -46,6 +47,7 @@ func Default() Config {
 		MembershipTimeoutMS: 5000,
 		EnabledAggregations: []string{"sum", "average", "min", "max"},
 		Aggregation:         "sum",
+		InitialValue:        0,
 		LogLevel:            "info",
 	}
 }
@@ -173,6 +175,12 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 			cfg.MembershipTimeoutMS = parsed
 		case "aggregation":
 			cfg.Aggregation = value
+		case "initial_value":
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return fmt.Errorf("campo initial_value non valido alla riga %d: atteso numero, ottenuto %q", lineNumber, value)
+			}
+			cfg.InitialValue = parsed
 		case "log_level":
 			cfg.LogLevel = value
 		case "seed_peers":
@@ -268,6 +276,9 @@ func overrideFromEnv(cfg *Config) error {
 		return err
 	}
 	overrideString("AGGREGATION", &cfg.Aggregation)
+	if err := overrideFloat("INITIAL_VALUE", &cfg.InitialValue); err != nil {
+		return err
+	}
 	overrideString("LOG_LEVEL", &cfg.LogLevel)
 	return nil
 }
@@ -311,6 +322,21 @@ func overrideCSV(name string, target *[]string) error {
 	parsed, err := parseInlineList("[" + value + "]")
 	if err != nil {
 		return fmt.Errorf("override env %s non valido: valore %q non parseabile come lista CSV: %w", name, value, err)
+	}
+	*target = parsed
+	return nil
+}
+
+// overrideFloat applica l'override ambiente numerico floating-point solo se presente e valido.
+func overrideFloat(name string, target *float64) error {
+	value, ok := os.LookupEnv(name)
+	if !ok || strings.TrimSpace(value) == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(value)
+	parsed, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return fmt.Errorf("override env %s non valido: valore %q non parseabile come numero", name, value)
 	}
 	*target = parsed
 	return nil

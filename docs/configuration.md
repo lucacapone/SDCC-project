@@ -62,6 +62,7 @@ Default() -> parse file config -> overrideFromEnv() -> Validate()
 Il comportamento reale di `overrideFromEnv` è **fail-fast** per i campi numerici e CSV:
 
 - per gli interi (`NODE_PORT`, `GOSSIP_INTERVAL_MS`, `FANOUT`, `MEMBERSHIP_TIMEOUT_MS`), se la variabile è presente ma non parseabile come intero, `Load` fallisce subito;
+- per i floating-point (`INITIAL_VALUE`), se la variabile è presente ma non parseabile come numero, `Load` fallisce subito;
 - per le liste CSV (`BOOTSTRAP_PEERS`, `SEED_PEERS`, `ENABLED_AGGREGATIONS`), se la variabile è presente ma contiene item vuoti o sintassi malformata, `Load` fallisce subito;
 - per le stringhe, l'override continua a essere applicato solo se la variabile esiste e non è vuota dopo `TrimSpace`.
 
@@ -98,6 +99,7 @@ La struct `Config` contiene esattamente i seguenti campi:
 | `MembershipTimeoutMS` | `int` | Timeout membership in millisecondi. |
 | `EnabledAggregations` | `[]string` | Lista whitelist delle aggregazioni consentite. |
 | `Aggregation` | `string` | Aggregazione attiva del nodo. |
+| `InitialValue` | `float64` | Valore iniziale locale del nodo usato per seminare lo stato gossip al bootstrap. |
 | `LogLevel` | `string` | Livello di log del runtime. |
 
 ## Mappatura runtime reale di `membership_timeout_ms`
