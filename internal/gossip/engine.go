@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -81,7 +82,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		localEstimate := e.State.Value
 		e.mu.Unlock()
 
-		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(msg), msg.SentAt)
+		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
 		mergeMembership(e.Membership, msg.Membership)
 		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
@@ -197,11 +198,14 @@ func (e *Engine) updateObservabilityFromRuntime(localEstimate float64, mergeStat
 }
 
 // resolveOriginAddr prova a recuperare l'endpoint reale del nodo origine dal digest ricevuto.
-func resolveOriginAddr(msg shared.GossipMessage) string {
+func resolveOriginAddr(ctx context.Context, msg shared.GossipMessage) string {
 	for _, entry := range msg.Membership {
-		if entry.NodeID == msg.OriginNode && entry.Addr != "" {
+		if entry.NodeID == msg.OriginNode && isValidNetworkEndpoint(entry.Addr) {
 			return entry.Addr
 		}
+	}
+	if remoteAddr, ok := transport.MessageRemoteAddrFromContext(ctx); ok && isValidNetworkEndpoint(remoteAddr) {
+		return remoteAddr
 	}
 	return ""
 }
@@ -212,9 +216,27 @@ func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAd
 		return
 	}
 
+	// Se manca un endpoint affidabile, aggiorniamo solo il peer canonico già noto senza
+	// promuovere alias o impostare Addr=node_id.
+	if originAddr == "" {
+		set.Touch(string(originID), seenAt)
+		return
+	}
+
 	// Un messaggio valido del nodo origine vale come heartbeat del peer canonico anche
 	// quando la membership locale contiene ancora un placeholder seed `host:port`.
 	set.TouchOrUpsertCanonical(string(originID), originAddr, seenAt)
+}
+
+func isValidNetworkEndpoint(endpoint string) bool {
+	if endpoint == "" {
+		return false
+	}
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return false
+	}
+	return host != "" && port != ""
 }
 
 // logMembershipTransitions emette un log strutturato per ogni degrado osservato dalla failure detection runtime.
