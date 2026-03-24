@@ -95,6 +95,32 @@ func TestTimeoutTransitions(t *testing.T) {
 	}
 }
 
+func TestApplyTimeoutTransitionsSaltaSempreSelfNode(t *testing.T) {
+	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 5 * time.Second, PruneRetention: 20 * time.Second}
+	set := NewSetWithConfig(cfg)
+	set.SetSelfNodeID("node-self")
+	base := time.Date(2026, time.March, 24, 12, 0, 0, 0, time.UTC)
+
+	set.Upsert(Peer{NodeID: "node-self", Addr: "node-self:7001", Status: Alive, LastSeen: base.Add(-7 * time.Second)})
+	set.Upsert(Peer{NodeID: "node-2", Addr: "node-2:7002", Status: Alive, LastSeen: base.Add(-7 * time.Second)})
+
+	transitions := set.ApplyTimeoutTransitions(base)
+	if len(transitions) != 1 {
+		t.Fatalf("numero transizioni inatteso: got=%d want=1", len(transitions))
+	}
+	if transitions[0].Peer.NodeID != "node-2" || transitions[0].Peer.Status != Dead {
+		t.Fatalf("transizione attesa solo per peer remoto: %+v", transitions[0])
+	}
+
+	peers := byNodeID(set.Snapshot())
+	if peers["node-self"].Status != Alive {
+		t.Fatalf("self node non deve degradare su timeout: got=%s", peers["node-self"].Status)
+	}
+	if peers["node-2"].Status != Dead {
+		t.Fatalf("peer remoto deve degradare a dead: got=%s", peers["node-2"].Status)
+	}
+}
+
 func TestPruneRemovesExpiredDeadPeerAndBlocksObsoleteReintroduction(t *testing.T) {
 	cfg := Config{SuspectTimeout: time.Second, DeadTimeout: 2 * time.Second, PruneRetention: 5 * time.Second}
 	set := NewSetWithConfig(cfg)

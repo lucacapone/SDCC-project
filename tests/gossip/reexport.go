@@ -19,10 +19,11 @@ const (
 )
 
 var (
-	NewEngine                        = internalgossip.NewEngine
-	MarkPeerAliveForTest             = internalgossip.MarkPeerAliveForTest
-	SerializeMembershipDigestForTest = internalgossip.SerializeMembershipDigestForTest
-	currentMessageVersion            = internalgossip.CurrentMessageVersion()
+	NewEngine                                = internalgossip.NewEngine
+	MarkPeerAliveForTest                     = internalgossip.MarkPeerAliveForTest
+	SerializeMembershipDigestForTest         = internalgossip.SerializeMembershipDigestForTest
+	SerializeMembershipDigestWithSelfForTest = internalgossip.SerializeMembershipDigestWithSelfForTest
+	currentMessageVersion                    = internalgossip.CurrentMessageVersion()
 )
 
 func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult {
@@ -31,6 +32,10 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 
 func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
 	internalgossip.MergeMembership(set, remote)
+}
+
+func mergeMembershipWithSelf(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry) {
+	internalgossip.MergeMembershipWithSelf(set, selfNodeID, remote)
 }
 
 func normalizeVersion(state shared.GossipState) shared.StateVersionStamp {

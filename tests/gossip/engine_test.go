@@ -115,6 +115,40 @@ func TestRoundLoggingEsponeCampiStabili(t *testing.T) {
 	}
 }
 
+func TestRoundNonLoggaTimeoutPerSelfNode(t *testing.T) {
+	tr := &captureTransport{}
+	base := time.Now().UTC()
+	m := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 20 * time.Second,
+	})
+	m.Upsert(membership.Peer{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, LastSeen: base.Add(-3 * time.Second)})
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: base.Add(-3 * time.Second)})
+
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	eng := NewEngine("node-1", "sum", tr, m, logger, nil, time.Hour)
+
+	eng.RoundOnce(context.Background())
+
+	snapshot := membershipByNodeID(m.Snapshot())
+	if snapshot["node-1"].Status != membership.Alive {
+		t.Fatalf("self node non deve degradare nel round: got=%s", snapshot["node-1"].Status)
+	}
+	if snapshot["node-2"].Status != membership.Dead {
+		t.Fatalf("peer remoto deve degradare per timeout: got=%s", snapshot["node-2"].Status)
+	}
+
+	logged := logBuffer.String()
+	if strings.Contains(logged, "peer_id=node-1") {
+		t.Fatalf("log timeout non deve includere self node: %s", logged)
+	}
+	if !strings.Contains(logged, "event=membership_transition") || !strings.Contains(logged, "peer_id=node-2") {
+		t.Fatalf("log timeout atteso per peer remoto mancante: %s", logged)
+	}
+}
+
 func TestAverageRoundPreservaContributoLocaleOriginario(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()

@@ -63,7 +63,7 @@ Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da reco
 Transizioni principali implementate:
 
 1. `Join`/`Upsert` inseriscono o aggiornano un peer in stato `alive`; nel bootstrap seed-only un placeholder iniziale può usare temporaneamente `host:port` come chiave finché il peer remoto non propaga il vero `node_id`.
-2. `ApplyTimeoutTransitions` degrada `alive -> suspect -> dead` in base a timeout configurabili.
+2. `ApplyTimeoutTransitions` degrada `alive -> suspect -> dead` in base a timeout configurabili, ma salta sempre il nodo locale (`selfNodeID`) così da evitare falsi timeout auto-indotti.
    Il wiring runtime in `cmd/node/main.go` usa `membership.NewSetWithConfig(cfg.MembershipConfig())`, quindi il parametro esterno `membership_timeout_ms` viene tradotto esplicitamente in `SuspectTimeout` e `DeadTimeout` invece di lasciare i default interni del package.
 3. `dead` e `leave` non restano nella membership attiva per sempre: vengono mantenuti come tombstone locali per una retention temporanea separata (`PruneRetention`) così da poter propagare la rimozione via gossip.
 4. `Prune(now)` rimuove fisicamente dalla membership attiva i peer `dead`/`leave` il cui `last_seen` ha superato la retention; prima della cancellazione registra un watermark locale minimale (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) usato per rifiutare digest gossip obsoleti con `incarnation` non strettamente più nuova.
@@ -85,7 +85,7 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 10. `state.aggregation_data.average` (`object`, opzionale): metadati per `average` convergente (`contributions` con `sum/count` per nodo + `versions`); il runtime locale mantiene separatamente il valore originario del nodo, cosi' il contributo locale non viene rimpiazzato dalla stima aggregata corrente durante i round successivi.
 11. `state.aggregation_data.min` (`object`, opzionale): metadati monotoni per `min` (versioni per nodo) usati per merge robusto e retrocompatibile.
 12. `state.aggregation_data.max` (`object`, opzionale): metadati monotoni per `max` (versioni per nodo) usati per merge robusto e retrocompatibile.
-10. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round.
+10. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round, escludendo esplicitamente il nodo locale.
 
 ### Payload gossip membership (dettaglio)
 Il campo `membership` è un array di `MembershipEntry` serializzato integralmente ad ogni messaggio:
@@ -167,6 +167,7 @@ Il digest `membership` viene unito localmente entry-per-entry con proprietà di 
 2. A parità di `incarnation`, prevale lo stato a priorità maggiore (`alive < suspect < dead < leave`).
 3. `last_seen` e `addr` vengono aggiornati solo se il nuovo dato è più recente/non vuoto.
 4. L'operazione è idempotente: riapplicare lo stesso digest non altera lo stato.
+5. Le entry remote che rappresentano il nodo locale vengono ignorate esplicitamente nel merge runtime.
 
 ## Versioning membership e regole incarnation
 Il versioning membership non usa contatori globali condivisi: l'ordinamento è locale per peer e si basa su `incarnation`.

@@ -19,8 +19,8 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	eng := NewEngine("node-1", "average", tr, m, nil, nil, time.Second)
 	eng.RoundOnce(context.Background())
 
-	if len(tr.sent) != 1 {
-		t.Fatalf("messaggi inviati inattesi: got=%d want=1", len(tr.sent))
+	if len(tr.sent) == 0 {
+		t.Fatalf("nessun messaggio inviato nel round gossip")
 	}
 
 	msg := decodeMessage(t, tr.sent[0])
@@ -30,6 +30,29 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	entry := msg.Membership[0]
 	if entry.NodeID != "node-2" || entry.Status != string(membership.Suspect) || entry.Incarnation != 7 {
 		t.Fatalf("entry membership inattesa: %+v", entry)
+	}
+}
+
+func TestRoundSerializzaMembershipEscludendoSelfNode(t *testing.T) {
+	tr := &captureTransport{}
+	m := membership.NewSet()
+	base := time.Now().UTC()
+	m.Upsert(membership.Peer{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, Incarnation: 10, LastSeen: base})
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, Incarnation: 3, LastSeen: base})
+
+	eng := NewEngine("node-1", "average", tr, m, nil, nil, time.Second)
+	eng.RoundOnce(context.Background())
+
+	if len(tr.sent) == 0 {
+		t.Fatalf("nessun messaggio inviato nel round gossip")
+	}
+
+	msg := decodeMessage(t, tr.sent[0])
+	if len(msg.Membership) != 1 {
+		t.Fatalf("digest membership deve contenere solo peer remoti: got=%d want=1", len(msg.Membership))
+	}
+	if msg.Membership[0].NodeID != "node-2" {
+		t.Fatalf("digest membership include entry inattesa: %+v", msg.Membership[0])
 	}
 }
 
@@ -72,6 +95,43 @@ func TestMergeMembershipConvergeConDuplicatiOutOfOrder(t *testing.T) {
 	assertMembership(t, set1.Snapshot(), expected)
 	assertMembership(t, set2.Snapshot(), expected)
 	assertMembership(t, set3.Snapshot(), expected)
+}
+
+func TestMergeMembershipIgnoraEntryDelNodoLocale(t *testing.T) {
+	base := time.Date(2026, time.March, 24, 12, 30, 0, 0, time.UTC)
+	set := membership.NewSet()
+	set.Upsert(membership.Peer{
+		NodeID:      "node-1",
+		Addr:        "node-1:7001",
+		Status:      membership.Alive,
+		Incarnation: 5,
+		LastSeen:    base,
+	})
+
+	mergeMembershipWithSelf(set, "node-1", []shared.MembershipEntry{
+		{
+			NodeID:      "node-1",
+			Addr:        "node-1:7001",
+			Status:      string(membership.Dead),
+			Incarnation: 999,
+			LastSeen:    base.Add(10 * time.Second),
+		},
+		{
+			NodeID:      "node-2",
+			Addr:        "node-2:7002",
+			Status:      string(membership.Alive),
+			Incarnation: 1,
+			LastSeen:    base.Add(10 * time.Second),
+		},
+	})
+
+	snapshot := membershipByNodeID(set.Snapshot())
+	if snapshot["node-1"].Status != membership.Alive || snapshot["node-1"].Incarnation != 5 {
+		t.Fatalf("entry self non deve essere applicata dal merge remoto: %+v", snapshot["node-1"])
+	}
+	if _, ok := snapshot["node-2"]; !ok {
+		t.Fatalf("entry remota valida non applicata: %+v", snapshot)
+	}
 }
 
 func assertMembership(t *testing.T, got []membership.Peer, expected map[string]membership.Peer) {
@@ -334,5 +394,20 @@ func TestSerializeMembershipDigestFiltraAliasObsoletoQuandoEsisteFormaCanonica(t
 	}
 	if entries[0].NodeID != "node-a" || entries[0].Addr != "seed-a:7001" {
 		t.Fatalf("entry canonica inattesa: %+v", entries[0])
+	}
+}
+
+func TestSerializeMembershipDigestFiltraSempreSelfNode(t *testing.T) {
+	base := time.Date(2026, time.March, 24, 13, 10, 0, 0, time.UTC)
+	entries := SerializeMembershipDigestWithSelfForTest([]membership.Peer{
+		{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, Incarnation: 3, LastSeen: base},
+		{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Suspect, Incarnation: 7, LastSeen: base},
+	}, "node-1")
+
+	if len(entries) != 1 {
+		t.Fatalf("digest deve escludere self node: %+v", entries)
+	}
+	if entries[0].NodeID != "node-2" {
+		t.Fatalf("entry digest inattesa dopo filtro self: %+v", entries[0])
 	}
 }

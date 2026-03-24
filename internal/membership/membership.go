@@ -47,6 +47,7 @@ type Transition struct {
 type Set struct {
 	mu               sync.RWMutex
 	cfg              Config
+	selfNodeID       string
 	peers            map[string]Peer
 	prunedWatermarks map[string]Peer
 }
@@ -70,6 +71,13 @@ func NewSetWithConfig(cfg Config) *Set {
 	}
 
 	return &Set{cfg: cfg, peers: make(map[string]Peer), prunedWatermarks: make(map[string]Peer)}
+}
+
+// SetSelfNodeID registra in modo stabile l'identificativo locale nel set membership.
+func (s *Set) SetSelfNodeID(nodeID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.selfNodeID = nodeID
 }
 
 // Join aggiunge un seed peer noto solo tramite endpoint di rete.
@@ -245,6 +253,9 @@ func (s *Set) ApplyTimeoutTransitions(now time.Time) []Transition {
 
 	updated := make([]Transition, 0)
 	for id, p := range s.peers {
+		if s.selfNodeID != "" && p.NodeID == s.selfNodeID {
+			continue
+		}
 		if p.Status == Left || p.LastSeen.IsZero() {
 			continue
 		}
