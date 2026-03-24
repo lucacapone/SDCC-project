@@ -392,6 +392,32 @@ func TestMarkPeerAlivePromuoveAliasHostPortVersoNodeIDCanonico(t *testing.T) {
 	}
 }
 
+func TestMarkPeerAliveNonPromuoveQuandoOriginAddrNonCorrispondeAPeerNoto(t *testing.T) {
+	base := time.Date(2026, time.March, 24, 9, 15, 0, 0, time.UTC)
+	set := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 10 * time.Second,
+	})
+
+	// Bootstrap seed-only: il nodo locale conosce solo il placeholder sul vecchio endpoint.
+	set.Join("seed-a:7001", base)
+	// Heartbeat con originID valido ma endpoint diverso/non noto localmente.
+	MarkPeerAliveForTest(set, "node-self", "node-a", "seed-a:7999", base.Add(500*time.Millisecond))
+
+	snapshot := membershipByNodeID(set.Snapshot())
+	if _, exists := snapshot["node-a"]; exists {
+		t.Fatalf("non deve avvenire promozione canonica con origin_addr sconosciuto: %+v", set.Snapshot())
+	}
+	placeholder, ok := snapshot["seed-a:7001"]
+	if !ok {
+		t.Fatalf("il placeholder noto deve restare invariato: %+v", set.Snapshot())
+	}
+	if placeholder.Status != membership.Alive {
+		t.Fatalf("lo stato del placeholder deve restare alive: %+v", placeholder)
+	}
+}
+
 func TestSerializeMembershipDigestFiltraAliasObsoletoQuandoEsisteFormaCanonica(t *testing.T) {
 	base := time.Date(2026, time.March, 23, 23, 45, 0, 0, time.UTC)
 	entries := SerializeMembershipDigestForTest([]membership.Peer{
