@@ -149,6 +149,52 @@ func TestRoundNonLoggaTimeoutPerSelfNode(t *testing.T) {
 	}
 }
 
+func TestRoundNonLoggaMembershipTransitionPerAliasDelNodoLocale(t *testing.T) {
+	tr := &captureTransport{}
+	base := time.Now().UTC().Add(-4 * time.Second)
+	m := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 20 * time.Second,
+	})
+	m.Upsert(membership.Peer{
+		NodeID:      "node-3",
+		Addr:        "node3:7003",
+		Status:      membership.Alive,
+		Incarnation: 7,
+		LastSeen:    base,
+	})
+
+	mergeMembershipWithSelf(m, "node-3", []shared.MembershipEntry{
+		{
+			NodeID:      "node3:7003",
+			Addr:        "node3:7003",
+			Status:      string(membership.Alive),
+			Incarnation: 99,
+			LastSeen:    base,
+		},
+	}, "node3:7003")
+
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	eng := NewEngine("node-3", "sum", tr, m, logger, nil, time.Hour)
+
+	eng.RoundOnce(context.Background())
+
+	snapshot := membershipByNodeID(m.Snapshot())
+	if _, exists := snapshot["node3:7003"]; exists {
+		t.Fatalf("alias del nodo locale non deve entrare nella membership: %+v", snapshot["node3:7003"])
+	}
+	if snapshot["node-3"].Status != membership.Alive {
+		t.Fatalf("self canonico non deve degradare: got=%s", snapshot["node-3"].Status)
+	}
+
+	logged := logBuffer.String()
+	if strings.Contains(logged, "event=membership_transition") && strings.Contains(logged, "peer_id=node3:7003") {
+		t.Fatalf("transition auto-riferita inattesa per alias self: %s", logged)
+	}
+}
+
 func TestAverageRoundPreservaContributoLocaleOriginario(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()

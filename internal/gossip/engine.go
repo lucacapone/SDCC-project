@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -86,7 +87,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.mu.Unlock()
 
 		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
-		mergeMembership(e.Membership, string(e.NodeID), msg.Membership)
+		mergeMembership(e.Membership, string(e.NodeID), collectSelfIdentityAliases(e.Membership, string(e.NodeID)), msg.Membership)
 		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
 			logLevel := slog.LevelDebug
@@ -307,7 +308,10 @@ func serializeMembershipDigest(peers []membership.Peer, selfNodeID string) []sha
 }
 
 // mergeMembership applica nel set locale il digest membership ricevuto da remoto.
-func mergeMembership(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry) {
+//
+// Il filtro self scarta sia il node_id locale canonico, sia eventuali alias noti
+// (ad esempio endpoint advertise `host:port`) presenti in `selfAliases`.
+func mergeMembership(set *membership.Set, selfNodeID string, selfAliases map[string]struct{}, remote []shared.MembershipEntry) {
 	if set == nil {
 		return
 	}
@@ -315,7 +319,7 @@ func mergeMembership(set *membership.Set, selfNodeID string, remote []shared.Mem
 		if entry.NodeID == "" && entry.Addr == "" {
 			continue
 		}
-		if selfNodeID != "" && string(entry.NodeID) == selfNodeID {
+		if isSelfMembershipEntry(entry, selfNodeID, selfAliases) {
 			continue
 		}
 		st := membership.Status(entry.Status)
@@ -334,12 +338,86 @@ func mergeMembership(set *membership.Set, selfNodeID string, remote []shared.Mem
 
 // MergeMembership espone il merge del digest membership per le suite esterne.
 func MergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
-	mergeMembership(set, "", remote)
+	mergeMembership(set, "", nil, remote)
 }
 
 // MergeMembershipWithSelf espone il merge membership ignorando esplicitamente il nodo locale.
-func MergeMembershipWithSelf(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry) {
-	mergeMembership(set, selfNodeID, remote)
+func MergeMembershipWithSelf(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry, selfAliases ...string) {
+	mergeMembership(set, selfNodeID, aliasLookup(selfAliases), remote)
+}
+
+func isSelfMembershipEntry(entry shared.MembershipEntry, selfNodeID string, selfAliases map[string]struct{}) bool {
+	if selfNodeID != "" && strings.EqualFold(strings.TrimSpace(string(entry.NodeID)), strings.TrimSpace(selfNodeID)) {
+		return true
+	}
+	entryNodeIDKey := identityKey(string(entry.NodeID))
+	if entryNodeIDKey != "" {
+		if _, ok := selfAliases[entryNodeIDKey]; ok {
+			return true
+		}
+	}
+	entryAddrKey := identityKey(entry.Addr)
+	if entryAddrKey != "" {
+		if _, ok := selfAliases[entryAddrKey]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func collectSelfIdentityAliases(set *membership.Set, selfNodeID string) map[string]struct{} {
+	aliases := make(map[string]struct{})
+	selfNodeKey := identityKey(selfNodeID)
+	if selfNodeKey != "" {
+		aliases[selfNodeKey] = struct{}{}
+	}
+	if set == nil {
+		return aliases
+	}
+
+	snapshot := set.Snapshot()
+	canonicalAdvertiseAddr := ""
+	for _, peer := range snapshot {
+		if !strings.EqualFold(strings.TrimSpace(peer.NodeID), strings.TrimSpace(selfNodeID)) {
+			continue
+		}
+		aliases[identityKey(peer.NodeID)] = struct{}{}
+		peerAddrKey := identityKey(peer.Addr)
+		if peerAddrKey != "" {
+			aliases[peerAddrKey] = struct{}{}
+			canonicalAdvertiseAddr = peer.Addr
+		}
+	}
+	if canonicalAdvertiseAddr == "" {
+		return aliases
+	}
+
+	for _, peer := range snapshot {
+		if !strings.EqualFold(strings.TrimSpace(peer.Addr), strings.TrimSpace(canonicalAdvertiseAddr)) {
+			continue
+		}
+		if peerKey := identityKey(peer.NodeID); peerKey != "" {
+			aliases[peerKey] = struct{}{}
+		}
+		if peerAddrKey := identityKey(peer.Addr); peerAddrKey != "" {
+			aliases[peerAddrKey] = struct{}{}
+		}
+	}
+	return aliases
+}
+
+func aliasLookup(selfAliases []string) map[string]struct{} {
+	lookup := make(map[string]struct{}, len(selfAliases))
+	for _, alias := range selfAliases {
+		if aliasKey := identityKey(alias); aliasKey != "" {
+			lookup[aliasKey] = struct{}{}
+		}
+	}
+	return lookup
+}
+
+func identityKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {

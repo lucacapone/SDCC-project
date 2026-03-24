@@ -123,7 +123,14 @@ func TestMergeMembershipIgnoraEntryDelNodoLocale(t *testing.T) {
 			Incarnation: 1,
 			LastSeen:    base.Add(10 * time.Second),
 		},
-	})
+		{
+			NodeID:      "node1:7001",
+			Addr:        "node1:7001",
+			Status:      string(membership.Suspect),
+			Incarnation: 100,
+			LastSeen:    base.Add(10 * time.Second),
+		},
+	}, "node1:7001")
 
 	snapshot := membershipByNodeID(set.Snapshot())
 	if snapshot["node-1"].Status != membership.Alive || snapshot["node-1"].Incarnation != 5 {
@@ -131,6 +138,9 @@ func TestMergeMembershipIgnoraEntryDelNodoLocale(t *testing.T) {
 	}
 	if _, ok := snapshot["node-2"]; !ok {
 		t.Fatalf("entry remota valida non applicata: %+v", snapshot)
+	}
+	if _, ok := snapshot["node1:7001"]; ok {
+		t.Fatalf("alias self via addr non deve essere applicato: %+v", snapshot["node1:7001"])
 	}
 }
 
