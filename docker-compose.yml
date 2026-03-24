@@ -11,19 +11,16 @@ x-node-base: &node-base
 services:
   node1:
     <<: *node-base
-    container_name: sdcc-node1
     volumes:
       - ./configs/node1.yaml:/config/config.yaml:ro
 
   node2:
     <<: *node-base
-    container_name: sdcc-node2
     volumes:
       - ./configs/node2.yaml:/config/config.yaml:ro
 
   node3:
     <<: *node-base
-    container_name: sdcc-node3
     volumes:
       - ./configs/node3.yaml:/config/config.yaml:ro
 

@@ -577,3 +577,8 @@
 - **Descrizione task**: Aggiornamento di `scripts/cluster_up.sh` con fase di cleanup best-effort pre-avvio per rimuovere eventuali container legacy `sdcc-node1`, `sdcc-node2`, `sdcc-node3` non necessariamente appartenenti al project Compose corrente.
 - **File modificati**: `scripts/cluster_up.sh`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto una routine esplicita che usa `docker ps -a --filter name=... -q` e `docker rm -f ...` per ogni nome legacy, mantenendo comportamento best-effort: in caso di errore di interrogazione/rimozione viene stampata diagnostica chiara su stderr e il flusso continua fino al successivo `run_compose up -d --build`.
+
+## 2026-03-24 00:23:22 UTC
+- **Descrizione task**: Rimozione dei campi `container_name` dai servizi `node1`, `node2`, `node3` nel Compose canonico per lasciare a Docker Compose la generazione automatica dei nomi container con project name `sdcc-bootstrap`; verifica del compose harness di integrazione rispetto alla risoluzione container via `docker compose ... ps -q <service>`.
+- **File modificati**: `docker-compose.yml`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho eliminato i nomi container hardcoded per evitare dipendenze globali da identificativi fissi e ho verificato che `tests/integration/compose_harness_test.go` usi già la risoluzione dinamica per servizio (`docker compose -p sdcc-bootstrap -f docker-compose.yml ps -q <service>`), mantenendo il test indipendente dai nomi concreti dei container.
