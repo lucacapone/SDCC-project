@@ -86,3 +86,27 @@ func TestClusterConvergenceInMemory(t *testing.T) {
 		)
 	}
 }
+
+// TestMembershipEntriesRestanoStabiliNelCluster3Nodi verifica che ogni nodo mantenga
+// tipicamente 2 entry remote (nodi totali - self) senza alias effimeri.
+func TestMembershipEntriesRestanoStabiliNelCluster3Nodi(t *testing.T) {
+	network := newIntegrationNetwork()
+	nodes, cancel := bootstrapCluster(t, network, m09Aggregation, []float64{10, 30, 50}, m09InMemoryGossipInterval)
+	defer cancel()
+	defer stopCluster(t, nodes)
+
+	observation, stable := waitForCondition(m09InMemoryTimeout, m09InMemoryPollInterval, func() clusterObservation {
+		return observeCluster(nodes, averageOf([]float64{10, 30, 50}))
+	}, func(clusterObservation) bool {
+		for _, node := range nodes {
+			if len(node.engine.Membership.Snapshot()) != 2 {
+				return false
+			}
+		}
+		return true
+	})
+
+	if !stable {
+		t.Fatalf("membership_entries non stabili nel cluster 3 nodi: report=%s", formatClusterObservation(observation))
+	}
+}

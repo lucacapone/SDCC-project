@@ -19,7 +19,7 @@ Nel runtime reale il punto di integrazione primario resta `cmd/node/main.go`: il
 
 Il collector di observability viene inizializzato all'avvio del processo e segue le transizioni minime:
 
-Sul piano runtime la failure detection viene integrata direttamente dentro `internal/gossip/engine.go`: a ogni tick del round gossip l'engine applica `Membership.ApplyTimeoutTransitions(time.Now().UTC())` prima di selezionare i target, così i peer inattivi degradano automaticamente `alive -> suspect -> dead` senza supporto esterno dei test. Ogni messaggio gossip valido viene inoltre trattato come heartbeat implicito del suo `origin_node`, promuovendo eventuali alias seed `host:port` alla forma canonica `node_id` quando il digest del mittente espone lo stesso `addr`. Se il digest non include l'entry del mittente, l'engine può usare l'endpoint sorgente fornito dal contratto transport (quando disponibile e valido in formato `host:port`); se non esiste un endpoint valido, aggiorna solo `last_seen/status` del peer già noto senza mai impostare `addr = node_id`. Le transizioni osservate vengono emesse come log strutturati con evento stabile `membership_transition`, utile per debugging e osservabilità operativa.
+Sul piano runtime la failure detection viene integrata direttamente dentro `internal/gossip/engine.go`: a ogni tick del round gossip l'engine applica `Membership.ApplyTimeoutTransitions(time.Now().UTC())` prima di selezionare i target, così i peer inattivi degradano automaticamente `alive -> suspect -> dead` senza supporto esterno dei test. Ogni messaggio gossip valido viene inoltre trattato come heartbeat implicito del suo `origin_node`, ma la canonicalizzazione dell'endpoint origine avviene solo con fonti affidabili: metadata `origin_addr` del messaggio, entry coerente nel digest membership, oppure `remoteAddr` transport solo se coincide con endpoint canonicali del digest. Se manca un endpoint validato, l'engine aggiorna solo `last_seen/status` del peer già noto senza introdurre alias effimeri. Le transizioni osservate vengono emesse come log strutturati con evento stabile `membership_transition`, utile per debugging e osservabilità operativa.
 - `startup` subito dopo il caricamento configurazione e prima del bootstrap;
 - `bootstrap_completed` dopo `membership.Bootstrap`;
 - `transport_initialized` dopo la scelta/inizializzazione del transport reale o fallback `NoopTransport`;
@@ -42,7 +42,7 @@ Confine architetturale implementato:
 
 Adapter concreto corrente (`UDPTransport`):
 - `Start(ctx, handler)` apre `ListenPacket` UDP una sola volta, valida `ctx`/`handler` e avvia un read loop cancellabile.
-- `Send(ctx, addr, payload)` usa `DialContext` UDP per invio best-effort per messaggio, propagando errori di `context` o dial/write.
+- `Send(ctx, addr, payload)` usa in priorità la socket locale persistente aperta da `Start` (porta sorgente stabile del nodo) e mantiene fallback one-shot `DialContext` solo se la socket non è disponibile.
 - `Close()` è idempotente (`sync.Once`), chiude la socket e aspetta la fine delle goroutine (`WaitGroup`).
 
 Regole timeout/retry/lifecycle effettivamente implementate:

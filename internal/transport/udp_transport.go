@@ -102,6 +102,14 @@ func (t *UDPTransport) Send(ctx context.Context, address string, payload []byte)
 		return errors.New("transport chiuso")
 	}
 
+	if sendErr := t.sendWithPersistentSocket(ctx, address, payload); sendErr == nil {
+		return nil
+	} else if !errors.Is(sendErr, errPersistentSocketUnavailable) {
+		return sendErr
+	}
+
+	// Fallback compatibile: quando la socket persistente non è disponibile
+	// usiamo una dial one-shot come comportamento legacy.
 	dialer := net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "udp", address)
 	if err != nil {
@@ -126,6 +134,43 @@ func (t *UDPTransport) Send(ctx context.Context, address string, payload []byte)
 	}
 	return nil
 }
+
+// sendWithPersistentSocket usa la socket locale aperta da Start, preservando porta sorgente stabile.
+func (t *UDPTransport) sendWithPersistentSocket(ctx context.Context, address string, payload []byte) error {
+	t.mu.RLock()
+	conn := t.conn
+	started := t.started
+	t.mu.RUnlock()
+	if !started || conn == nil {
+		return errPersistentSocketUnavailable
+	}
+
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetWriteDeadline(deadline); err != nil {
+			return fmt.Errorf("set write deadline persistent: %w", err)
+		}
+	}
+	defer func() {
+		_ = conn.SetWriteDeadline(time.Time{})
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	udpAddr, resolveErr := net.ResolveUDPAddr("udp", address)
+	if resolveErr != nil {
+		return fmt.Errorf("resolve udp %s: %w", address, resolveErr)
+	}
+	if _, err := conn.WriteTo(payload, udpAddr); err != nil {
+		return fmt.Errorf("write udp persistent verso %s: %w", address, err)
+	}
+	return nil
+}
+
+var errPersistentSocketUnavailable = errors.New("persistent socket non disponibile")
 
 // Close rilascia le risorse in modo idempotente e attende la chiusura delle goroutine.
 func (t *UDPTransport) Close() error {

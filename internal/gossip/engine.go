@@ -18,6 +18,11 @@ import (
 
 var currentMessageVersion = shared.MessageVersion{Major: 1, Minor: 0}
 
+const (
+	// metadataOriginAddrKey trasporta esplicitamente l'endpoint canonico del mittente.
+	metadataOriginAddrKey = "origin_addr"
+)
+
 // CurrentMessageVersion restituisce la versione corrente del contratto messaggio gossip.
 func CurrentMessageVersion() shared.MessageVersion {
 	return currentMessageVersion
@@ -158,6 +163,7 @@ func (e *Engine) round(ctx context.Context) {
 		StateVersion: stateVersion,
 		State:        stateSnapshot,
 		Membership:   serializeMembershipDigest(membershipSnapshot, string(e.NodeID)),
+		Metadata:     buildMessageMetadata(string(e.NodeID), membershipSnapshot),
 	}
 	localEstimate := e.State.Value
 	e.mu.Unlock()
@@ -203,12 +209,15 @@ func (e *Engine) updateObservabilityFromRuntime(localEstimate float64, mergeStat
 
 // resolveOriginAddr prova a recuperare l'endpoint reale del nodo origine dal digest ricevuto.
 func resolveOriginAddr(ctx context.Context, msg shared.GossipMessage) string {
+	if metadataAddr := strings.TrimSpace(msg.Metadata[metadataOriginAddrKey]); isValidNetworkEndpoint(metadataAddr) {
+		return metadataAddr
+	}
 	for _, entry := range msg.Membership {
 		if entry.NodeID == msg.OriginNode && isValidNetworkEndpoint(entry.Addr) {
 			return entry.Addr
 		}
 	}
-	if remoteAddr, ok := transport.MessageRemoteAddrFromContext(ctx); ok && isValidNetworkEndpoint(remoteAddr) {
+	if remoteAddr, ok := transport.MessageRemoteAddrFromContext(ctx); ok && isKnownCanonicalAddr(msg, remoteAddr) {
 		return remoteAddr
 	}
 	return ""
@@ -227,9 +236,60 @@ func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAd
 		return
 	}
 
-	// Un messaggio valido del nodo origine vale come heartbeat del peer canonico anche
-	// quando la membership locale contiene ancora un placeholder seed `host:port`.
-	set.TouchOrUpsertCanonical(string(originID), originAddr, seenAt)
+	// Evitiamo upsert/canonicalizzazione con endpoint non validati: aggiorniamo il peer
+	// solo se il canonical addr coincide con quanto il nodo remoto ha dichiarato.
+	if isKnownCanonicalOrigin(set, string(originID), originAddr) {
+		set.TouchOrUpsertCanonical(string(originID), originAddr, seenAt)
+		return
+	}
+	set.Touch(string(originID), seenAt)
+}
+
+// buildMessageMetadata include metadati minimi e stabili necessari al ricevente.
+func buildMessageMetadata(selfNodeID string, peers []membership.Peer) map[string]string {
+	originAddr := canonicalAddrByNodeID(peers, selfNodeID)
+	if originAddr == "" {
+		return nil
+	}
+	return map[string]string{metadataOriginAddrKey: originAddr}
+}
+
+// canonicalAddrByNodeID risolve l'endpoint canonico del nodo cercandolo nello snapshot membership.
+func canonicalAddrByNodeID(peers []membership.Peer, nodeID string) string {
+	for _, peer := range peers {
+		if peer.NodeID == nodeID && isValidNetworkEndpoint(peer.Addr) {
+			return peer.Addr
+		}
+	}
+	return ""
+}
+
+// isKnownCanonicalAddr accetta il fallback remoteAddr solo se coincide con endpoint canonicali dichiarati.
+func isKnownCanonicalAddr(msg shared.GossipMessage, remoteAddr string) bool {
+	trimmed := strings.TrimSpace(remoteAddr)
+	if !isValidNetworkEndpoint(trimmed) {
+		return false
+	}
+	for _, entry := range msg.Membership {
+		if entry.Addr == trimmed && isValidNetworkEndpoint(entry.Addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// isKnownCanonicalOrigin verifica che l'endpoint origine coincida col peer canonico già noto localmente.
+func isKnownCanonicalOrigin(set *membership.Set, originID, originAddr string) bool {
+	if set == nil || originID == "" || originAddr == "" {
+		return false
+	}
+	for _, peer := range set.Snapshot() {
+		if peer.NodeID != originID {
+			continue
+		}
+		return peer.Addr == originAddr
+	}
+	return false
 }
 
 func isValidNetworkEndpoint(endpoint string) bool {
