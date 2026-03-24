@@ -196,6 +196,7 @@ Per il consolidamento M02 i casi rischiosi dichiarati nel task vengono verificat
 - **Recupero da `suspect` tramite update gossip `alive` con `incarnation` maggiore**: `tests/gossip/TestMergeMembershipRecoversSuspectWithHigherAliveIncarnation` congela il caso di falso positivo di failure detection e verifica che l’update più fresco riattivi correttamente il peer.
 - **Rejoin con stato obsoleto ignorato**: `tests/gossip/TestMergeMembershipIgnoresRejoinWithLowerIncarnation` verifica che, dopo prune di un tombstone più nuovo, un update `alive` con `incarnation` minore non possa reintrodurre il nodo.
 - **Distinzione tra placeholder seed `host:port` e vero `node_id`**: `tests/gossip/TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID` verifica il riallineamento dal placeholder seed-only al `node_id` canonico propagato via gossip, senza mantenere duplicati logici nella membership.
+- **Filtro esplicito del self node**: `tests/membership/TestApplyTimeoutTransitionsSaltaSempreSelfNode`, `tests/gossip/TestRoundSerializzaMembershipEscludendoSelfNode`, `tests/gossip/TestMergeMembershipIgnoraEntryDelNodoLocale` e `tests/gossip/TestRoundNonLoggaTimeoutPerSelfNode` verificano che il nodo locale non transizioni via timeout, non venga serializzato nel digest e non produca eventi/log di timeout auto-riferiti.
 
 ### Comandi canonici M02
 

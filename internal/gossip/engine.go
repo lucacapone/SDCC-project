@@ -39,6 +39,9 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 	if roundEvery <= 0 {
 		roundEvery = time.Second
 	}
+	if m != nil {
+		m.SetSelfNodeID(nodeID)
+	}
 	return &Engine{
 		NodeID: shared.NodeID(nodeID),
 		State: shared.GossipState{
@@ -83,7 +86,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.mu.Unlock()
 
 		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
-		mergeMembership(e.Membership, msg.Membership)
+		mergeMembership(e.Membership, string(e.NodeID), msg.Membership)
 		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
 			logLevel := slog.LevelDebug
@@ -153,7 +156,7 @@ func (e *Engine) round(ctx context.Context) {
 		Version:      currentMessageVersion,
 		StateVersion: stateVersion,
 		State:        stateSnapshot,
-		Membership:   serializeMembershipDigest(membershipSnapshot),
+		Membership:   serializeMembershipDigest(membershipSnapshot, string(e.NodeID)),
 	}
 	localEstimate := e.State.Value
 	e.mu.Unlock()
@@ -272,7 +275,7 @@ func selectGossipTargets(peers []membership.Peer) []membership.Peer {
 }
 
 // serializeMembershipDigest converte la membership locale nel digest condiviso via gossip.
-func serializeMembershipDigest(peers []membership.Peer) []shared.MembershipEntry {
+func serializeMembershipDigest(peers []membership.Peer, selfNodeID string) []shared.MembershipEntry {
 	entries := make([]shared.MembershipEntry, 0, len(peers))
 	canonicalByAddr := make(map[string]membership.Peer, len(peers))
 
@@ -286,6 +289,9 @@ func serializeMembershipDigest(peers []membership.Peer) []shared.MembershipEntry
 	}
 
 	for _, peer := range peers {
+		if selfNodeID != "" && peer.NodeID == selfNodeID {
+			continue
+		}
 		if canonical, ok := canonicalByAddr[peer.Addr]; ok && peer.NodeID == peer.Addr && canonical.NodeID != peer.NodeID {
 			continue
 		}
@@ -301,12 +307,15 @@ func serializeMembershipDigest(peers []membership.Peer) []shared.MembershipEntry
 }
 
 // mergeMembership applica nel set locale il digest membership ricevuto da remoto.
-func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
+func mergeMembership(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry) {
 	if set == nil {
 		return
 	}
 	for _, entry := range remote {
 		if entry.NodeID == "" && entry.Addr == "" {
+			continue
+		}
+		if selfNodeID != "" && string(entry.NodeID) == selfNodeID {
 			continue
 		}
 		st := membership.Status(entry.Status)
@@ -325,7 +334,12 @@ func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
 
 // MergeMembership espone il merge del digest membership per le suite esterne.
 func MergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
-	mergeMembership(set, remote)
+	mergeMembership(set, "", remote)
+}
+
+// MergeMembershipWithSelf espone il merge membership ignorando esplicitamente il nodo locale.
+func MergeMembershipWithSelf(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry) {
+	mergeMembership(set, selfNodeID, remote)
 }
 
 func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
@@ -486,5 +500,10 @@ func MarkPeerAliveForTest(set *membership.Set, selfID, originID shared.NodeID, o
 
 // SerializeMembershipDigestForTest espone il filtro del digest membership per le suite esterne.
 func SerializeMembershipDigestForTest(peers []membership.Peer) []shared.MembershipEntry {
-	return serializeMembershipDigest(peers)
+	return serializeMembershipDigest(peers, "")
+}
+
+// SerializeMembershipDigestWithSelfForTest espone il filtro digest con esclusione del nodo locale.
+func SerializeMembershipDigestWithSelfForTest(peers []membership.Peer, selfNodeID string) []shared.MembershipEntry {
+	return serializeMembershipDigest(peers, selfNodeID)
 }
