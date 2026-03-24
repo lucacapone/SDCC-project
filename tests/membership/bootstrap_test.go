@@ -150,3 +150,26 @@ func TestTouchOrUpsertCanonicalPromotesPlaceholderAndPreventsTimeoutTransitions(
 		t.Fatalf("il peer normalizzato non deve degradare subito per colpa del vecchio placeholder: %+v", peer)
 	}
 }
+
+func TestTouchOrUpsertCanonicalRimuoveSemprePlaceholderQuandoCanonicalGiaPresente(t *testing.T) {
+	set := NewSet()
+	base := time.Date(2026, time.March, 24, 16, 0, 0, 0, time.UTC)
+
+	// Simuliamo uno stato inconsistente: canonical + placeholder sullo stesso addr.
+	set.Upsert(Peer{NodeID: "node-a", Addr: "seed-a:7001", Status: Alive, Incarnation: 3, LastSeen: base})
+	set.Upsert(Peer{NodeID: "seed-a:7001", Addr: "seed-a:7001", Status: Alive, Incarnation: 1, LastSeen: base})
+
+	set.TouchOrUpsertCanonical("node-a", "seed-a:7001", base.Add(time.Second))
+
+	peers := byNodeID(set.Snapshot())
+	if _, exists := peers["seed-a:7001"]; exists {
+		t.Fatalf("placeholder node_id==addr deve essere sempre rimosso dopo promozione: %+v", peers)
+	}
+	peer, ok := peers["node-a"]
+	if !ok {
+		t.Fatalf("peer canonico mancante dopo promozione: %+v", peers)
+	}
+	if peer.Addr != "seed-a:7001" || peer.Status != Alive {
+		t.Fatalf("peer canonico inatteso dopo promozione: %+v", peer)
+	}
+}
