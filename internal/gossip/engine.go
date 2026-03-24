@@ -232,9 +232,11 @@ func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAd
 	}
 
 	// Se manca un endpoint affidabile, aggiorniamo solo il peer canonico già noto senza
-	// promuovere alias o impostare Addr=node_id.
+	// creare nuovi endpoint non validati. Se l'endpoint canonico è già noto localmente,
+	// riallineiamo in modo sicuro eventuali alias esistenti sullo stesso addr.
 	if originAddr == "" {
 		set.Touch(string(originID), seenAt)
+		touchOrPromoteKnownAliasesForOrigin(set, string(originID), seenAt)
 		return
 	}
 
@@ -245,6 +247,40 @@ func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAd
 		return
 	}
 	set.Touch(string(originID), seenAt)
+}
+
+// touchOrPromoteKnownAliasesForOrigin riallinea alias già presenti in membership verso
+// il node_id canonico quando l'endpoint del peer è già noto localmente.
+//
+// La funzione non introduce mai nuovi endpoint: lavora solo su entry già presenti
+// nello snapshot locale e usa TouchOrUpsertCanonical esclusivamente con addr validato.
+func touchOrPromoteKnownAliasesForOrigin(set *membership.Set, originID string, seenAt time.Time) {
+	if set == nil || originID == "" {
+		return
+	}
+	snapshot := set.Snapshot()
+	canonicalAddr := ""
+	for _, peer := range snapshot {
+		if peer.NodeID == originID && isValidNetworkEndpoint(peer.Addr) {
+			canonicalAddr = peer.Addr
+			break
+		}
+	}
+	if canonicalAddr == "" {
+		return
+	}
+
+	knownAliasOnCanonicalAddr := false
+	for _, peer := range snapshot {
+		if peer.NodeID == originID || peer.Addr != canonicalAddr {
+			continue
+		}
+		knownAliasOnCanonicalAddr = true
+		set.Touch(peer.NodeID, seenAt)
+	}
+	if knownAliasOnCanonicalAddr {
+		set.TouchOrUpsertCanonical(originID, canonicalAddr, seenAt)
+	}
 }
 
 // buildMessageMetadata include metadati minimi e stabili necessari al ricevente.

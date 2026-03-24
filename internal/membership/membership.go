@@ -232,6 +232,13 @@ func (s *Set) TouchOrUpsertCanonical(nodeID, addr string, now time.Time) {
 	if resolvedNodeID != nodeID {
 		delete(s.peers, resolvedNodeID)
 	}
+	// Durante la promozione verso node_id canonico rimuoviamo sempre l'eventuale
+	// placeholder `node_id == addr` rimasto nel set, evitando duplicati ambigui.
+	if addr != "" && addr != nodeID {
+		if placeholder, exists := s.peers[addr]; exists && placeholder.NodeID == placeholder.Addr {
+			delete(s.peers, addr)
+		}
+	}
 	s.peers[nodeID] = peer
 }
 

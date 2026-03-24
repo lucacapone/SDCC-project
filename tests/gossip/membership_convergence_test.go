@@ -433,6 +433,35 @@ func TestSerializeMembershipDigestFiltraAliasObsoletoQuandoEsisteFormaCanonica(t
 	}
 }
 
+func TestSerializeMembershipDigestDaSnapshotMantieneSoloCanonicalQuandoCoesistePlaceholder(t *testing.T) {
+	base := time.Date(2026, time.March, 24, 14, 0, 0, 0, time.UTC)
+	set := membership.NewSet()
+
+	// Snapshot volutamente sporco: forma canonical + placeholder con stesso addr.
+	set.Upsert(membership.Peer{
+		NodeID:      "node-a",
+		Addr:        "seed-a:7001",
+		Status:      membership.Alive,
+		Incarnation: 8,
+		LastSeen:    base.Add(time.Second),
+	})
+	set.Upsert(membership.Peer{
+		NodeID:      "seed-a:7001",
+		Addr:        "seed-a:7001",
+		Status:      membership.Alive,
+		Incarnation: 1,
+		LastSeen:    base,
+	})
+
+	entries := SerializeMembershipDigestForTest(set.Snapshot())
+	if len(entries) != 1 {
+		t.Fatalf("digest da snapshot deve mantenere solo la forma canonical: %+v", entries)
+	}
+	if entries[0].NodeID != "node-a" || entries[0].Addr != "seed-a:7001" {
+		t.Fatalf("entry canonical attesa, got=%+v", entries[0])
+	}
+}
+
 func TestSerializeMembershipDigestFiltraSempreSelfNode(t *testing.T) {
 	base := time.Date(2026, time.March, 24, 13, 10, 0, 0, time.UTC)
 	entries := SerializeMembershipDigestWithSelfForTest([]membership.Peer{
@@ -445,5 +474,51 @@ func TestSerializeMembershipDigestFiltraSempreSelfNode(t *testing.T) {
 	}
 	if entries[0].NodeID != "node-2" {
 		t.Fatalf("entry digest inattesa dopo filtro self: %+v", entries[0])
+	}
+}
+
+func TestMembershipConvergenceRoundMultipliNonLasciaPlaceholderPerNodiCanonicalizzati(t *testing.T) {
+	base := time.Date(2026, time.March, 24, 15, 0, 0, 0, time.UTC)
+	left := membership.NewSet()
+	right := membership.NewSet()
+
+	// Entrambi i nodi partono con placeholder seed-only per lo stesso endpoint remoto.
+	left.Join("seed-a:7001", base)
+	right.Join("seed-a:7001", base)
+
+	// Round 1: il nodo destro apprende il node_id canonico e lo propaga.
+	mergeMembership(right, []shared.MembershipEntry{{
+		NodeID:      "node-a",
+		Addr:        "seed-a:7001",
+		Status:      string(membership.Alive),
+		Incarnation: 2,
+		LastSeen:    base.Add(1 * time.Second),
+	}})
+	round1Digest := SerializeMembershipDigestForTest(right.Snapshot())
+	mergeMembership(left, round1Digest)
+
+	// Round 2: heartbeat senza origin_addr, deve comunque toccare/promuovere in sicurezza alias noti.
+	MarkPeerAliveForTest(left, "node-left", "node-a", "", base.Add(1500*time.Millisecond))
+	MarkPeerAliveForTest(right, "node-right", "node-a", "", base.Add(1500*time.Millisecond))
+
+	// Round 3: scambio digest finale in entrambe le direzioni per convergenza completa.
+	mergeMembership(left, SerializeMembershipDigestForTest(right.Snapshot()))
+	mergeMembership(right, SerializeMembershipDigestForTest(left.Snapshot()))
+
+	for _, set := range []*membership.Set{left, right} {
+		snapshot := set.Snapshot()
+		for _, peer := range snapshot {
+			if peer.NodeID == peer.Addr && peer.NodeID == "seed-a:7001" {
+				t.Fatalf("placeholder finale inatteso dopo canonicalizzazione multipla: %+v", snapshot)
+			}
+		}
+		peerByID := membershipByNodeID(snapshot)
+		peer, ok := peerByID["node-a"]
+		if !ok {
+			t.Fatalf("peer canonico mancante dopo round multipli: %+v", snapshot)
+		}
+		if peer.Addr != "seed-a:7001" || peer.Status != membership.Alive {
+			t.Fatalf("peer canonico inatteso dopo round multipli: %+v", peer)
+		}
 	}
 }
