@@ -34,8 +34,8 @@ func mergeMembership(set *membership.Set, remote []shared.MembershipEntry) {
 	internalgossip.MergeMembership(set, remote)
 }
 
-func mergeMembershipWithSelf(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry) {
-	internalgossip.MergeMembershipWithSelf(set, selfNodeID, remote)
+func mergeMembershipWithSelf(set *membership.Set, selfNodeID string, remote []shared.MembershipEntry, selfAliases ...string) {
+	internalgossip.MergeMembershipWithSelf(set, selfNodeID, remote, selfAliases...)
 }
 
 func normalizeVersion(state shared.GossipState) shared.StateVersionStamp {
