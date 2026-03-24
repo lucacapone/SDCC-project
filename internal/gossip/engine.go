@@ -93,7 +93,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		localEstimate := e.State.Value
 		e.mu.Unlock()
 
-		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
+		markPeerAlive(ctx, e.Logger, e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
 		mergeMembership(e.Membership, string(e.NodeID), collectSelfIdentityAliases(e.Membership, string(e.NodeID), e.SelfAddr), msg.Membership)
 		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
@@ -226,9 +226,22 @@ func resolveOriginAddr(ctx context.Context, msg shared.GossipMessage) string {
 }
 
 // markPeerAlive tratta un messaggio gossip valido come heartbeat implicito del nodo origine.
-func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAddr string, seenAt time.Time) {
+func markPeerAlive(ctx context.Context, logger *slog.Logger, set *membership.Set, selfID, originID shared.NodeID, originAddr string, seenAt time.Time) {
 	if set == nil || originID == "" || originID == selfID {
 		return
+	}
+
+	debugLogMarkPeerAlive := func(branchReason string, touchedOrPromotedPeer string) {
+		if logger == nil || !logger.Enabled(ctx, slog.LevelDebug) {
+			return
+		}
+		logger.Debug("heartbeat implicito gossip processato",
+			"event", "gossip_heartbeat_mark_alive",
+			"origin_id", string(originID),
+			"origin_addr", originAddr,
+			"target_peer", touchedOrPromotedPeer,
+			"branch_reason", branchReason,
+		)
 	}
 
 	// Se manca un endpoint affidabile, aggiorniamo solo il peer canonico già noto senza
@@ -237,6 +250,7 @@ func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAd
 	if originAddr == "" {
 		set.Touch(string(originID), seenAt)
 		touchOrPromoteKnownAliasesForOrigin(set, string(originID), seenAt)
+		debugLogMarkPeerAlive("missing_origin_addr_touch_existing", string(originID))
 		return
 	}
 
@@ -244,9 +258,11 @@ func markPeerAlive(set *membership.Set, selfID, originID shared.NodeID, originAd
 	// solo se il canonical addr coincide con quanto il nodo remoto ha dichiarato.
 	if isKnownCanonicalOrigin(set, string(originID), originAddr) {
 		set.TouchOrUpsertCanonical(string(originID), originAddr, seenAt)
+		debugLogMarkPeerAlive("known_canonical_origin_promote_or_touch", string(originID))
 		return
 	}
 	set.Touch(string(originID), seenAt)
+	debugLogMarkPeerAlive("unknown_origin_addr_touch_existing_only", string(originID))
 }
 
 // touchOrPromoteKnownAliasesForOrigin riallinea alias già presenti in membership verso
@@ -294,9 +310,10 @@ func buildMessageMetadata(selfNodeID string, peers []membership.Peer) map[string
 
 // canonicalAddrByNodeID risolve l'endpoint canonico del nodo cercandolo nello snapshot membership.
 func canonicalAddrByNodeID(peers []membership.Peer, nodeID string) string {
+	normalizedNodeID := strings.TrimSpace(nodeID)
 	for _, peer := range peers {
-		if peer.NodeID == nodeID && isValidNetworkEndpoint(peer.Addr) {
-			return peer.Addr
+		if strings.EqualFold(strings.TrimSpace(peer.NodeID), normalizedNodeID) && isValidNetworkEndpoint(peer.Addr) {
+			return strings.TrimSpace(peer.Addr)
 		}
 	}
 	return ""
@@ -708,7 +725,7 @@ func (e *Engine) Stop() error {
 
 // MarkPeerAliveForTest espone il heartbeat implicito per le suite esterne del repository.
 func MarkPeerAliveForTest(set *membership.Set, selfID, originID shared.NodeID, originAddr string, seenAt time.Time) {
-	markPeerAlive(set, selfID, originID, originAddr, seenAt)
+	markPeerAlive(context.Background(), nil, set, selfID, originID, originAddr, seenAt)
 }
 
 // SerializeMembershipDigestForTest espone il filtro del digest membership per le suite esterne.
@@ -719,4 +736,9 @@ func SerializeMembershipDigestForTest(peers []membership.Peer) []shared.Membersh
 // SerializeMembershipDigestWithSelfForTest espone il filtro digest con esclusione del nodo locale.
 func SerializeMembershipDigestWithSelfForTest(peers []membership.Peer, selfNodeID string) []shared.MembershipEntry {
 	return serializeMembershipDigest(peers, selfNodeID)
+}
+
+// BuildMessageMetadataForTest espone la costruzione metadata per le suite esterne.
+func BuildMessageMetadataForTest(selfNodeID string, peers []membership.Peer) map[string]string {
+	return buildMessageMetadata(selfNodeID, peers)
 }

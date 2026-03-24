@@ -23,6 +23,7 @@ var (
 	MarkPeerAliveForTest                     = internalgossip.MarkPeerAliveForTest
 	SerializeMembershipDigestForTest         = internalgossip.SerializeMembershipDigestForTest
 	SerializeMembershipDigestWithSelfForTest = internalgossip.SerializeMembershipDigestWithSelfForTest
+	BuildMessageMetadataForTest              = internalgossip.BuildMessageMetadataForTest
 	currentMessageVersion                    = internalgossip.CurrentMessageVersion()
 )
 
