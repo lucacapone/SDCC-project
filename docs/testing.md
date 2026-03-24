@@ -257,6 +257,22 @@ Comando operativo mirato:
 go test ./tests/observability -run TestMetricsExposure -count=1
 ```
 
+## Regressioni canonicalizzazione endpoint origine gossip
+
+Per evitare dipendenze da `remoteAddr` UDP non canonico, il repository include casi mirati su:
+
+- fallback non canonico da transport (`remoteAddr`) quando il digest non contiene l'origin;
+- presenza di `origin_addr` nel metadata gossip;
+- stabilità del numero di entry membership in cluster 3 nodi (tipicamente 2 remote per digest locale, escluso self).
+
+Comandi mirati:
+
+```bash
+go test ./tests/gossip -run 'TestEngineIgnoraFallbackRemoteAddrNonCanonicoQuandoDigestNonHaOrigin|TestRoundIncludeOriginAddrInMetadataPerRendereAffidabileEndpointOrigine' -count=1
+go test ./tests/integration -run TestMembershipEntriesRestanoStabiliNelCluster3Nodi -count=1
+go test ./tests/transport -run TestUDPTransportSendUsaSocketPersistenteConRemoteAddrStabile -count=1
+```
+
 ## Test di integrazione bootstrap via join endpoint reale
 
 La suite di integrazione include anche il test mirato:

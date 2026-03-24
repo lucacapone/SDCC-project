@@ -6,6 +6,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	internaltransport "sdcc-project/internal/transport"
 )
 
 func TestUDPTransportStartSendClose(t *testing.T) {
@@ -80,6 +82,40 @@ func TestUDPTransportRejectsDoubleStart(t *testing.T) {
 
 	if err := tr.Start(ctx, handler); err == nil {
 		t.Fatal("atteso errore su doppio start")
+	}
+}
+
+func TestUDPTransportSendUsaSocketPersistenteConRemoteAddrStabile(t *testing.T) {
+	listenAddress := freeUDPAddress(t)
+	tr, err := NewUDPTransport(listenAddress)
+	if err != nil {
+		t.Fatalf("new udp transport: %v", err)
+	}
+
+	remoteAddrs := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := tr.Start(ctx, func(handlerCtx context.Context, _ []byte) error {
+		remoteAddr, _ := internaltransport.MessageRemoteAddrFromContext(handlerCtx)
+		remoteAddrs <- remoteAddr
+		return nil
+	}); err != nil {
+		t.Fatalf("start transport: %v", err)
+	}
+	defer tr.Close()
+
+	if err := tr.Send(context.Background(), listenAddress, []byte("self")); err != nil {
+		t.Fatalf("send transport: %v", err)
+	}
+
+	select {
+	case remoteAddr := <-remoteAddrs:
+		if remoteAddr != listenAddress {
+			t.Fatalf("remote addr inatteso, attesa porta sorgente persistente: got=%q want=%q", remoteAddr, listenAddress)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout ricezione remote addr")
 	}
 }
 
