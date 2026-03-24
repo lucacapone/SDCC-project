@@ -567,3 +567,8 @@
 - **Descrizione task**: Revisione del cleanup preventivo in `scripts/cluster_up.sh` per mantenere il comportamento non bloccante senza sopprimere completamente stderr e con diagnostica esplicita in caso di errore.
 - **File modificati**: `scripts/cluster_up.sh`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho sostituito la redirezione totale a `/dev/null` con una gestione esplicita dell'errore su `docker compose down --remove-orphans`: il comando resta non bloccante tramite branch con `true`, ma stderr resta visibile e viene aggiunto un messaggio `cleanup ignorato: ...` con exit code per migliorare il debug. In questo modo i fallimenti non vengono più silenziati e la causa resta osservabile nei test.
+
+## 2026-03-24 00:15:02 UTC
+- **Descrizione task**: Aggiornamento del file Compose canonico rimuovendo la direttiva `version: "3.9"` per allinearsi al formato Compose attuale e verifica del parsing con `docker compose config`.
+- **File modificati**: `docker-compose.yml`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho rimosso la chiave `version` obsoleta mantenendo invariata la struttura `x-node-base`, `services` e `networks`; quindi ho verificato che il comando di validazione Compose continui a produrre configurazione valida senza warning legati alla versione.
