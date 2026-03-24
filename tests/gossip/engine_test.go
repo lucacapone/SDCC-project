@@ -295,6 +295,64 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 	}
 }
 
+func TestRemoteMergeLoggingMantieneSeparatiPeersLocaliEMembershipEntries(t *testing.T) {
+	tr := &spyTransportEngine{}
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	mset := membership.NewSet()
+	now := time.Unix(1710000000, 0).UTC()
+	mset.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: now})
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	incoming := shared.GossipMessage{
+		MessageID:  "m-merge-semantics-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Epoch:   1,
+			Counter: 1,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           15,
+			VersionEpoch:    1,
+			VersionCounter:  1,
+			Round:           3,
+			UpdatedAt:       now,
+		},
+		Membership: nil,
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	logged := logBuffer.String()
+	for _, expected := range []string{
+		"event=remote_merge",
+		"peers=1",
+		"membership_entries=0",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log merge privo del campo atteso %q: %s", expected, logged)
+		}
+	}
+}
+
 func TestRoundAggiornaCollectorConValoriRuntime(t *testing.T) {
 	tr := &captureTransport{}
 	mset := membership.NewSet()
