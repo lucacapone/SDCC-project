@@ -582,3 +582,8 @@
 - **Descrizione task**: Rimozione dei campi `container_name` dai servizi `node1`, `node2`, `node3` nel Compose canonico per lasciare a Docker Compose la generazione automatica dei nomi container con project name `sdcc-bootstrap`; verifica del compose harness di integrazione rispetto alla risoluzione container via `docker compose ... ps -q <service>`.
 - **File modificati**: `docker-compose.yml`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho eliminato i nomi container hardcoded per evitare dipendenze globali da identificativi fissi e ho verificato che `tests/integration/compose_harness_test.go` usi già la risoluzione dinamica per servizio (`docker compose -p sdcc-bootstrap -f docker-compose.yml ps -q <service>`), mantenendo il test indipendente dai nomi concreti dei container.
+
+## 2026-03-24 10:45:31 UTC
+- **Descrizione task**: Hardening heartbeat implicito gossip per evitare fallback a `node_id` come endpoint, con fallback sicuro su metadati transport e test regressivo su digest senza self-entry.
+- **File modificati**: `internal/gossip/engine.go`, `internal/transport/transport.go`, `internal/transport/udp_transport.go`, `tests/gossip/engine_transport_contract_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho reso `resolveOriginAddr` conservativo (solo endpoint `host:port` validi da digest o context transport), evitando promozioni alias non affidabili; in assenza di endpoint valido `markPeerAlive` ora tocca solo peer esistenti senza alterare `Addr`, prevenendo regressioni a `Addr=node_id`. Ho aggiunto un test che simula messaggio sano senza entry self nel digest e verifica sia la stabilità dell'endpoint canonico sia l'assenza di degrado `suspect/dead` dopo heartbeat implicito.

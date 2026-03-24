@@ -155,3 +155,83 @@ func TestEngineGestisceMessaggiInIngressoViaHandlerTransport(t *testing.T) {
 		t.Fatalf("addr peer inatteso: got=%q want=node-2:7002", peer.Addr)
 	}
 }
+
+func TestEngineHeartbeatImplicitoSenzaSelfNelDigestMantieneEndpointCanonico(t *testing.T) {
+	tr := &spyTransportEngine{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	base := time.Date(2026, time.March, 24, 10, 0, 0, 0, time.UTC)
+	mset := membership.NewSetWithConfig(membership.Config{
+		SuspectTimeout: time.Second,
+		DeadTimeout:    2 * time.Second,
+		PruneRetention: 10 * time.Second,
+	})
+	mset.Upsert(membership.Peer{
+		NodeID:      "node-2",
+		Addr:        "node-2:7002",
+		Status:      membership.Alive,
+		Incarnation: 4,
+		LastSeen:    base,
+	})
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	heartbeatAt := base.Add(900 * time.Millisecond)
+	incoming := shared.GossipMessage{
+		MessageID:  "m-missing-self-entry",
+		OriginNode: "node-2",
+		SentAt:     heartbeatAt,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Epoch:   1,
+			Counter: 5,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           21,
+			VersionEpoch:    1,
+			VersionCounter:  5,
+			Round:           9,
+			UpdatedAt:       heartbeatAt,
+		},
+		Membership: []shared.MembershipEntry{{
+			NodeID:      "node-3",
+			Addr:        "node-3:7003",
+			Status:      string(membership.Alive),
+			Incarnation: 2,
+			LastSeen:    heartbeatAt,
+		}},
+	}
+	raw, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	deliverCtx := transport.WithMessageRemoteAddr(context.Background(), "node-2:7002")
+	if err := tr.deliver(deliverCtx, raw); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	peer, ok := membershipByNodeID(mset.Snapshot())["node-2"]
+	if !ok {
+		t.Fatalf("peer origin mancante dopo heartbeat implicito: %+v", mset.Snapshot())
+	}
+	if peer.Addr != "node-2:7002" {
+		t.Fatalf("addr del peer origin alterato: got=%q want=node-2:7002", peer.Addr)
+	}
+	if peer.Status != membership.Alive {
+		t.Fatalf("stato peer inatteso dopo heartbeat implicito: got=%s want=alive", peer.Status)
+	}
+
+	mset.ApplyTimeoutTransitions(heartbeatAt.Add(500 * time.Millisecond))
+	peer = membershipByNodeID(mset.Snapshot())["node-2"]
+	if peer.Status != membership.Alive {
+		t.Fatalf("cluster sano: il peer non deve degradare dopo heartbeat implicito: %+v", peer)
+	}
+}

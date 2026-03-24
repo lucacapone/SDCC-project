@@ -160,7 +160,7 @@ func (t *UDPTransport) readLoop(ctx context.Context, handler MessageHandler) {
 		}
 
 		_ = conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
-		n, _, err := conn.ReadFrom(buffer)
+		n, remoteAddr, err := conn.ReadFrom(buffer)
 		if err != nil {
 			if t.isClosed() || ctx.Err() != nil {
 				return
@@ -172,7 +172,10 @@ func (t *UDPTransport) readLoop(ctx context.Context, handler MessageHandler) {
 		}
 
 		payload := append([]byte(nil), buffer[:n]...)
-		handlerCtx := ctx
+		handlerCtx := WithMessageRemoteAddr(ctx, "")
+		if remoteAddr != nil {
+			handlerCtx = WithMessageRemoteAddr(ctx, remoteAddr.String())
+		}
 		if err := handler(handlerCtx, payload); err != nil {
 			continue
 		}
