@@ -562,3 +562,8 @@
 - **Descrizione task**: Refactor di `scripts/cluster_common.sh` per eliminare uso di `mapfile` in `run_compose` e mantenere invocazione Compose diretta/portabile, con verifica compatibilità degli script cluster/fault injection.
 - **File modificati**: `scripts/cluster_common.sh`, `docs/deployment.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho rimosso la funzione `compose_cmd` e la costruzione array con `mapfile`, sostituendo `run_compose` con invocazione diretta `docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "$@"` mantenendo invariati `PROJECT_NAME` e `COMPOSE_FILE`. Ho verificato che gli script che riusano `run_compose` non richiedano ulteriori cambiamenti tramite ricerca riferimenti e validazione sintattica `bash -n`; ho inoltre aggiornato i prerequisiti di deployment indicando compatibilità Bash 3.2+ per gli script operativi.
+
+## 2026-03-24 00:04:28 UTC
+- **Descrizione task**: Revisione del cleanup preventivo in `scripts/cluster_up.sh` per mantenere il comportamento non bloccante senza sopprimere completamente stderr e con diagnostica esplicita in caso di errore.
+- **File modificati**: `scripts/cluster_up.sh`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito la redirezione totale a `/dev/null` con una gestione esplicita dell'errore su `docker compose down --remove-orphans`: il comando resta non bloccante tramite branch con `true`, ma stderr resta visibile e viene aggiunto un messaggio `cleanup ignorato: ...` con exit code per migliorare il debug. In questo modo i fallimenti non vengono più silenziati e la causa resta osservabile nei test.
