@@ -73,6 +73,9 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	case cmp == 0 && !samePayload:
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
+		if samePayloadSemantically(local, msg.State) {
+			return MergeResult{State: local, Status: MergeSkipped, Reason: "same_version_semantically_equivalent"}
+		}
 		if preferRemoteOnConflict(msg, local) {
 			local = adoptRemote(local, msg)
 		}
@@ -420,6 +423,22 @@ func samePayload(local, remote shared.GossipState) bool {
 	}
 }
 
+func samePayloadSemantically(local, remote shared.GossipState) bool {
+	if local.AggregationType != remote.AggregationType {
+		return false
+	}
+	switch local.AggregationType {
+	case "average":
+		return sameAveragePayloadSemantically(local, remote)
+	case "min":
+		return sameMinPayloadSemantically(local, remote)
+	case "max":
+		return sameMaxPayloadSemantically(local, remote)
+	default:
+		return false
+	}
+}
+
 func sameSumPayload(local, remote shared.GossipState) bool {
 	local.EnsureSumMetadata()
 	ensureIncomingSumMetadata(&remote)
@@ -462,6 +481,15 @@ func sameAveragePayload(local, remote shared.GossipState) bool {
 	return true
 }
 
+func sameAveragePayloadSemantically(local, remote shared.GossipState) bool {
+	local.EnsureAverageMetadata()
+	ensureIncomingAverageMetadata(&remote)
+	if math.Abs(averageFromContributions(local.AggregationData.Average.Contributions)-averageFromContributions(remote.AggregationData.Average.Contributions)) > 1e-9 {
+		return false
+	}
+	return averageMetadataCompatible(local.AggregationData.Average, remote.AggregationData.Average)
+}
+
 func sameMinPayload(local, remote shared.GossipState) bool {
 	local.EnsureMinMetadata()
 	ensureIncomingMinMetadata(&remote)
@@ -479,6 +507,15 @@ func sameMinPayload(local, remote shared.GossipState) bool {
 	return true
 }
 
+func sameMinPayloadSemantically(local, remote shared.GossipState) bool {
+	local.EnsureMinMetadata()
+	ensureIncomingMinMetadata(&remote)
+	if math.Abs(local.Value-remote.Value) > 1e-9 {
+		return false
+	}
+	return versionMapsCompatible(local.AggregationData.Min.Versions, remote.AggregationData.Min.Versions)
+}
+
 func sameMaxPayload(local, remote shared.GossipState) bool {
 	local.EnsureMaxMetadata()
 	ensureIncomingMaxMetadata(&remote)
@@ -490,6 +527,60 @@ func sameMaxPayload(local, remote shared.GossipState) bool {
 	}
 	for nodeID, localVersion := range local.AggregationData.Max.Versions {
 		if compareVersion(localVersion, remote.AggregationData.Max.Versions[nodeID]) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func sameMaxPayloadSemantically(local, remote shared.GossipState) bool {
+	local.EnsureMaxMetadata()
+	ensureIncomingMaxMetadata(&remote)
+	if math.Abs(local.Value-remote.Value) > 1e-9 {
+		return false
+	}
+	return versionMapsCompatible(local.AggregationData.Max.Versions, remote.AggregationData.Max.Versions)
+}
+
+func averageMetadataCompatible(local, remote *shared.AverageState) bool {
+	for nodeID, localVersion := range local.Versions {
+		remoteVersion, ok := remote.Versions[nodeID]
+		if !ok || compareVersion(localVersion, remoteVersion) != 0 {
+			continue
+		}
+		localContribution, localContributionOK := local.Contributions[nodeID]
+		remoteContribution, remoteContributionOK := remote.Contributions[nodeID]
+		if !localContributionOK || !remoteContributionOK {
+			return false
+		}
+		if math.Abs(localContribution.Sum-remoteContribution.Sum) > 1e-9 || localContribution.Count != remoteContribution.Count {
+			return false
+		}
+	}
+	for nodeID, remoteVersion := range remote.Versions {
+		localVersion, ok := local.Versions[nodeID]
+		if !ok || compareVersion(remoteVersion, localVersion) != 0 {
+			continue
+		}
+		localContribution, localContributionOK := local.Contributions[nodeID]
+		remoteContribution, remoteContributionOK := remote.Contributions[nodeID]
+		if !localContributionOK || !remoteContributionOK {
+			return false
+		}
+		if math.Abs(localContribution.Sum-remoteContribution.Sum) > 1e-9 || localContribution.Count != remoteContribution.Count {
+			return false
+		}
+	}
+	return true
+}
+
+func versionMapsCompatible(local, remote map[shared.NodeID]shared.StateVersionStamp) bool {
+	for nodeID, localVersion := range local {
+		remoteVersion, ok := remote[nodeID]
+		if !ok {
+			continue
+		}
+		if compareVersion(localVersion, remoteVersion) != 0 {
 			return false
 		}
 	}

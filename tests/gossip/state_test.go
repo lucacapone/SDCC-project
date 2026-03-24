@@ -157,6 +157,58 @@ func TestMergeRules(t *testing.T) {
 		}
 	})
 
+	t.Run("same_version_semantically_equivalent_average_node1_node3", func(t *testing.T) {
+		local := fixtureState("node-1", 20, 12, base.Add(12*time.Minute))
+		local.AggregationData.Average.Contributions = map[shared.NodeID]shared.AverageContribution{
+			"node-1": {Sum: 10, Count: 1},
+			"node-2": {Sum: 20, Count: 1},
+			"node-3": {Sum: 30, Count: 1},
+		}
+		local.AggregationData.Average.Versions = map[shared.NodeID]shared.StateVersionStamp{
+			"node-1": {Counter: 12},
+			"node-2": {Counter: 12},
+			"node-3": {Counter: 12},
+		}
+		local.Value = 20
+
+		msg := fixtureMessage("msg-semantic-average", "node-3", 20, 12, base.Add(13*time.Minute))
+		msg.State.AggregationData.Average.Contributions = map[shared.NodeID]shared.AverageContribution{
+			"node-1": {Sum: 10, Count: 1},
+			"node-3": {Sum: 30, Count: 1},
+		}
+		msg.State.AggregationData.Average.Versions = map[shared.NodeID]shared.StateVersionStamp{
+			"node-1": {Counter: 12},
+			"node-3": {Counter: 12},
+		}
+		msg.State.Value = 20
+
+		res := applyRemote(local, msg)
+		if res.Status != MergeSkipped || res.Reason != "same_version_semantically_equivalent" {
+			t.Fatalf("equivalenza semantica average non rilevata: status=%s reason=%s", res.Status, res.Reason)
+		}
+		if math.Abs(res.State.Value-local.Value) > 1e-9 {
+			t.Fatalf("stato locale alterato su equivalenza semantica average: got=%v want=%v", res.State.Value, local.Value)
+		}
+	})
+
+	t.Run("same_version_different_payload_reale_su_average", func(t *testing.T) {
+		local := fixtureState("node-1", 20, 12, base.Add(14*time.Minute))
+		msg := fixtureMessage("msg-real-conflict-average", "node-3", 20, 12, base.Add(15*time.Minute))
+		msg.State.AggregationData.Average.Contributions = map[shared.NodeID]shared.AverageContribution{
+			"node-1": {Sum: 10, Count: 1},
+			"node-3": {Sum: 80, Count: 1},
+		}
+		msg.State.AggregationData.Average.Versions = map[shared.NodeID]shared.StateVersionStamp{
+			"node-1": {Counter: 12},
+			"node-3": {Counter: 12},
+		}
+
+		res := applyRemote(local, msg)
+		if res.Status != MergeConflict || res.Reason != "same_version_different_payload" {
+			t.Fatalf("conflitto reale average non classificato come conflict: status=%s reason=%s", res.Status, res.Reason)
+		}
+	})
+
 	t.Run("convergenza logica a parita di scambi", func(t *testing.T) {
 		nodeA := fixtureState("node-a", 10, 1, base)
 		nodeB := fixtureState("node-b", 30, 1, base)
