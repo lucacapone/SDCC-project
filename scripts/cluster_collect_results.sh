@@ -33,7 +33,40 @@ ln -sfn "$(basename "${LOG_FILE}")" "${LATEST_LOG_LINK}"
   while IFS= read -r line; do
     extracted_any=true
     printf '%s\n' "${line}"
-  done < <(grep -E 'shutdown nodo completato' "${LOG_FILE}" || true)
+  done < <(
+    grep 'shutdown nodo completato' "${LOG_FILE}" \
+      | python3 -c '
+import datetime
+import re
+import sys
+
+node_pattern = re.compile(r"\\bnode_id=([^ ]+)")
+time_pattern = re.compile(r"\\btime=([^ ]+)")
+best_by_node = {}
+
+for index, raw_line in enumerate(sys.stdin):
+    line = raw_line.rstrip("\n")
+    node_match = node_pattern.search(line)
+    time_match = time_pattern.search(line)
+    if node_match is None or time_match is None:
+        continue
+
+    node_id = node_match.group(1)
+    timestamp_raw = time_match.group(1)
+    normalized_timestamp = timestamp_raw.replace("Z", "+00:00")
+    try:
+        timestamp = datetime.datetime.fromisoformat(normalized_timestamp)
+    except ValueError:
+        continue
+
+    current = best_by_node.get(node_id)
+    if current is None or timestamp > current[0] or (timestamp == current[0] and index > current[1]):
+        best_by_node[node_id] = (timestamp, index, line)
+
+for node_id in sorted(best_by_node):
+    print(best_by_node[node_id][2])
+' || true
+  )
 
   if [[ "${extracted_any}" == false ]]; then
     printf 'Nessun riepilogo finale disponibile nei log: eseguire prima scripts/cluster_down.sh per ottenere i valori finali di shutdown.\n'

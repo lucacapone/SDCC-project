@@ -349,7 +349,7 @@ Note operative importanti:
 
 - `cluster_up.sh` esegue sempre un cleanup preventivo, quindi può essere rilanciato in ambiente sporco senza richiedere interventi manuali;
 - i **valori finali** per nodo vengono estratti dai log applicativi prodotti in shutdown con il messaggio strutturato `shutdown nodo completato`;
-- per questo motivo il file `artifacts/cluster/latest-final-values.txt` contiene il riepilogo finale completo soprattutto dopo `scripts/cluster_down.sh`;
+- per questo motivo il file `artifacts/cluster/latest-final-values.txt` contiene un **record finale univoco per ogni `node_id`**, ottenuto mantenendo deterministicamente solo l'occorrenza con timestamp `time` più recente per nodo (in caso di pari timestamp viene mantenuta l'ultima riga incontrata nei log);
 - se il cluster non è ancora stato fermato, `cluster_collect_results.sh` salva comunque i log correnti e segnala esplicitamente l'assenza del riepilogo finale.
 
 ## Comandi operativi canonici

@@ -632,3 +632,8 @@
 - **Descrizione task**: Correzione semantica dei campi log `remote_merge` nell'handler di `Start` dell'engine gossip, con separazione esplicita tra peer locali e dimensione membership remota; aggiornamento documentazione observability e test di regressione dedicato.
 - **File modificati**: `internal/gossip/engine.go`, `tests/gossip/engine_test.go`, `docs/observability.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho mantenuto `membership_entries` ancorato a `len(msg.Membership)` (payload remoto) e introdotto il conteggio locale post-merge (`localPeers := len(e.Membership.Snapshot())`) usato nel campo `peers`, così i log distinguono chiaramente vista locale runtime e cardinalità del digest ricevuto. Ho aggiunto documentazione esplicita della semantica e un test che verifica la divergenza intenzionale tra i due campi.
+
+## 2026-03-24 20:39:40 UTC
+- **Descrizione task**: Aggiornamento estrazione shutdown in `cluster_collect_results.sh` con deduplica deterministica per `node_id` e allineamento documentazione testing su contenuto univoco di `latest-final-values.txt`.
+- **File modificati**: `scripts/cluster_collect_results.sh`, `docs/testing.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho sostituito la scansione lineare dei log con una pipeline che filtra `shutdown nodo completato`, estrae `node_id`/`time` e mantiene per ogni nodo solo la riga temporalmente più recente (tie-break sull'ultima occorrenza nel file), poi ordina deterministicamente per `node_id` prima di scrivere `final-values-*.txt`. Ho aggiornato la sezione testing per esplicitare che `latest-final-values.txt` contiene un record finale univoco per nodo coerente con la nuova logica di deduplica.
