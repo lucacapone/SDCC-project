@@ -107,7 +107,11 @@ require_docker
 ensure_artifacts_dir
 
 printf '==> cleanup preventivo del cluster %s\n' "${PROJECT_NAME}"
-run_compose down --remove-orphans >/dev/null 2>&1 || true
+run_compose down --remove-orphans || {
+  cleanup_status=$?
+  printf "cleanup ignorato: docker compose down --remove-orphans fallito (exit=%s)\n" "${cleanup_status}" >&2
+  true
+}
 
 run_compose_up_with_diagnostics
 
