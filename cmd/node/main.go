@@ -31,7 +31,8 @@ func main() {
 	}
 
 	selfAdvertiseAddr := cfg.AdvertiseEndpoint()
-	logger := observability.NewLogger(cfg.LogLevel, nil)
+	baseLogger := observability.NewLogger(cfg.LogLevel, nil)
+	logger := baseLogger.With("runtime_instance", resolveRuntimeInstance(cfg.NodeID))
 	collector := observability.NewCollector(time.Now().UTC())
 	collector.SetHealthMessage("alive")
 	collector.SetNodeState(observability.NodeStateStartup)
@@ -169,6 +170,25 @@ func selectJoinClient(cfg config.Config) membership.JoinClient {
 		return membership.NoopJoinClient{}
 	}
 	return membership.NewHTTPJoinClient(3 * time.Second)
+}
+
+// resolveRuntimeInstance restituisce un identificativo stabile dell'istanza runtime
+// da allegare a tutti i log, così da distinguere container/istanze con stesso node_id.
+//
+// Priorità: HOSTNAME (tipicamente valorizzato in Docker/Kubernetes), fallback a node_id
+// e infine al placeholder "unknown" per evitare stringhe vuote nei campi strutturati.
+func resolveRuntimeInstance(nodeID string) string {
+	runtimeInstance := strings.TrimSpace(os.Getenv("HOSTNAME"))
+	if runtimeInstance != "" {
+		return runtimeInstance
+	}
+
+	normalizedNodeID := strings.TrimSpace(nodeID)
+	if normalizedNodeID != "" {
+		return normalizedNodeID
+	}
+
+	return "unknown"
 }
 
 // observabilityAddress restituisce l'indirizzo del server HTTP di observability.

@@ -28,6 +28,7 @@ I log sono strutturati e ruotano attorno a un insieme piccolo di chiavi stabili,
 
 - `event`: nome logico dell'evento (`node_bootstrap`, `transport_start`, `gossip_round`, `remote_merge`, `shutdown`);
 - `node_id`: identificatore logico del nodo che emette il log;
+- `runtime_instance`: identificativo stabile dell'istanza runtime che emette il log (letto da `HOSTNAME`, con fallback a `node_id` e poi `unknown`) per distinguere immediatamente container/processi diversi anche quando condividono lo stesso `node_id`;
 - `round`: round gossip locale, quando applicabile;
 - `peers`: numero di peer considerati nel round corrente;
 - `estimate`: stima/valore aggregato osservabile in quel momento;
