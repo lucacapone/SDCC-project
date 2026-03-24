@@ -607,3 +607,8 @@
 - **Descrizione task**: Aggiornamento canonicalizzazione heartbeat gossip per promuovere correttamente i placeholder bootstrap `node_id == addr` quando arriva `origin_id` canonico con `origin_addr` noto, con aggiunta di test negativo su endpoint non riconosciuto.
 - **File modificati**: `internal/gossip/engine.go`, `tests/gossip/membership_convergence_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho esteso la validazione `isKnownCanonicalOrigin` per accettare anche il caso alias bootstrap basato su stesso `addr` (placeholder `host:port`) mantenendo invariato il ramo `origin_addr == ""` in `markPeerAlive`; ho aggiunto una regressione che verifica la mancata promozione quando `origin_addr` non combacia con alcun peer locale conosciuto.
+
+## 2026-03-24 19:45:50 UTC
+- **Descrizione task**: Hardening bootstrap/merge membership self-identity: seed del peer self canonico all’avvio, inclusione stabile di `advertise_addr` negli alias locali e regressione Compose su `membership_transition` riferite a self alias.
+- **File modificati**: `cmd/node/main.go`, `internal/gossip/engine.go`, `tests/integration/cluster_convergence_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho anticipato la registrazione del peer locale canonico (`node_id` + `advertise_addr`) prima dell’engine gossip per evitare alias self effimeri; nel filtro merge ho mantenuto confronto normalizzato sia su `entry.NodeID` sia su `entry.Addr` e ho reso `collectSelfIdentityAliases` resiliente includendo sempre l’`advertise_addr` noto anche senza self nello snapshot. Ho aggiunto una regressione E2E Compose che fallisce se i log mostrano `membership_transition` dove `peer_id` coincide con l’alias locale del servizio.

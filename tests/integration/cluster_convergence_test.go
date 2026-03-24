@@ -1,6 +1,9 @@
 package integration_test
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -42,6 +45,7 @@ func TestClusterConvergence(t *testing.T) {
 	if err := ensureComposeObservation(observation); err != nil {
 		t.Fatal(err)
 	}
+	assertNoLocalAliasMembershipTransitions(t, harness.repoRoot)
 	t.Logf("report finale convergenza Compose:\n%s", formatClusterObservation(observation))
 
 	if !converged {
@@ -51,6 +55,40 @@ func TestClusterConvergence(t *testing.T) {
 			m09ConvergenceBand,
 			formatClusterObservation(observation),
 		)
+	}
+}
+
+// assertNoLocalAliasMembershipTransitions fallisce se i log Compose mostrano
+// transizioni membership dove peer_id coincide con l'alias locale host:port del nodo.
+func assertNoLocalAliasMembershipTransitions(t *testing.T, repoRoot string) {
+	t.Helper()
+
+	logPath := filepath.Join(repoRoot, "artifacts", "cluster", "latest-cluster-logs.log")
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("lettura log cluster Compose fallita (%s): %v", logPath, err)
+	}
+
+	// Alias locali da bloccare: ogni servizio non deve degradare il proprio endpoint canonico.
+	localAliasByService := map[string]string{
+		"node1": "node1:7001",
+		"node2": "node2:7002",
+		"node3": "node3:7003",
+	}
+	violations := make([]string, 0)
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !strings.Contains(line, "event=membership_transition") {
+			continue
+		}
+		for service, alias := range localAliasByService {
+			if strings.Contains(line, service+"  |") && strings.Contains(line, "peer_id="+alias) {
+				violations = append(violations, strings.TrimSpace(line))
+			}
+		}
+	}
+
+	if len(violations) > 0 {
+		t.Fatalf("rilevate transizioni membership su alias locale (self) nei log Compose: %s", strings.Join(violations, " || "))
 	}
 }
 

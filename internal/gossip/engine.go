@@ -32,6 +32,7 @@ func CurrentMessageVersion() shared.MessageVersion {
 type Engine struct {
 	NodeID      shared.NodeID
 	State       shared.GossipState
+	SelfAddr    string
 	Membership  *membership.Set
 	Transport   transport.Transport
 	Logger      *slog.Logger
@@ -55,6 +56,7 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 			AggregationType: aggregationType,
 			UpdatedAt:       time.Now().UTC(),
 		},
+		SelfAddr:    resolveSelfAdvertiseAddr(m, nodeID),
 		Membership:  m,
 		Transport:   t,
 		Logger:      logger,
@@ -92,7 +94,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.mu.Unlock()
 
 		markPeerAlive(e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
-		mergeMembership(e.Membership, string(e.NodeID), collectSelfIdentityAliases(e.Membership, string(e.NodeID)), msg.Membership)
+		mergeMembership(e.Membership, string(e.NodeID), collectSelfIdentityAliases(e.Membership, string(e.NodeID), e.SelfAddr), msg.Membership)
 		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
 			logLevel := slog.LevelDebug
@@ -418,29 +420,42 @@ func MergeMembershipWithSelf(set *membership.Set, selfNodeID string, remote []sh
 }
 
 func isSelfMembershipEntry(entry shared.MembershipEntry, selfNodeID string, selfAliases map[string]struct{}) bool {
-	if selfNodeID != "" && strings.EqualFold(strings.TrimSpace(string(entry.NodeID)), strings.TrimSpace(selfNodeID)) {
+	normalizedSelfNodeID := identityKey(selfNodeID)
+	normalizedEntryNodeID := identityKey(string(entry.NodeID))
+	normalizedEntryAddr := identityKey(entry.Addr)
+
+	// Manteniamo un confronto esplicito su NodeID con normalizzazione case/trim.
+	if normalizedSelfNodeID != "" && normalizedEntryNodeID == normalizedSelfNodeID {
 		return true
 	}
-	entryNodeIDKey := identityKey(string(entry.NodeID))
-	if entryNodeIDKey != "" {
-		if _, ok := selfAliases[entryNodeIDKey]; ok {
+	// Manteniamo anche il confronto esplicito su Addr con normalizzazione case/trim.
+	if normalizedSelfNodeID != "" && normalizedEntryAddr == normalizedSelfNodeID {
+		return true
+	}
+	if normalizedEntryNodeID != "" {
+		if _, ok := selfAliases[normalizedEntryNodeID]; ok {
 			return true
 		}
 	}
-	entryAddrKey := identityKey(entry.Addr)
-	if entryAddrKey != "" {
-		if _, ok := selfAliases[entryAddrKey]; ok {
+	if normalizedEntryAddr != "" {
+		if _, ok := selfAliases[normalizedEntryAddr]; ok {
 			return true
 		}
 	}
 	return false
 }
 
-func collectSelfIdentityAliases(set *membership.Set, selfNodeID string) map[string]struct{} {
+func collectSelfIdentityAliases(set *membership.Set, selfNodeID, selfAdvertiseAddr string) map[string]struct{} {
 	aliases := make(map[string]struct{})
 	selfNodeKey := identityKey(selfNodeID)
 	if selfNodeKey != "" {
 		aliases[selfNodeKey] = struct{}{}
+	}
+	// L'advertise_addr noto deve essere sempre considerato alias locale anche quando
+	// il peer self non è ancora presente nello snapshot membership corrente.
+	selfAddrKey := identityKey(selfAdvertiseAddr)
+	if selfAddrKey != "" {
+		aliases[selfAddrKey] = struct{}{}
 	}
 	if set == nil {
 		return aliases
@@ -475,6 +490,19 @@ func collectSelfIdentityAliases(set *membership.Set, selfNodeID string) map[stri
 		}
 	}
 	return aliases
+}
+
+// resolveSelfAdvertiseAddr ricava l'endpoint canonico locale da membership, se già noto.
+func resolveSelfAdvertiseAddr(set *membership.Set, selfNodeID string) string {
+	if set == nil {
+		return ""
+	}
+	for _, peer := range set.Snapshot() {
+		if strings.EqualFold(strings.TrimSpace(peer.NodeID), strings.TrimSpace(selfNodeID)) && isValidNetworkEndpoint(peer.Addr) {
+			return strings.TrimSpace(peer.Addr)
+		}
+	}
+	return ""
 }
 
 func aliasLookup(selfAliases []string) map[string]struct{} {
