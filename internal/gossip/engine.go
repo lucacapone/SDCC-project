@@ -278,16 +278,27 @@ func isKnownCanonicalAddr(msg shared.GossipMessage, remoteAddr string) bool {
 	return false
 }
 
-// isKnownCanonicalOrigin verifica che l'endpoint origine coincida col peer canonico già noto localmente.
+// isKnownCanonicalOrigin verifica che l'endpoint origine corrisponda a un peer già noto localmente.
+//
+// Casi accettati:
+//   - peer già canonico (`node_id == originID` e stesso addr);
+//   - peer placeholder bootstrap (`node_id == addr == originAddr`) da promuovere;
+//   - (intenzionalmente non più permissivo) nessuna promozione se l'addr non è già conosciuto.
 func isKnownCanonicalOrigin(set *membership.Set, originID, originAddr string) bool {
 	if set == nil || originID == "" || originAddr == "" {
 		return false
 	}
 	for _, peer := range set.Snapshot() {
-		if peer.NodeID != originID {
+		if peer.Addr != originAddr {
 			continue
 		}
-		return peer.Addr == originAddr
+		if peer.NodeID == originID {
+			return true
+		}
+		if peer.NodeID == originAddr {
+			return true
+		}
+		return false
 	}
 	return false
 }
