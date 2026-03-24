@@ -23,6 +23,7 @@ Per eseguire il cluster locale servono:
 
 1. **Docker Engine** installato e avviato;
 2. **Docker Compose plugin** disponibile come sottocomando `docker compose`.
+3. **Bash 3.2+** per gli script operativi in `scripts/` (es. `cluster_up.sh`, `cluster_down.sh`, fault injection).
 
 Nel file Compose canonico di root **non** è attualmente richiesto come prerequisito che le porte UDP `7001`, `7002`, `7003` siano libere sull'host. Queste porte sono infatti usate dal runtime dei nodi **dentro** la rete Docker Compose `sdcc-net`, ma il `docker-compose.yml` canonico non le pubblica verso l'host con una sezione `ports:`.
 

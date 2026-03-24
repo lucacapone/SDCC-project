@@ -18,16 +18,10 @@ ensure_artifacts_dir() {
   mkdir -p "${ARTIFACTS_DIR}"
 }
 
-# Restituisce il comando Compose canonico come array shell-safe.
-compose_cmd() {
-  printf '%s\0' docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}"
-}
-
-# Esegue il comando Compose ricevuto come argomenti aggiuntivi.
+# Esegue il comando Compose canonico con gli argomenti aggiuntivi richiesti.
+# L'implementazione evita `mapfile` per mantenere compatibilità con bash 3.2+.
 run_compose() {
-  local -a base_cmd
-  mapfile -d '' base_cmd < <(compose_cmd)
-  "${base_cmd[@]}" "$@"
+  docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "$@"
 }
 
 # Stampa un errore uniforme e interrompe lo script chiamante.
