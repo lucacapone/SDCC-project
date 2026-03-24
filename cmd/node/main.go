@@ -52,6 +52,11 @@ func main() {
 		}
 	}()
 	mset := membership.NewSetWithConfig(cfg.MembershipConfig())
+	// Registra subito l'identità locale canonica in membership prima del bootstrap e
+	// prima dell'avvio dell'engine gossip, così i filtri self possono riconoscere sia
+	// node_id logico sia advertise_addr anche in fase di startup.
+	mset.SetSelfNodeID(cfg.NodeID)
+	mset.TouchOrUpsertCanonical(cfg.NodeID, selfAdvertiseAddr, time.Now().UTC())
 	joinClient := selectJoinClient(cfg)
 	bootstrapRes := membership.Bootstrap(
 		context.Background(),
