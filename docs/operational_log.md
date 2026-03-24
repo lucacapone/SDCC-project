@@ -572,3 +572,8 @@
 - **Descrizione task**: Aggiornamento del file Compose canonico rimuovendo la direttiva `version: "3.9"` per allinearsi al formato Compose attuale e verifica del parsing con `docker compose config`.
 - **File modificati**: `docker-compose.yml`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho rimosso la chiave `version` obsoleta mantenendo invariata la struttura `x-node-base`, `services` e `networks`; quindi ho verificato che il comando di validazione Compose continui a produrre configurazione valida senza warning legati alla versione.
+
+## 2026-03-24 00:17:50 UTC
+- **Descrizione task**: Aggiornamento di `scripts/cluster_up.sh` con fase di cleanup best-effort pre-avvio per rimuovere eventuali container legacy `sdcc-node1`, `sdcc-node2`, `sdcc-node3` non necessariamente appartenenti al project Compose corrente.
+- **File modificati**: `scripts/cluster_up.sh`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho introdotto una routine esplicita che usa `docker ps -a --filter name=... -q` e `docker rm -f ...` per ogni nome legacy, mantenendo comportamento best-effort: in caso di errore di interrogazione/rimozione viene stampata diagnostica chiara su stderr e il flusso continua fino al successivo `run_compose up -d --build`.

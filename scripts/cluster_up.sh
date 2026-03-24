@@ -60,6 +60,43 @@ classify_compose_failure() {
   printf 'errore compose non classificato'
 }
 
+
+# Esegue cleanup best-effort di container legacy con nomi noti, anche se esterni al project Compose corrente.
+cleanup_named_container_best_effort() {
+  local container_name="$1"
+  local container_ids
+
+  if ! container_ids="$(docker ps -a --filter "name=^/${container_name}$" -q 2>/dev/null)"; then
+    printf 'WARN: impossibile interrogare i container per %s; proseguo comunque\n' "${container_name}" >&2
+    return 0
+  fi
+
+  if [[ -z "${container_ids}" ]]; then
+    printf '==> nessun container preesistente da rimuovere: %s\n' "${container_name}" >&2
+    return 0
+  fi
+
+  printf '==> rimozione best-effort container preesistente: %s (id: %s)\n' "${container_name}" "${container_ids//$'\n'/, }" >&2
+  while IFS= read -r container_id; do
+    [[ -z "${container_id}" ]] && continue
+    if ! docker rm -f "${container_id}" >/dev/null 2>&1; then
+      printf 'WARN: rimozione fallita per container %s (id=%s); proseguo comunque\n' "${container_name}" "${container_id}" >&2
+      continue
+    fi
+    printf '==> rimosso container %s (id=%s)\n' "${container_name}" "${container_id}" >&2
+  done <<<"${container_ids}"
+}
+
+# Rimuove eventuali container legacy del cluster locale per evitare conflitti di nome non gestiti da Compose.
+remove_preexisting_sdcc_node_containers() {
+  local legacy_name
+
+  printf '==> cleanup best-effort container legacy: sdcc-node1 sdcc-node2 sdcc-node3\n' >&2
+  for legacy_name in sdcc-node1 sdcc-node2 sdcc-node3; do
+    cleanup_named_container_best_effort "${legacy_name}"
+  done
+}
+
 # Esegue `docker compose up -d --build` catturando output e fornendo diagnostica ricca in caso di errore.
 run_compose_up_with_diagnostics() {
   local -a up_args=(up -d --build)
@@ -70,6 +107,8 @@ run_compose_up_with_diagnostics() {
 
   compose_cmd="$(compose_command_string)"
   printf '==> avvio cluster tramite %s\n' "${COMPOSE_FILE}"
+
+  remove_preexisting_sdcc_node_containers
 
   set +e
   compose_output="$(run_compose "${up_args[@]}" 2>&1)"
