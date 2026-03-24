@@ -39,6 +39,11 @@ Scelte operative sui log:
 - i dettagli verbosi del payload gossip non vengono serializzati nei log ordinari;
 - la cardinalità resta bassa per rendere i log leggibili e correlabili con le metriche.
 
+Semantica esplicita per `event=remote_merge`:
+- `membership_entries` indica **solo** il numero di entry ricevute nel messaggio remoto (`len(msg.membership)`);
+- `peers` indica invece il numero peer **localmente noti dopo** merge stato + aggiornamento membership (`len(Membership.Snapshot())`);
+- i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo.
+
 ## 3. Metriche esposte
 L'endpoint `/metrics` espone un formato testuale minimale pensato per verifica umana, scraping semplice e test automatici mirati. Le metriche/documenti di stato esposti sono:
 

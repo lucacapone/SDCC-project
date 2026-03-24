@@ -95,6 +95,7 @@ func (e *Engine) Start(ctx context.Context) error {
 
 		markPeerAlive(ctx, e.Logger, e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
 		mergeMembership(e.Membership, string(e.NodeID), collectSelfIdentityAliases(e.Membership, string(e.NodeID), e.SelfAddr), msg.Membership)
+		localPeers := len(e.Membership.Snapshot())
 		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
 		if e.Logger != nil {
 			logLevel := slog.LevelDebug
@@ -105,7 +106,7 @@ func (e *Engine) Start(ctx context.Context) error {
 				slog.String("event", "remote_merge"),
 				slog.String("node_id", string(e.NodeID)),
 				slog.Uint64("round", uint64(localRound)),
-				slog.Int("peers", membershipEntries),
+				slog.Int("peers", localPeers),
 				slog.Float64("estimate", localEstimate),
 				slog.String("merge_status", string(merge.Status)),
 				slog.String("merge_reason", merge.Reason),
