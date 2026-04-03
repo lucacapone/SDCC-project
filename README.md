@@ -405,6 +405,10 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
    - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, peer `host:porta` malformati, `node_port` fuori range, duplicati o valori vuoti nelle liste).
 
 ## Demo rapida
+Guida operativa completa della demo (setup, osservazioni, criteri misurabili, crash/restart supportato e troubleshooting minimo):
+- `docs/demo.md`
+
+Quickstart sintetico:
 ```bash
 # 1) Build immagine applicativa e avvio cluster dal file canonico `docker-compose.yml`
 docker compose up -d --build

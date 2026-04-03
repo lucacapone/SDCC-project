@@ -2,6 +2,8 @@
 
 Questo documento è il riferimento canonico per la distinzione tra test interni in-memory, test di integrazione/end-to-end M09, test canonico M10 per crash/restart e relativi comandi operativi di validazione del repository.
 
+Per la guida demo operativa del cluster (setup, osservazioni, criteri di successo e troubleshooting), vedere anche `docs/demo.md`.
+
 ## Ambito
 
 La strategia di test corrente è organizzata su tre livelli:

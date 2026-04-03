@@ -642,3 +642,8 @@
 - **Descrizione task**: Arricchimento del wiring logger runtime con identificativo stabile di istanza (`runtime_instance`) da env `HOSTNAME`, propagazione del logger arricchito in bootstrap/transport/engine/shutdown e aggiornamento documentazione observability.
 - **File modificati**: `cmd/node/main.go`, `docs/observability.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto in `main.go` una risoluzione esplicita dell'identità istanza (`HOSTNAME` con fallback `node_id`/`unknown`) e creato subito dopo `NewLogger(...)` un logger arricchito via `With("runtime_instance", ...)`, riusato in tutto il wiring runtime incluso il logger passato a `gossip.NewEngine`, così i log di bootstrap, transport, merge remoto, round e shutdown condividono automaticamente lo stesso campo stabile. Ho poi aggiornato `docs/observability.md` per documentare la semantica operativa del nuovo campo e il suo fallback.
+
+## 2026-04-03 10:17:30 UTC
+- **Descrizione task**: Creazione della guida demo operativa `docs/demo.md` con sezioni richieste (scopo, prerequisiti reali, setup/avvio, osservazioni, criteri misurabili, supporto crash/restart, troubleshooting) e allineamento dei riferimenti incrociati con README e testing canonico.
+- **File modificati**: `docs/demo.md`, `README.md`, `docs/testing.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho introdotto un documento demo dedicato basato esclusivamente su comandi, test e script realmente presenti nel repository (Compose canonico root, `TestClusterConvergence`, `TestNodeCrashAndRestart`, `scripts/fault_injection/*`), evitando workflow inventati e aggiungendo collegamenti bidirezionali per mantenere coerenza tra documentazione operativa e strategia di test.
