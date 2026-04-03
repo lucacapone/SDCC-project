@@ -657,3 +657,8 @@
 - **Descrizione task**: Consolidamento README per quickstart end-to-end, aggiornamento sezioni Demo/EC2 con riferimenti ai documenti canonici, aggiunta milestone M12 e riallineamento indice/anchor senza duplicazioni.
 - **File modificati**: `README.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho ristrutturato il README per usare solo comandi già reali del repository (docker compose e test integrazione canonico), ridotto la duplicazione con sezioni finali sintetiche e mantenuto coerenza terminologica con `docs/testing.md`, `docs/demo.md` e `docs/deployment_ec2.md` su scenario M09 (3 nodi, average 10/30/50, banda <= 0.05) e vincoli Learner Lab.
+
+## 2026-04-03 10:32:28 UTC
+- **Descrizione task**: Redazione del report milestone `docs/task/M12.md` con obiettivo, stato iniziale, file coinvolti, sintesi allineamenti README/demo/EC2/testing, verifiche eseguite, limiti residui e follow-up consigliati.
+- **File modificati**: `docs/task/M12.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Dopo ricognizione della documentazione canonica (`README.md`, `docs/demo.md`, `docs/deployment_ec2.md`, `docs/testing.md`) e dei log M12 esistenti, ho consolidato un task report nello stesso stile delle milestone recenti. Ho incluso l'esito del comando richiesto `rg -n "Quickstart|Demo|EC2|Crash" README.md docs/*.md` e reso espliciti i limiti di scope (locale vs EC2, IP pubblico, multi-host) per mantenere coerenza tra deliverable e comportamento operativo reale.
