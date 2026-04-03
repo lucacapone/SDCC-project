@@ -4,6 +4,16 @@ Questo documento è il riferimento canonico per la distinzione tra test interni 
 
 Per la guida demo operativa del cluster (setup, osservazioni, criteri di successo e troubleshooting), vedere anche `docs/demo.md`.
 
+## Verifiche operative per demo/documentazione M12
+
+Per lo scenario dimostrativo end-to-end fare riferimento a `docs/demo.md`, mentre questa pagina resta il riferimento canonico per il perimetro e i livelli di test.
+
+- **Verifiche locali (Docker Compose)**: usare i comandi canonici già documentati in README/testing per avvio cluster e verifiche M09/M10 (`docker compose up -d --build`, `docker compose ps`, `go test ./tests/integration -run TestClusterConvergence -count=1`, `go test ./tests/integration -run TestNodeCrashAndRestart -count=1`, `docker compose down`).
+- **Note deploy EC2 (stesso stack, ambiente diverso)**: usare lo stesso stack Compose descritto in `docs/deployment_ec2.md`, considerando differenze operative di rete/host (latenza, porte, endpoint locali alla VM) e i limiti pratici di tempo/costi Learner Lab già riportati in quel documento.
+- **Limiti pratici da richiamare in demo/documentazione**: lo scenario crash/restart va dichiarato solo dove supportato dai test reali (`TestNodeCrashAndRestart` su Compose e variante `TestNodeCrashAndRestartInMemory`); evitare di estendere il claim a percorsi non coperti da suite esistenti.
+
+Riferimenti incrociati per evitare ridondanza: `README.md` (quickstart/comandi), `docs/demo.md` (scenari e osservazioni), `docs/deployment_ec2.md` (vincoli EC2).
+
 ## Ambito
 
 La strategia di test corrente è organizzata su tre livelli:
