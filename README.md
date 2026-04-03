@@ -10,6 +10,7 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Stato avanzamento milestone](#stato-avanzamento-milestone)
 - [Sezione aggregazioni](#sezione-aggregazioni)
 - [Configurazione esterna](#configurazione-esterna)
+- [Quickstart end-to-end](#quickstart-end-to-end)
 - [Avvio locale con Docker Compose](#avvio-locale-con-docker-compose)
 - [Esecuzione test](#esecuzione-test)
 - [Test interni di convergenza in-memory](#test-interni-di-convergenza-in-memory)
@@ -17,8 +18,8 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 - [Script/comandi standard](#scriptcomandi-standard)
 - [Supporti operativi fault injection](#supporti-operativi-fault-injection)
 - [Criteri di successo misurabili](#criteri-di-successo-misurabili)
-- [Demo rapida](#demo-rapida)
-- [Nota deploy EC2 essenziale](#nota-deploy-ec2-essenziale)
+- [Demo](#demo)
+- [Deploy EC2 (Learner Lab)](#deploy-ec2-learner-lab)
 
 ## Panoramica sistema gossip decentralizzato
 Il sistema è pensato per nodi indipendenti che scambiano periodicamente informazioni in modalità peer-to-peer.
@@ -59,6 +60,7 @@ Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/a
 - **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
 - **M10**: completata lato repository/documentazione con suite reale `tests/integration/TestNodeCrashAndRestart` su cluster Compose locale, variante rapida `tests/integration/TestNodeCrashAndRestartInMemory`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
 - **M11**: completata lato documentazione operativa dell'observability con guida dedicata `docs/observability.md`, task report `docs/task/M11.md` e comando canonico di verifica `go test ./tests/observability -run TestMetricsExposure`.
+- **M12**: completata lato deliverable documentali finali con consolidamento di `README.md` (indice, quickstart end-to-end, riferimenti demo/deploy), allineamento operativo di `docs/demo.md` e `docs/deployment_ec2.md`, più coerenza lessicale con `docs/testing.md` per scenario M09/M10 e criteri di successo misurabili.
 
 Comandi di verifica milestone:
 - M03 → `go test ./tests/transport -run TestTransportContract`
@@ -183,6 +185,32 @@ Convenzione unica adottata:
 - `node_id` = identificatore logico stabile del nodo (`node-1`, `node-2`, ...);
 - `addr` = endpoint di rete realmente raggiungibile nel formato `host:port`;
 - nei deployment Docker Compose il `host` dell'endpoint coincide con il **service name** (`node1`, `node2`, `node3`), che Docker risolve via DNS interno.
+
+## Quickstart end-to-end
+Prerequisiti minimi (coerenti con i flussi reali del repository):
+- Docker Engine attivo;
+- Docker Compose plugin (`docker compose`);
+- repository clonata con file `docker-compose.yml` e `configs/node*.yaml` presenti.
+
+### 1) Avvio cluster
+```bash
+docker compose up -d --build
+```
+
+### 2) Verifica stato servizi
+```bash
+docker compose ps
+```
+
+### 3) Verifica convergenza automatica (M09)
+```bash
+go test ./tests/integration -run TestClusterConvergence -count=1
+```
+
+### 4) Stop cluster e cleanup locale
+```bash
+docker compose down
+```
 
 ## Avvio locale con Docker Compose
 Per M07 il file Compose canonico del cluster locale è:
@@ -404,30 +432,23 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
    - parsing YAML/JSON corretto
    - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, peer `host:porta` malformati, `node_port` fuori range, duplicati o valori vuoti nelle liste).
 
-## Demo rapida
-Guida operativa completa della demo (setup, osservazioni, criteri misurabili, crash/restart supportato e troubleshooting minimo):
-- `docs/demo.md`
+## Demo
+Guida operativa completa:
+- [`docs/demo.md`](docs/demo.md)
 
-Quickstart sintetico:
-```bash
-# 1) Build immagine applicativa e avvio cluster dal file canonico `docker-compose.yml`
-docker compose up -d --build
+Sintesi scenario demo allineato a test/documentazione canonica:
+- cluster locale reale a **3 nodi** (`node1`, `node2`, `node3`);
+- aggregazione attiva: **`average`**;
+- valori iniziali: **`10`, `30`, `50`**;
+- riferimento atteso informativo: **`30.0`**;
+- criterio di successo M09: banda cluster **`max(values) - min(values) <= 0.05`**;
+- verifica automatica canonica: `go test ./tests/integration -run TestClusterConvergence -count=1`.
 
-# 2) Verifica servizi e stato dei container
-docker compose ps
+## Deploy EC2 (Learner Lab)
+Runbook completo:
+- [`docs/deployment_ec2.md`](docs/deployment_ec2.md)
 
-# 3) Segui i log del nodo 1 per osservare bootstrap, gossip e discovery via service name Compose
-docker compose logs -f node1
-
-# 4) Arresto e rimozione del cluster locale
-docker compose down
-```
-
-Durante la demo rapida i nodi si scoprono usando direttamente la rete Compose e i nomi servizio `node1`, `node2`, `node3`; questi service name compaiono negli `advertise_addr` e nei peer seed come endpoint reali `host:port`, mentre i `node_id` restano identificativi logici separati.
-
-## Nota deploy EC2 essenziale
-Checklist minima:
-1. aprire security group solo sulle porte necessarie tra nodi;
-2. usare Docker + Compose anche su EC2 per mantenere parità con locale;
-3. configurare indirizzi peer con DNS privato/VPC;
-4. abilitare log centralizzati (CloudWatch o equivalente) per osservare convergenza gossip.
+Nota vincolante Learner Lab (sintesi):
+- usare come percorso principale **1 EC2 + Docker Compose** per ridurre costo/fragilità;
+- rispettare i vincoli di laboratorio su budget/quote (incluso budget indicativo da **50 USD** e metrica budget con possibile ritardo);
+- eseguire sempre cleanup finale (`docker compose down` e rilascio risorse EC2/EBS) per evitare consumo involontario.
