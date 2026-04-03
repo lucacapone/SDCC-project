@@ -18,11 +18,19 @@ Obiettivo della demo:
 Prerequisiti minimi richiesti nel repository corrente:
 1. **Docker Engine** installato e attivo.
 2. **Docker Compose plugin** disponibile come comando `docker compose`.
-3. Repository clonata localmente.
-4. File di configurazione presenti e coerenti:
+3. **Go locale installato (minimo `1.22`, coerente con `go.mod`)**.
+4. Repository clonata localmente.
+5. File di configurazione presenti e coerenti:
    - `configs/node1.yaml`
    - `configs/node2.yaml`
    - `configs/node3.yaml`
+
+Verifica rapida prerequisiti:
+```bash
+docker --version
+docker compose version
+go version
+```
 
 ## 3) Setup e avvio (comandi reali)
 
@@ -74,6 +82,10 @@ Per la verifica automatica canonica:
 ```bash
 go test ./tests/integration -run TestClusterConvergence -count=1
 ```
+
+Nota di distinzione operativa:
+- i comandi runtime cluster (`docker compose up/ps/logs/down`) orchestrano il deployment locale dei container;
+- i comandi test canonici (`go test ./tests/integration ...`) eseguono test Go locali e richiedono la toolchain Go installata sull'host.
 
 ## 6) Scenario crash/restart (supportato)
 
