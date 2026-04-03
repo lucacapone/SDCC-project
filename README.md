@@ -190,7 +190,15 @@ Convenzione unica adottata:
 Prerequisiti minimi (coerenti con i flussi reali del repository):
 - Docker Engine attivo;
 - Docker Compose plugin (`docker compose`);
+- **Go locale installato (minimo `1.22`, coerente con `go.mod`)**;
 - repository clonata con file `docker-compose.yml` e `configs/node*.yaml` presenti.
+
+Verifica rapida prerequisiti:
+```bash
+docker --version
+docker compose version
+go version
+```
 
 ### 1) Avvio cluster
 ```bash
@@ -203,6 +211,8 @@ docker compose ps
 ```
 
 ### 3) Verifica convergenza automatica (M09)
+> Nota: questo comando esegue test Go locali e richiede la toolchain Go installata sull'host che lancia i test.
+
 ```bash
 go test ./tests/integration -run TestClusterConvergence -count=1
 ```

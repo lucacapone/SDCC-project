@@ -667,3 +667,8 @@
 - **Descrizione task**: Aggiornamento di `docs/testing.md` con una sezione breve dedicata alle verifiche operative M12, distinguendo verifiche locali Compose da note deploy EC2 e riducendo ridondanza tramite riferimenti incrociati ai documenti canonici.
 - **File modificati**: `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiunto una sezione sintetica che rimanda allo scenario demo in `docs/demo.md`, riusa esclusivamente comandi già canonici presenti nella documentazione, richiama limiti pratici (tempo/costi EC2, differenze networking) e circoscrive il claim crash/restart ai test reali supportati (Compose + variante in-memory).
+
+## 2026-04-03 10:44:39 UTC
+- **Descrizione task**: Aggiornamento prerequisiti documentali in `README.md` e `docs/demo.md` per esplicitare la dipendenza dalla toolchain Go locale (minimo 1.22 da `go.mod`), aggiunta comandi di verifica rapida prerequisiti e chiarimento della distinzione tra runtime Compose e test Go locali.
+- **File modificati**: `README.md`, `docs/demo.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho verificato la versione minima Go direttamente dal modulo (`go 1.22`) e ho allineato quickstart/demo con un prerequisito esplicito per evitare ambiguità sui comandi `go test`. Ho aggiunto la verifica rapida (`go version` incluso) e una nota operativa per separare chiaramente orchestrazione cluster via Docker Compose da esecuzione dei test canonici in locale tramite toolchain Go host.
