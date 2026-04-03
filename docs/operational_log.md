@@ -647,3 +647,8 @@
 - **Descrizione task**: Creazione della guida demo operativa `docs/demo.md` con sezioni richieste (scopo, prerequisiti reali, setup/avvio, osservazioni, criteri misurabili, supporto crash/restart, troubleshooting) e allineamento dei riferimenti incrociati con README e testing canonico.
 - **File modificati**: `docs/demo.md`, `README.md`, `docs/testing.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto un documento demo dedicato basato esclusivamente su comandi, test e script realmente presenti nel repository (Compose canonico root, `TestClusterConvergence`, `TestNodeCrashAndRestart`, `scripts/fault_injection/*`), evitando workflow inventati e aggiungendo collegamenti bidirezionali per mantenere coerenza tra documentazione operativa e strategia di test.
+
+## 2026-04-03 10:22:14 UTC
+- **Descrizione task**: Creazione della guida `docs/deployment_ec2.md` focalizzata su deploy SDCC in AWS Learner Lab, con percorso principale Opzione A (1 EC2 + Docker Compose), prerequisiti/limiti/costi e cleanup operativo obbligatorio.
+- **File modificati**: `docs/deployment_ec2.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho usato come fonte primaria `docs/aws_learner_lab_notes.md` e ho allineato i comandi al runtime reale della repository (`docker compose up -d --build`, `docker compose ps`, `docker compose logs`, script `scripts/cluster_*`, comando test `TestClusterConvergence`), distinguendo esplicitamente traffico interno container da esposizione esterna Security Group e chiarendo che il multi-host EC2 è opzionale/avanzato, non percorso standard.
