@@ -652,3 +652,8 @@
 - **Descrizione task**: Creazione della guida `docs/deployment_ec2.md` focalizzata su deploy SDCC in AWS Learner Lab, con percorso principale Opzione A (1 EC2 + Docker Compose), prerequisiti/limiti/costi e cleanup operativo obbligatorio.
 - **File modificati**: `docs/deployment_ec2.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho usato come fonte primaria `docs/aws_learner_lab_notes.md` e ho allineato i comandi al runtime reale della repository (`docker compose up -d --build`, `docker compose ps`, `docker compose logs`, script `scripts/cluster_*`, comando test `TestClusterConvergence`), distinguendo esplicitamente traffico interno container da esposizione esterna Security Group e chiarendo che il multi-host EC2 è opzionale/avanzato, non percorso standard.
+
+## 2026-04-03 10:28:52 UTC
+- **Descrizione task**: Consolidamento README per quickstart end-to-end, aggiornamento sezioni Demo/EC2 con riferimenti ai documenti canonici, aggiunta milestone M12 e riallineamento indice/anchor senza duplicazioni.
+- **File modificati**: `README.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho ristrutturato il README per usare solo comandi già reali del repository (docker compose e test integrazione canonico), ridotto la duplicazione con sezioni finali sintetiche e mantenuto coerenza terminologica con `docs/testing.md`, `docs/demo.md` e `docs/deployment_ec2.md` su scenario M09 (3 nodi, average 10/30/50, banda <= 0.05) e vincoli Learner Lab.
