@@ -662,3 +662,8 @@
 - **Descrizione task**: Redazione del report milestone `docs/task/M12.md` con obiettivo, stato iniziale, file coinvolti, sintesi allineamenti README/demo/EC2/testing, verifiche eseguite, limiti residui e follow-up consigliati.
 - **File modificati**: `docs/task/M12.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Dopo ricognizione della documentazione canonica (`README.md`, `docs/demo.md`, `docs/deployment_ec2.md`, `docs/testing.md`) e dei log M12 esistenti, ho consolidato un task report nello stesso stile delle milestone recenti. Ho incluso l'esito del comando richiesto `rg -n "Quickstart|Demo|EC2|Crash" README.md docs/*.md` e reso espliciti i limiti di scope (locale vs EC2, IP pubblico, multi-host) per mantenere coerenza tra deliverable e comportamento operativo reale.
+
+## 2026-04-03 10:35:32 UTC
+- **Descrizione task**: Aggiornamento di `docs/testing.md` con una sezione breve dedicata alle verifiche operative M12, distinguendo verifiche locali Compose da note deploy EC2 e riducendo ridondanza tramite riferimenti incrociati ai documenti canonici.
+- **File modificati**: `docs/testing.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho aggiunto una sezione sintetica che rimanda allo scenario demo in `docs/demo.md`, riusa esclusivamente comandi già canonici presenti nella documentazione, richiama limiti pratici (tempo/costi EC2, differenze networking) e circoscrive il claim crash/restart ai test reali supportati (Compose + variante in-memory).
