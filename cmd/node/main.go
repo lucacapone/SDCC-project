@@ -127,6 +127,7 @@ func main() {
 		logger,
 		collector,
 		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,
+		cfg.Fanout,
 	)
 	// Conserviamo il valore locale originario in uno stato runtime dedicato per evitare
 	// che l'algoritmo average sovrascriva il contributo del nodo con la media corrente.

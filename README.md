@@ -25,11 +25,11 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 Il sistema è pensato per nodi indipendenti che scambiano periodicamente informazioni in modalità peer-to-peer.
 
 ## Architettura ad alto livello
-Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo configurabile. Il parametro `fanout` è già in configurazione ma nel runtime corrente non è ancora applicato alla selezione peer (invio verso tutti i peer non `dead/leave`).
+Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo configurabile. Il parametro `fanout` è applicato nel runtime: dopo il filtro peer (`alive`/`suspect`) il nodo seleziona un sottoinsieme senza duplicati, oppure invia a tutti se `fanout >= peer eleggibili`.
 
 ## Scelte architetturali confermate
 - **Transport tra nodi**: UDP + payload JSON (`[]byte`) su adapter `Transport`.
-- **Strategia gossip (implementata oggi)**: push verso peer attivi (`alive`/`suspect`) con payload completo stato+membership; fanout variabile pianificato ma non ancora attivo nel loop runtime.
+- **Strategia gossip (implementata oggi)**: push verso peer attivi (`alive`/`suspect`) con payload completo stato+membership; fanout applicato a runtime con selezione random senza duplicati.
 - **Aggregazioni richieste**: `sum`, `average`, `min`, `max`.
 - **Membership/discovery**: join endpoint con fallback su seed statici da configurazione.
 
@@ -37,7 +37,7 @@ Queste scelte sono definitive per il progetto corrente e sostituiscono la preced
 
 ## Decisioni confermate (2026-03-05)
 - **Transport**: UDP adapter concreto (`internal/transport/udp_transport.go`) con fallback esplicito a `NoopTransport` solo in caso di errore di init.
-- **Strategia gossip**: round periodici push su `Transport` astratto; selezione fanout/retry non ancora implementata (presente TODO tecnico nel codice engine).
+- **Strategia gossip**: round periodici push su `Transport` astratto; selezione fanout attiva e retry non automatico.
 - **Aggregazioni richieste**: **sum + average + min/max**.
 
 ## Protocollo gossip (M01)

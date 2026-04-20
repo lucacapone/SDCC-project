@@ -163,6 +163,7 @@ func bootstrapCluster(t *testing.T, network *integrationNetwork, aggregation str
 			slog.Default(),
 			nil,
 			roundEvery,
+			2,
 		)
 		engine.State.Value = value
 
@@ -191,6 +192,7 @@ func restartClusterNode(t *testing.T, network *integrationNetwork, address strin
 		slog.Default(),
 		nil,
 		roundEvery,
+		2,
 	)
 	engine.State.Value = initialValue
 	if err := engine.Start(context.Background()); err != nil {

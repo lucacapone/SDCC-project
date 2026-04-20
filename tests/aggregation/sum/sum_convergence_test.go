@@ -58,7 +58,7 @@ func newTestHarness(t *testing.T, ids []shared.NodeID) *testHarness {
 	h := &testHarness{nodes: make(map[shared.NodeID]*testNode, len(ids))}
 	for _, id := range ids {
 		tr := &deterministicTransport{}
-		eng := gossip.NewEngine(string(id), "sum", tr, membership.NewSet(), slog.Default(), nil, 24*time.Hour)
+		eng := gossip.NewEngine(string(id), "sum", tr, membership.NewSet(), slog.Default(), nil, 24*time.Hour, 2)
 		eng.State.EnsureMergeMetadata()
 		eng.State.EnsureSumMetadata()
 
