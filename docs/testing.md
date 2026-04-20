@@ -24,6 +24,29 @@ La strategia di test corrente è organizzata su tre livelli:
 - **test rapido in-memory M10** in `tests/integration`, utile per debugging locale rapido del flusso crash/restart;
 - **test lento/reale M10 Compose** in `tests/integration`, dedicato a crash, funzionamento del cluster residuo e rejoin del nodo riavviato su cluster locale reale.
 
+## Concurrency checks
+
+Per consolidare il comportamento concorrente del runtime gossip/membership sono disponibili test dedicati che stressano accessi simultanei su strutture condivise.
+
+Copertura introdotta:
+
+- `tests/membership/TestConcurrentSetOperations`: goroutine concorrenti che invocano `Upsert`, `Touch`, `LeaveAt` e `Snapshot` sullo stesso `membership.Set`.
+- `tests/gossip/TestRoundOnceConcurrentWithRemoteDelivery`: esecuzione concorrente di `RoundOnce` con delivery di messaggi remoti simulati via transport spy.
+- `tests/gossip/TestConcurrentRoundOnceAndRemoteDeliveryInvariants`: verifica invarianti concorrenti su deduplica canonico/alias e monotonicità `incarnation`.
+
+Comandi consigliati:
+
+```bash
+# verifica base concorrente senza race detector
+go test ./tests/membership ./tests/gossip -run 'TestConcurrentSetOperations|TestRoundOnceConcurrentWithRemoteDelivery|TestConcurrentRoundOnceAndRemoteDeliveryInvariants' -count=1
+
+# verifica opzionale con race detector (dove supportato dalla toolchain/piattaforma)
+go test -race ./tests/membership ./tests/gossip -run 'TestConcurrentSetOperations|TestRoundOnceConcurrentWithRemoteDelivery|TestConcurrentRoundOnceAndRemoteDeliveryInvariants' -count=1
+```
+
+Nota operativa:
+- `-race` è raccomandato per ambienti locali/CI che supportano il race detector Go; in ambienti limitati può essere omesso mantenendo comunque il comando base.
+
 ## Test interni di convergenza in-memory (`tests/gossip`)
 
 Le suite storiche nel package `tests/gossip` restano supportate e vanno considerate **test interni**: usano una rete in-memory, esercitano direttamente l'engine gossip e sono pensate per controlli rapidi della logica interna, non come scenario canonico di milestone.
