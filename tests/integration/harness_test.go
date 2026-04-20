@@ -25,11 +25,15 @@ const clusterBootstrapStrategy = "harness in-memory promosso"
 type integrationNetwork struct {
 	mu         sync.RWMutex
 	transports map[string]*integrationTransport
+	deliveries map[string]uint64
 }
 
 // newIntegrationNetwork crea il registro condiviso degli endpoint di test.
 func newIntegrationNetwork() *integrationNetwork {
-	return &integrationNetwork{transports: make(map[string]*integrationTransport)}
+	return &integrationNetwork{
+		transports: make(map[string]*integrationTransport),
+		deliveries: make(map[string]uint64),
+	}
 }
 
 // newTransport costruisce un transport associato a un endpoint logico del cluster.
@@ -61,13 +65,21 @@ func (n *integrationNetwork) isRegistered(address string) bool {
 
 // deliver inoltra il payload al destinatario simulando un canale locale senza rete reale.
 func (n *integrationNetwork) deliver(ctx context.Context, to string, payload []byte) error {
-	n.mu.RLock()
+	n.mu.Lock()
+	n.deliveries[to]++
 	destination := n.transports[to]
-	n.mu.RUnlock()
+	n.mu.Unlock()
 	if destination == nil {
 		return fmt.Errorf("peer %s non registrato", to)
 	}
 	return destination.handle(ctx, payload)
+}
+
+// deliveriesTo restituisce il numero di invii tentati verso un endpoint specifico.
+func (n *integrationNetwork) deliveriesTo(address string) uint64 {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.deliveries[address]
 }
 
 // integrationTransport implementa il contratto Transport con delivery sincrono e copiatura difensiva del payload.
@@ -143,6 +155,11 @@ type clusterObservation struct {
 
 // bootstrapCluster avvia automaticamente un cluster full-mesh sulla rete in-memory condivisa.
 func bootstrapCluster(t *testing.T, network *integrationNetwork, aggregation string, initialValues []float64, roundEvery time.Duration) ([]*clusterNode, context.CancelFunc) {
+	return bootstrapClusterWithMembershipConfig(t, network, aggregation, initialValues, roundEvery, membership.Config{})
+}
+
+// bootstrapClusterWithMembershipConfig avvia un cluster full-mesh con timeout membership espliciti.
+func bootstrapClusterWithMembershipConfig(t *testing.T, network *integrationNetwork, aggregation string, initialValues []float64, roundEvery time.Duration, membershipCfg membership.Config) ([]*clusterNode, context.CancelFunc) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -159,7 +176,7 @@ func bootstrapCluster(t *testing.T, network *integrationNetwork, aggregation str
 			address,
 			aggregation,
 			transport,
-			fullMeshMembership(address, addresses),
+			fullMeshMembershipWithConfig(address, addresses, membershipCfg),
 			slog.Default(),
 			nil,
 			roundEvery,

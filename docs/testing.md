@@ -465,3 +465,21 @@ Comando operativo dedicato:
 ```bash
 go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
 ```
+
+## Leave volontario (join/leave lifecycle) nel cluster di test
+
+La suite di integrazione include due scenari dedicati al lifecycle esplicito di uscita:
+
+- `TestVoluntaryLeaveMaintainsResidualConvergence`: avvia il cluster in-memory, forza un leave volontario (`AnnounceLeave` + stop del nodo) e verifica che il cluster residuo continui a convergere; inoltre controlla che i nodi residui osservino il peer uscito con stato `leave` e `incarnation` incrementata.
+- `TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow`: usa timeout membership ridotti (`SuspectTimeout`, `DeadTimeout`, `PruneRetention`) per verificare che, dopo propagate+prune del tombstone `leave`, il nodo uscito non riceva più tentativi di invio oltre la finestra temporale attesa dal protocollo.
+
+Limiti temporali attesi (suite in-memory):
+- propagazione stato `leave`: entro pochi round gossip (`leavePropagationWait` nel test);
+- pruning del tombstone `leave`: entro `PruneRetention` + margine (`leavePruneDeadline` nel test);
+- assenza nuovi target sul nodo uscito: stabile nella finestra di osservazione `leaveIdleWindow`.
+
+Comandi operativi dedicati:
+```bash
+go test ./tests/integration -run TestVoluntaryLeaveMaintainsResidualConvergence -count=1
+go test ./tests/integration -run TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow -count=1
+```

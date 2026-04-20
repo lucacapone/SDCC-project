@@ -195,6 +195,19 @@ Il versioning membership non usa contatori globali condivisi: l'ordinamento è l
 
 - `incarnation` è il discriminante primario: update con `incarnation` inferiore non devono sovrascrivere lo stato locale.
 - a parità di `incarnation` prevale la priorità di stato (`alive < suspect < dead < leave`) per garantire ordine deterministico.
+
+## Lifecycle esplicito join/leave del nodo locale
+Flusso operativo del nodo locale nel runtime corrente:
+
+1. **Join/bootstrap**: all'avvio `cmd/node/main.go` registra il peer locale canonico (`node_id` + `advertise_addr`) e avvia il bootstrap (`join_endpoint` oppure fallback seed peer).
+2. **Round gossip ordinari**: il loop periodico propaga stato applicativo + digest membership, escludendo normalmente l'entry `self`.
+3. **Leave volontario orchestrato**: quando arriva `SIGTERM`/`SIGINT`, il nodo invoca `Engine.AnnounceLeave(...)` prima di chiudere il transport; l'API marca il peer locale in stato `leave`, incrementa l'`incarnation` e invia almeno un annuncio best-effort ai peer eleggibili includendo esplicitamente l'entry locale nel digest.
+4. **Teardown transport**: solo dopo l'annuncio leave viene eseguito `Engine.Stop()` con chiusura ticker e transport.
+
+Limiti temporali attesi lato protocollo:
+- la **propagazione del leave** è best-effort sul primo annuncio inviato durante lo shutdown;
+- un peer che riceve il digest `leave` smette di targettare il nodo uscito dal round gossip successivo (il filtro target esclude sempre `dead`/`leave`);
+- la rimozione fisica dall'insieme attivo avviene entro `PruneRetention` dal `last_seen` del tombstone leave (default package: `18s`, oppure valore esplicito di runtime/test).
 - `last_seen` è un attributo ausiliario: non annulla la regola principale su `incarnation`, ma aggiorna la freschezza osservabile quando più recente.
 
 Questo schema evita dipendenze da ordering totale dei messaggi e mantiene convergenza eventuale con gossip best-effort.

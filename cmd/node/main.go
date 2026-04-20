@@ -145,6 +145,21 @@ func main() {
 	collector.SetCurrentEstimate(eng.State.Value)
 	<-ctx.Done()
 
+	// Durante lo shutdown orchestrato proviamo a propagare almeno un annuncio
+	// di leave prima di chiudere il transport gossip.
+	leaveCtx, leaveCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	if err := eng.AnnounceLeave(leaveCtx); err != nil {
+		logger.Warn("annuncio leave non riuscito",
+			"event", "membership_leave_announcement_failed",
+			"node_id", cfg.NodeID,
+			"round", eng.State.Round,
+			"peers", len(mset.Snapshot()),
+			"estimate", eng.State.Value,
+			"error", err,
+		)
+	}
+	leaveCancel()
+
 	// Registra nei log lo snapshot finale per rendere osservabile il risultato del nodo
 	// durante il teardown orchestrato dagli script Docker Compose.
 	collector.SetCurrentEstimate(eng.State.Value)

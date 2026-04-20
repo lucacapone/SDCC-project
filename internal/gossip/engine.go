@@ -202,6 +202,64 @@ func (e *Engine) round(ctx context.Context) {
 	}
 }
 
+// AnnounceLeave pubblica un annuncio best-effort di uscita volontaria del nodo locale.
+//
+// La funzione incrementa l'incarnation del nodo locale in membership, marca lo stato
+// `leave` e invia almeno un messaggio gossip ai peer eleggibili prima dello shutdown
+// del transport. L'invio è intenzionalmente best-effort: eventuali errori sui singoli
+// peer non interrompono il ciclo complessivo di annuncio.
+func (e *Engine) AnnounceLeave(ctx context.Context) error {
+	if e.Membership == nil {
+		return fmt.Errorf("membership nil")
+	}
+
+	sentAt := time.Now().UTC()
+	e.Membership.LeaveAt(string(e.NodeID), sentAt)
+	membershipSnapshot := e.Membership.Snapshot()
+	peers := selectGossipTargets(membershipSnapshot)
+
+	e.mu.Lock()
+	nextVersion := e.State.VersionCounter + 1
+	e.State.Round++
+	e.State.VersionCounter = nextVersion
+	e.State.UpdatedAt = sentAt
+	stateSnapshot := sanitizedStateForMessage(e.State)
+	stateVersion := normalizeVersion(stateSnapshot)
+	messageID := shared.MessageID(fmt.Sprintf("%s-leave-%d-%d", e.NodeID, nextVersion, sentAt.UnixNano()))
+	e.State.LastMessageID = messageID
+	e.State.LastSenderNodeID = e.NodeID
+	msg := shared.GossipMessage{
+		MessageID:    messageID,
+		OriginNode:   e.NodeID,
+		SentAt:       sentAt,
+		Version:      currentMessageVersion,
+		StateVersion: stateVersion,
+		State:        stateSnapshot,
+		// L'annuncio di leave deve includere esplicitamente anche l'entry locale.
+		Membership: serializeMembershipDigest(membershipSnapshot, ""),
+		Metadata:   buildMessageMetadata(string(e.NodeID), membershipSnapshot),
+	}
+	e.mu.Unlock()
+
+	raw, _ := json.Marshal(msg)
+	for _, peer := range peers {
+		_ = e.Transport.Send(ctx, peer.Addr, raw)
+	}
+
+	if e.Logger != nil {
+		e.Logger.Info("annuncio leave inviato",
+			"event", "membership_leave_announcement",
+			"node_id", string(e.NodeID),
+			"round", msg.State.Round,
+			"peers", len(peers),
+			"estimate", msg.State.Value,
+			"message_id", msg.MessageID,
+			"membership_entries", len(msg.Membership),
+		)
+	}
+	return nil
+}
+
 // updateObservabilityAfterRound riallinea il collector ai valori runtime dopo un round locale completato.
 func (e *Engine) updateObservabilityAfterRound(localEstimate float64) {
 	if e.Collector == nil {
