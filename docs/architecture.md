@@ -51,6 +51,27 @@ Regole timeout/retry/lifecycle effettivamente implementate:
 - **Retry**: nessun retry automatico nel transport o nell'engine (`Send` viene invocato una volta per peer nel round corrente).
 - **Lifecycle**: `Start` non può essere chiamato due volte; `Close` può essere chiamato più volte; `Send` su transport chiuso restituisce errore.
 
+## Modello concorrente runtime (lock-protected vs single-writer)
+
+Il modello concorrente implementato nel repository separa esplicitamente i dati condivisi protetti da lock dalle porzioni usate con assunzione single-writer.
+
+Strutture lock-protected:
+
+- `internal/membership.Set`: protetto da `sync.RWMutex` (`mu`), copre tutte le operazioni su `peers` e `prunedWatermarks` (`Upsert`, `Touch`, `LeaveAt`, `Snapshot`, `ApplyTimeoutTransitions`, `Prune`).
+- `internal/gossip.Engine.State`: protetto da `sync.Mutex` (`e.mu`) durante merge remoto e preparazione del round locale (`applyRemote`, avanzamento round/versione, snapshot stato serializzato).
+- Transport spy/fake nei test di contratto: protetti con mutex locali per mantenere deterministicità delle asserzioni su handler e payload.
+
+Assunzioni single-writer residue (esplicite):
+
+- Nel runtime normale il loop periodico (`Engine.loop`) è l’unico writer intenzionale del round locale; i test possono invocare `RoundOnce` direttamente per stress concorrente, ma la coerenza dello stato applicativo resta garantita dal lock `e.mu`.
+- `RoundTicker` viene consumato da una sola goroutine di loop; non esiste un secondo scheduler interno concorrente.
+- L’inizializzazione wiring (`cmd/node/main.go`) resta single-writer in fase bootstrap/startup (config, creazione set membership, costruzione engine/transport).
+
+Conseguenze pratiche:
+
+- Le API membership sono safe per uso concorrente multi-goroutine.
+- Le invarianti di merge gossip (`incarnation` monotona e deduplica alias/canonico) sono progettate per restare stabili anche con delivery remota concorrente ai round.
+
 ## Modello membership locale
 Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da record `Peer` con:
 
