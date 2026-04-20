@@ -3,6 +3,7 @@ package integration_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -70,10 +71,14 @@ func assertNoLocalAliasMembershipTransitions(t *testing.T, repoRoot string) {
 	}
 
 	// Alias locali da bloccare: ogni servizio non deve degradare il proprio endpoint canonico.
-	localAliasByService := map[string]string{
-		"node1": "node1:7001",
-		"node2": "node2:7002",
-		"node3": "node3:7003",
+	localAliasByService := make(map[string]string, len(composeServices))
+	portPattern := regexp.MustCompile(`^node(\d+)$`)
+	for _, service := range composeServices {
+		matches := portPattern.FindStringSubmatch(service)
+		if len(matches) != 2 {
+			continue
+		}
+		localAliasByService[service] = service + ":700" + matches[1]
 	}
 	violations := make([]string, 0)
 	for _, line := range strings.Split(string(raw), "\n") {

@@ -682,3 +682,13 @@
 - **Descrizione task**: Introduzione test concorrenti per membership/gossip, aggiunta sezione “concurrency checks” nel documento testing e aggiornamento architetturale del modello concorrente runtime.
 - **File modificati**: `tests/membership/concurrency_test.go`, `tests/gossip/concurrency_test.go`, `docs/testing.md`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiunto workload multi-goroutine su `membership.Set` e scenari gossip con `RoundOnce` concorrente a delivery remota simulata, includendo verifiche di invarianti (no duplicati alias/canonico e monotonicità incarnation). Ho poi documentato i comandi di verifica, inclusa opzione `-race`, e chiarito in architettura quali strutture sono lock-protected e quali assunzioni restano single-writer.
+
+## 2026-04-20 17:47:15 UTC
+- **Descrizione task**: Estensione supporto test/deploy per scenari di scala: nuovo test integrazione in-memory su 8 nodi, configurazione servizi Compose esterna (env/file), harness Compose non hard-coded e documentazione operativa aggiornata.
+- **File modificati**: , , , , , , , , , , , , .
+- **Reasoning summary**: Ho mantenuto il flusso canonico a 3 nodi come default, introducendo una configurabilità esplicita della lista servizi (precedenza env/file) per riusare gli stessi script e test anche su topologie più ampie; in parallelo ho aggiunto una variante Compose scale a 6 nodi e un test in-memory dedicato a 8 nodi con timeout/polling più larghi e criterio di convergenza multi-nodo documentato.
+
+## 2026-04-20 17:49:02 UTC
+- **Descrizione task**: Nota correttiva sull'entry precedente: ripristino elenco file modificati dopo espansione indesiderata dei backtick nel comando shell.
+- **File modificati**: `tests/integration/cluster_convergence_scale_test.go`, `tests/integration/compose_harness_test.go`, `tests/integration/cluster_convergence_test.go`, `scripts/cluster_common.sh`, `deploy/compose_services.env`, `deploy/docker-compose.scale.yml`, `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`, `README.md`, `docs/deployment.md`, `docs/testing.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Mantengo il log append-only e registro la correzione senza sovrascrivere cronologia precedente.
