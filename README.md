@@ -250,6 +250,21 @@ I file `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` sono coe
 
 Per passare configurazioni personalizzate basta cambiare i file montati. Il Compose canonico non duplica più `NODE_ID`, `NODE_PORT` o `SEED_PEERS` via environment, così da mantenere nei file YAML la sorgente di verità per identità logica ed endpoint pubblicizzati. La build dell'immagine avviene localmente tramite `docker compose up -d --build`, senza più usare `golang:1.22` con `go run` dentro i container.
 
+### Scale run (6 nodi)
+Per eseguire una variante di scala con nodi aggiuntivi usare il file dedicato:
+- `deploy/docker-compose.scale.yml` (servizi `node1`..`node6`);
+- config dedicate: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`.
+
+Comandi:
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale up -d --build
+SDCC_SERVICES=\"node1,node2,node3,node4,node5,node6\" \
+  go test ./tests/integration -run TestClusterConvergence -count=1
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale down
+```
+
+Nota operativa: per gli script `scripts/cluster_*.sh` e per l'harness Compose dei test, la lista servizi non è hard-coded; viene letta da `SDCC_SERVICES` oppure dal file `deploy/compose_services.env`.
+
 Dettagli operativi canonici di build/deploy locale multi-nodo:
 - `docs/deployment.md`
 

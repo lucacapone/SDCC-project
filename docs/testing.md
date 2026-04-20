@@ -92,6 +92,40 @@ Parametri di scenario congelati:
 - **valore atteso informativo comune**: `30.0`, cioè `average(10, 30, 50)`;
 - **criterio di successo**: la banda `max(values) - min(values)` deve risultare `<= 0.05` entro il timeout M09 Compose.
 
+## Test di convergenza scale (in-memory, 8 nodi)
+
+Per verificare il comportamento su topologie più ampie è disponibile il test dedicato:
+
+- file: `tests/integration/cluster_convergence_scale_test.go`;
+- entrypoint: `TestClusterConvergenceScaleInMemory`;
+- bootstrap: `bootstrapCluster(...)` su 8 nodi in-memory.
+
+Parametri operativi del test scale:
+
+- `scaleNodeCount = 8`;
+- `scaleGossipInterval = 12ms`;
+- `scalePollInterval = 25ms`;
+- `scaleTimeout = 2s`;
+- `scaleBand = 0.10`.
+
+Criterio di convergenza multi-node:
+
+- il cluster è considerato convergente quando la banda `max(values) - min(values)` resta `<= 0.10` entro `2s`.
+
+Comando:
+
+```bash
+go test ./tests/integration -run TestClusterConvergenceScaleInMemory -count=1
+```
+
+## Configurazione servizi Compose non hard-coded
+
+Gli script `scripts/cluster_*.sh` e l'harness reale `tests/integration/compose_harness_test.go` non usano più una lista servizi hard-coded: la topologia viene letta in modo configurabile da:
+
+1. `SDCC_SERVICES` (es. `node1,node2,node3,node4,node5,node6`);
+2. `SDCC_SERVICES_FILE` (default `deploy/compose_services.env`, chiave `SDCC_SERVICES=...`);
+3. fallback `node1 node2 node3`.
+
 
 
 ## Test M10 — variante rapida in-memory e suite reale Compose

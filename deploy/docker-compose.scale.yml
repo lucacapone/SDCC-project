@@ -1,0 +1,45 @@
+x-node-base: &node-base
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: sdcc-node:local
+  command: ["--config", "/config/config.yaml"]
+  networks:
+    - sdcc-net
+  restart: unless-stopped
+
+services:
+  node1:
+    <<: *node-base
+    volumes:
+      - ../configs/node1.yaml:/config/config.yaml:ro
+
+  node2:
+    <<: *node-base
+    volumes:
+      - ../configs/node2.yaml:/config/config.yaml:ro
+
+  node3:
+    <<: *node-base
+    volumes:
+      - ../configs/node3.yaml:/config/config.yaml:ro
+
+  node4:
+    <<: *node-base
+    volumes:
+      - ../configs/node4.yaml:/config/config.yaml:ro
+
+  node5:
+    <<: *node-base
+    volumes:
+      - ../configs/node5.yaml:/config/config.yaml:ro
+
+  node6:
+    <<: *node-base
+    volumes:
+      - ../configs/node6.yaml:/config/config.yaml:ro
+
+networks:
+  sdcc-net:
+    name: sdcc-net
+    driver: bridge

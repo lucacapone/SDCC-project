@@ -11,7 +11,67 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 ARTIFACTS_DIR="${REPO_ROOT}/artifacts/cluster"
 PROJECT_NAME="sdcc-bootstrap"
-SERVICES=(node1 node2 node3)
+SERVICES_CONFIG_FILE_DEFAULT="${REPO_ROOT}/deploy/compose_services.env"
+
+# trim_spaces rimuove spazi iniziali/finali da una stringa senza usare tool esterni.
+trim_spaces() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+# parse_services_list converte una lista separata da virgole/spazi in un array di servizi.
+parse_services_list() {
+  local raw="$1"
+  local -n parsed_ref="$2"
+  local normalized token
+
+  normalized="${raw//,/ }"
+  parsed_ref=()
+  for token in ${normalized}; do
+    token="$(trim_spaces "${token}")"
+    [[ -z "${token}" ]] && continue
+    parsed_ref+=("${token}")
+  done
+}
+
+# load_services_from_file carica SDCC_SERVICES da file env esterno (se presente).
+load_services_from_file() {
+  local config_file="${SDCC_SERVICES_FILE:-${SERVICES_CONFIG_FILE_DEFAULT}}"
+  local file_value
+
+  if [[ ! -f "${config_file}" ]]; then
+    return 1
+  fi
+
+  # shellcheck disable=SC1090
+  source "${config_file}"
+  file_value="${SDCC_SERVICES:-}"
+  if [[ -z "$(trim_spaces "${file_value}")" ]]; then
+    return 1
+  fi
+
+  parse_services_list "${file_value}" SERVICES
+  return 0
+}
+
+# load_services imposta SERVICES con precedenza env -> file -> default canonico.
+load_services() {
+  local env_value="${SDCC_SERVICES:-}"
+
+  if [[ -n "$(trim_spaces "${env_value}")" ]]; then
+    parse_services_list "${env_value}" SERVICES
+  elif ! load_services_from_file; then
+    SERVICES=(node1 node2 node3)
+  fi
+
+  if [[ "${#SERVICES[@]}" -eq 0 ]]; then
+    fail "lista servizi vuota: impostare SDCC_SERVICES o il file servizi esterno"
+  fi
+}
+
+load_services
 
 # Crea la directory artefatti usata per log, report e snapshot intermedi.
 ensure_artifacts_dir() {

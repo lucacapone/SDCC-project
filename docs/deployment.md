@@ -87,6 +87,32 @@ Questo comando:
 - collega i servizi alla rete bridge `sdcc-net`;
 - monta per ogni nodo il rispettivo file `configs/node*.yaml` in `/config/config.yaml`.
 
+## Procedura scale run (6 nodi)
+Per scenari di convergenza multi-nodo più ampi è disponibile una variante Compose dedicata:
+
+- file: `deploy/docker-compose.scale.yml`;
+- servizi: `node1`, `node2`, `node3`, `node4`, `node5`, `node6`;
+- configurazioni aggiuntive: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`.
+
+Comandi operativi:
+
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale up -d --build
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale ps
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale down
+```
+
+Per mantenere coerenti script e test Compose reali con la topologia estesa, impostare la lista servizi esterna:
+
+```bash
+SDCC_SERVICES="node1,node2,node3,node4,node5,node6"
+```
+
+La lista viene letta in precedenza da:
+1. variabile ambiente `SDCC_SERVICES`;
+2. file `SDCC_SERVICES_FILE` (default `deploy/compose_services.env`);
+3. fallback canonico `node1 node2 node3`.
+
 ## Verifica dello stato dei servizi
 Per controllare lo stato dei container avviati:
 

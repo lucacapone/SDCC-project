@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,15 +31,84 @@ const (
 	composeMetricsPort        = 8080
 )
 
-var composeServices = []string{"node1", "node2", "node3"}
+const composeServicesFileDefault = "deploy/compose_services.env"
 
-var composeServiceNodeIDs = map[string]string{
-	"node1": "node-1",
-	"node2": "node-2",
-	"node3": "node-3",
-}
+var composeServices = loadComposeServices()
+var composeServiceNodeIDs = buildComposeServiceNodeIDs(composeServices)
 
 var shutdownEstimatePattern = regexp.MustCompile(`node_id=([^ ]+) .*estimate=([-+0-9.eE]+)`)
+var composeServicePattern = regexp.MustCompile(`^node(\d+)$`)
+
+// loadComposeServices risolve i servizi Compose con precedenza env -> file -> default canonico.
+func loadComposeServices() []string {
+	if envValue := strings.TrimSpace(os.Getenv("SDCC_SERVICES")); envValue != "" {
+		services := splitServicesList(envValue)
+		if len(services) > 0 {
+			return services
+		}
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return []string{"node1", "node2", "node3"}
+	}
+	repoRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
+	filePath := os.Getenv("SDCC_SERVICES_FILE")
+	if strings.TrimSpace(filePath) == "" {
+		filePath = filepath.Join(repoRoot, composeServicesFileDefault)
+	}
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		return []string{"node1", "node2", "node3"}
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "SDCC_SERVICES=") {
+			continue
+		}
+		value := strings.TrimPrefix(trimmed, "SDCC_SERVICES=")
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		services := splitServicesList(value)
+		if len(services) > 0 {
+			return services
+		}
+	}
+	return []string{"node1", "node2", "node3"}
+}
+
+// splitServicesList normalizza una lista servizi supportando separatori spazio o virgola.
+func splitServicesList(raw string) []string {
+	normalized := strings.ReplaceAll(raw, ",", " ")
+	fields := strings.Fields(normalized)
+	services := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if _, exists := seen[field]; exists {
+			continue
+		}
+		seen[field] = struct{}{}
+		services = append(services, field)
+	}
+	sort.Strings(services)
+	return services
+}
+
+// buildComposeServiceNodeIDs produce il mapping service -> node_id inferendolo da nomi node<N>.
+func buildComposeServiceNodeIDs(services []string) map[string]string {
+	ids := make(map[string]string, len(services))
+	for _, service := range services {
+		matches := composeServicePattern.FindStringSubmatch(service)
+		if len(matches) == 2 {
+			ids[service] = fmt.Sprintf("node-%s", matches[1])
+			continue
+		}
+		ids[service] = service
+	}
+	return ids
+}
 
 // composeHarness orchestra gli script Compose canonici della repository per i test end-to-end reali.
 type composeHarness struct {
