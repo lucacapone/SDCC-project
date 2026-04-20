@@ -61,7 +61,7 @@ func (s *spyTransportEngine) deliver(ctx context.Context, payload []byte) error 
 func TestEngineUsaSoloInterfacciaTransportStartStop(t *testing.T) {
 	tr := &spyTransportEngine{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	eng := NewEngine("node-1", "sum", tr, membership.NewSet(), logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, membership.NewSet(), logger, nil, time.Hour, 2)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -87,7 +87,7 @@ func TestEngineGestisceMessaggiInIngressoViaHandlerTransport(t *testing.T) {
 	tr := &spyTransportEngine{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mset := membership.NewSet()
-	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -174,7 +174,7 @@ func TestEngineHeartbeatImplicitoSenzaSelfNelDigestMantieneEndpointCanonico(t *t
 		Incarnation: 4,
 		LastSeen:    base,
 	})
-	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -255,7 +255,7 @@ func TestEngineIgnoraFallbackRemoteAddrNonCanonicoQuandoDigestNonHaOrigin(t *tes
 		LastSeen:    base,
 	})
 
-	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := eng.Start(ctx); err != nil {
@@ -330,7 +330,7 @@ func TestRoundIncludeOriginAddrInMetadataPerRendereAffidabileEndpointOrigine(t *
 		LastSeen:    time.Now().UTC(),
 	})
 
-	eng := NewEngine("node-1", "sum", tr, mset, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, time.Hour, 2)
 	eng.RoundOnce(context.Background())
 
 	tr.mu.Lock()
@@ -395,7 +395,7 @@ func TestEngineMergeIntermittenteSenzaMetadataNonDegradaPeerAppenaVisto(t *testi
 		LastSeen:    base,
 	})
 
-	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := eng.Start(ctx); err != nil {

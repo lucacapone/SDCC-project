@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -33,18 +34,27 @@ type Engine struct {
 	NodeID      shared.NodeID
 	State       shared.GossipState
 	SelfAddr    string
+	Fanout      int
 	Membership  *membership.Set
 	Transport   transport.Transport
 	Logger      *slog.Logger
 	Collector   *observability.Collector
 	RoundTicker *time.Ticker
+	RNG         randomIntn
 	mu          sync.Mutex
 }
 
+type randomIntn interface {
+	Intn(n int) int
+}
+
 // NewEngine costruisce un engine con dipendenze minime.
-func NewEngine(nodeID, aggregationType string, t transport.Transport, m *membership.Set, logger *slog.Logger, collector *observability.Collector, roundEvery time.Duration) *Engine {
+func NewEngine(nodeID, aggregationType string, t transport.Transport, m *membership.Set, logger *slog.Logger, collector *observability.Collector, roundEvery time.Duration, fanout int) *Engine {
 	if roundEvery <= 0 {
 		roundEvery = time.Second
+	}
+	if fanout <= 0 {
+		fanout = 1
 	}
 	if m != nil {
 		m.SetSelfNodeID(nodeID)
@@ -57,16 +67,17 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 			UpdatedAt:       time.Now().UTC(),
 		},
 		SelfAddr:    resolveSelfAdvertiseAddr(m, nodeID),
+		Fanout:      fanout,
 		Membership:  m,
 		Transport:   t,
 		Logger:      logger,
 		Collector:   collector,
 		RoundTicker: time.NewTicker(roundEvery),
+		RNG:         rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
 // Start avvia il transport e il loop gossip.
-// TODO(tecnico): introdurre fanout random, retry e gestione backpressure.
 func (e *Engine) Start(ctx context.Context) error {
 	if e.Transport == nil {
 		return fmt.Errorf("transport nil")
@@ -144,6 +155,7 @@ func (e *Engine) round(ctx context.Context) {
 	e.Membership.Prune(sentAt)
 	membershipSnapshot := e.Membership.Snapshot()
 	peers := selectGossipTargets(membershipSnapshot)
+	peers = pickFanoutTargets(peers, e.Fanout, e.RNG)
 
 	e.mu.Lock()
 	nextRound := e.State.Round + 1
@@ -400,6 +412,26 @@ func selectGossipTargets(peers []membership.Peer) []membership.Peer {
 		out = append(out, p)
 	}
 	return out
+}
+
+// pickFanoutTargets applica il fanout ai peer eleggibili senza produrre duplicati.
+func pickFanoutTargets(peers []membership.Peer, fanout int, rng randomIntn) []membership.Peer {
+	if fanout <= 0 {
+		fanout = 1
+	}
+	if fanout >= len(peers) {
+		return peers
+	}
+	if rng == nil {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
+	selected := append([]membership.Peer(nil), peers...)
+	for i := 0; i < fanout; i++ {
+		j := i + rng.Intn(len(selected)-i)
+		selected[i], selected[j] = selected[j], selected[i]
+	}
+	return selected[:fanout]
 }
 
 // serializeMembershipDigest converte la membership locale nel digest condiviso via gossip.

@@ -24,6 +24,7 @@ func TestEngineStartStop(t *testing.T) {
 		slog.Default(),
 		nil,
 		10*time.Millisecond,
+		2,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -39,23 +40,46 @@ func TestEngineStartStop(t *testing.T) {
 
 type captureTransport struct {
 	sent [][]byte
+	addr []string
 }
 
 func (c *captureTransport) Start(context.Context, transport.MessageHandler) error { return nil }
 
-func (c *captureTransport) Send(_ context.Context, _ string, payload []byte) error {
+func (c *captureTransport) Send(_ context.Context, target string, payload []byte) error {
+	return c.sendTo(target, payload)
+}
+
+func (c *captureTransport) sendTo(target string, payload []byte) error {
+	c.addr = append(c.addr, target)
 	c.sent = append(c.sent, append([]byte(nil), payload...))
 	return nil
 }
 
 func (c *captureTransport) Close() error { return nil }
 
+type deterministicRNG struct {
+	values []int
+	index  int
+}
+
+func (d *deterministicRNG) Intn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	if len(d.values) == 0 {
+		return 0
+	}
+	value := d.values[d.index%len(d.values)] % n
+	d.index++
+	return value
+}
+
 func TestRoundMessageAndStateVersionAlignment(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
 	m.Join("node-2", time.Now().UTC())
 
-	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Second)
+	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Second, 2)
 	eng.State.VersionCounter = 2
 	eng.State.Round = 2
 
@@ -87,6 +111,62 @@ func TestRoundMessageAndStateVersionAlignment(t *testing.T) {
 	}
 }
 
+func TestRoundFanoutOneInviaUnSoloPeer(t *testing.T) {
+	tr := &captureTransport{}
+	now := time.Now().UTC()
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: now})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: now})
+
+	eng := NewEngine("node-1", "sum", tr, m, slog.Default(), nil, time.Second, 1)
+	eng.RNG = &deterministicRNG{values: []int{0}}
+
+	eng.RoundOnce(context.Background())
+
+	if len(tr.sent) != 1 {
+		t.Fatalf("fanout=1 deve inviare un solo messaggio: got=%d", len(tr.sent))
+	}
+	if len(tr.addr) != 1 {
+		t.Fatalf("fanout=1 deve registrare un solo destinatario: got=%d", len(tr.addr))
+	}
+}
+
+func TestRoundFanoutMaggioreDeiPeerInviaATutti(t *testing.T) {
+	tr := &captureTransport{}
+	now := time.Now().UTC()
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: now})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Suspect, LastSeen: now})
+
+	eng := NewEngine("node-1", "sum", tr, m, slog.Default(), nil, time.Second, 10)
+
+	eng.RoundOnce(context.Background())
+
+	if len(tr.sent) != 2 {
+		t.Fatalf("fanout>peer deve inviare a tutti i peer eleggibili: got=%d want=2", len(tr.sent))
+	}
+}
+
+func TestNewEngineFanoutNonPositivoNormalizzaAUno(t *testing.T) {
+	tr := &captureTransport{}
+	now := time.Now().UTC()
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: now})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: now})
+
+	eng := NewEngine("node-1", "sum", tr, m, slog.Default(), nil, time.Second, 0)
+	eng.RNG = &deterministicRNG{values: []int{0}}
+
+	if eng.Fanout != 1 {
+		t.Fatalf("fanout non positivo deve essere normalizzato a 1: got=%d", eng.Fanout)
+	}
+
+	eng.RoundOnce(context.Background())
+	if len(tr.sent) != 1 {
+		t.Fatalf("fanout normalizzato deve inviare un solo messaggio: got=%d", len(tr.sent))
+	}
+}
+
 func TestRoundLoggingEsponeCampiStabili(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
@@ -96,7 +176,7 @@ func TestRoundLoggingEsponeCampiStabili(t *testing.T) {
 
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	eng := NewEngine("node-1", "average", tr, m, logger, nil, time.Second)
+	eng := NewEngine("node-1", "average", tr, m, logger, nil, time.Second, 2)
 	eng.State.Value = 42.5
 
 	eng.RoundOnce(context.Background())
@@ -128,7 +208,7 @@ func TestRoundNonLoggaTimeoutPerSelfNode(t *testing.T) {
 
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	eng := NewEngine("node-1", "sum", tr, m, logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, m, logger, nil, time.Hour, 2)
 
 	eng.RoundOnce(context.Background())
 
@@ -177,7 +257,7 @@ func TestRoundNonLoggaMembershipTransitionPerAliasDelNodoLocale(t *testing.T) {
 
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	eng := NewEngine("node-3", "sum", tr, m, logger, nil, time.Hour)
+	eng := NewEngine("node-3", "sum", tr, m, logger, nil, time.Hour, 2)
 
 	eng.RoundOnce(context.Background())
 
@@ -198,7 +278,7 @@ func TestRoundNonLoggaMembershipTransitionPerAliasDelNodoLocale(t *testing.T) {
 func TestAverageRoundPreservaContributoLocaleOriginario(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
-	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Second)
+	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Second, 2)
 	eng.State.LocalValue = 10
 	eng.State.Value = 30
 	eng.State.EnsureAverageMetadata()
@@ -226,7 +306,7 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	mset := membership.NewSet()
-	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -302,7 +382,7 @@ func TestRemoteMergeLoggingMantieneSeparatiPeersLocaliEMembershipEntries(t *test
 	mset := membership.NewSet()
 	now := time.Unix(1710000000, 0).UTC()
 	mset.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: now})
-	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -359,7 +439,7 @@ func TestRoundAggiornaCollectorConValoriRuntime(t *testing.T) {
 	now := time.Now().UTC()
 	mset.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: now})
 	collector := observability.NewCollector(now)
-	eng := NewEngine("node-1", "sum", tr, mset, slog.Default(), collector, time.Second)
+	eng := NewEngine("node-1", "sum", tr, mset, slog.Default(), collector, time.Second, 2)
 	eng.State.Value = 12.5
 
 	eng.RoundOnce(context.Background())
@@ -380,7 +460,7 @@ func TestRemoteMergeAggiornaCollectorConEsitoEStatoRuntime(t *testing.T) {
 	tr := &spyTransportEngine{}
 	mset := membership.NewSet()
 	collector := observability.NewCollector(time.Now().UTC())
-	eng := NewEngine("node-1", "sum", tr, mset, slog.Default(), collector, time.Hour)
+	eng := NewEngine("node-1", "sum", tr, mset, slog.Default(), collector, time.Hour, 2)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

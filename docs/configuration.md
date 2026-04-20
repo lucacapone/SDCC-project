@@ -177,6 +177,7 @@ La validazione finale applica le seguenti regole.
 - `node_port` deve essere compreso tra `1` e `65535`.
 - `gossip_interval_ms` deve essere `> 0`.
 - `fanout` deve essere `> 0`.
+- per robustezza difensiva, il runtime normalizza comunque eventuali valori `<= 0` a `1` nel costruttore dell'engine gossip.
 - `membership_timeout_ms` deve essere `> 0`.
 - il valore viene poi tradotto in `SuspectTimeout` e `DeadTimeout` tramite la regola runtime documentata sopra.
 - `aggregation` deve essere non vuota dopo trim.
