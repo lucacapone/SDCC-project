@@ -118,6 +118,28 @@ Comando:
 go test ./tests/integration -run TestClusterConvergenceScaleInMemory -count=1
 ```
 
+## Test di convergenza scale Compose reale (6 nodi)
+
+Per validare la convergenza su topologia reale estesa è disponibile la suite dedicata:
+
+- file: `tests/integration/cluster_convergence_scale_compose_test.go`;
+- entrypoint: `TestClusterConvergenceScaleCompose`;
+- harness: `tests/integration/compose_harness_test.go` con override `compose_file=deploy/docker-compose.scale.yml`, `project_name=sdcc-scale`, servizi `node1..node6`.
+
+Criteri misurabili applicati dalla suite:
+
+- `timeout_prontezza`: `120s` (attesa bootstrap/transport su tutti i 6 servizi);
+- `timeout_convergenza_live`: `45s` con `poll=2s`;
+- `banda_convergenza`: `max(values)-min(values) <= 0.10`;
+- `osservabilità round/merge`: ogni nodo deve essere `ready`, con `sdcc_node_rounds_total >= 2` e `sdcc_node_remote_merges_total > 0` nello snapshot live;
+- artefatti finali obbligatori da teardown: `artifacts/cluster/latest-final-values.txt` e log cluster raccolti da `cluster_down.sh`.
+
+Comando canonico dedicato:
+
+```bash
+go test ./tests/integration -run TestClusterConvergenceScaleCompose -count=1
+```
+
 ## Configurazione servizi Compose non hard-coded
 
 Gli script `scripts/cluster_*.sh` e l'harness reale `tests/integration/compose_harness_test.go` non usano più una lista servizi hard-coded: la topologia viene letta in modo configurabile da:

@@ -46,7 +46,7 @@ func TestClusterConvergence(t *testing.T) {
 	if err := ensureComposeObservation(observation); err != nil {
 		t.Fatal(err)
 	}
-	assertNoLocalAliasMembershipTransitions(t, harness.repoRoot)
+	assertNoLocalAliasMembershipTransitions(t, harness)
 	t.Logf("report finale convergenza Compose:\n%s", formatClusterObservation(observation))
 
 	if !converged {
@@ -61,19 +61,19 @@ func TestClusterConvergence(t *testing.T) {
 
 // assertNoLocalAliasMembershipTransitions fallisce se i log Compose mostrano
 // transizioni membership dove peer_id coincide con l'alias locale host:port del nodo.
-func assertNoLocalAliasMembershipTransitions(t *testing.T, repoRoot string) {
+func assertNoLocalAliasMembershipTransitions(t *testing.T, harness *composeHarness) {
 	t.Helper()
 
-	logPath := filepath.Join(repoRoot, "artifacts", "cluster", "latest-cluster-logs.log")
+	logPath := filepath.Join(harness.repoRoot, "artifacts", "cluster", "latest-cluster-logs.log")
 	raw, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("lettura log cluster Compose fallita (%s): %v", logPath, err)
 	}
 
 	// Alias locali da bloccare: ogni servizio non deve degradare il proprio endpoint canonico.
-	localAliasByService := make(map[string]string, len(composeServices))
+	localAliasByService := make(map[string]string, len(harness.composeServices))
 	portPattern := regexp.MustCompile(`^node(\d+)$`)
-	for _, service := range composeServices {
+	for _, service := range harness.composeServices {
 		matches := portPattern.FindStringSubmatch(service)
 		if len(matches) != 2 {
 			continue

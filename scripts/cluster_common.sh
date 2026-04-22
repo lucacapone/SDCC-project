@@ -8,9 +8,14 @@ set -euo pipefail
 # Calcola la root della repository in modo robusto partendo dalla directory degli script.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
+COMPOSE_FILE_INPUT="${SDCC_COMPOSE_FILE:-docker-compose.yml}"
+if [[ "${COMPOSE_FILE_INPUT}" = /* ]]; then
+  COMPOSE_FILE="${COMPOSE_FILE_INPUT}"
+else
+  COMPOSE_FILE="${REPO_ROOT}/${COMPOSE_FILE_INPUT}"
+fi
 ARTIFACTS_DIR="${REPO_ROOT}/artifacts/cluster"
-PROJECT_NAME="sdcc-bootstrap"
+PROJECT_NAME="${SDCC_PROJECT_NAME:-sdcc-bootstrap}"
 SERVICES_CONFIG_FILE_DEFAULT="${REPO_ROOT}/deploy/compose_services.env"
 
 # trim_spaces rimuove spazi iniziali/finali da una stringa senza usare tool esterni.
