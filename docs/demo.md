@@ -106,6 +106,37 @@ scripts/fault_injection/collect_debug_snapshot.sh node1
 
 Questa sezione non introduce workflow nuovi: riusa esclusivamente test/script già presenti.
 
+
+## 6) Scenario resilienza esteso (crash sequenziale + partizione + rejoin)
+
+Oltre al test M10 base, la demo supporta uno scenario combinato più severo:
+
+- crash di `node1`, poi crash di `node2`;
+- partizione temporanea di rete su `node3`;
+- recovery con restart e rejoin di `node1`/`node2`.
+
+Comandi di riferimento:
+
+```bash
+go test ./tests/integration -run TestSequentialCrashPartitionAndRejoin -count=1
+scripts/fault_injection/scenario_sequential_crash_partition_rejoin.sh
+```
+
+Timeout configurabili per ambienti lenti/CI:
+
+```bash
+SDCC_M10_EXT_SCENARIO_TIMEOUT=150s \
+SDCC_M10_EXT_RESIDUAL_TIMEOUT=30s \
+SDCC_M10_EXT_REJOIN_TIMEOUT=45s \
+go test ./tests/integration -run TestSequentialCrashPartitionAndRejoin -count=1
+```
+
+Criteri di successo osservabili:
+
+- cluster residuo operativo durante fault (nodo superstite `ready` e con round in avanzamento);
+- riconvergenza cluster entro banda `0.08`;
+- membership corretta dopo reintegro (`sdcc_node_known_peers >= 2` per nodo).
+
 ## 7) Troubleshooting minimo
 
 ### A) Container in stato `exited`

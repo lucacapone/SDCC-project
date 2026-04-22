@@ -443,6 +443,46 @@ Note operative importanti:
 - per questo motivo il file `artifacts/cluster/latest-final-values.txt` contiene un **record finale univoco per ogni `node_id`**, ottenuto mantenendo deterministicamente solo l'occorrenza con timestamp `time` più recente per nodo (in caso di pari timestamp viene mantenuta l'ultima riga incontrata nei log);
 - se il cluster non è ancora stato fermato, `cluster_collect_results.sh` salva comunque i log correnti e segnala esplicitamente l'assenza del riepilogo finale.
 
+
+## Scenario esteso M10: crash sequenziale + partizione temporanea + rejoin
+
+Il repository include ora anche lo scenario composito:
+
+- **test canonico esteso**: `tests/integration/TestSequentialCrashPartitionAndRejoin`;
+- **wrapper fault injection**: `scripts/fault_injection/scenario_sequential_crash_partition_rejoin.sh`;
+- **azione partizione rete**: `scripts/fault_injection/network_partition.sh`.
+
+### Criteri di successo verificati
+
+La suite estesa controlla in sequenza:
+
+1. **cluster residuo operativo** dopo crash di `node1` e `node2` in sequenza, con osservabilità su `node3` (`ready=true` e `sdcc_node_rounds_total` in aumento);
+2. **convergenza entro banda** dopo recovery/rejoin (`max(values)-min(values) <= 0.08`);
+3. **membership corretta dopo reintegro**: per ogni nodo `sdcc_node_known_peers >= 2` nel cluster a 3 nodi.
+
+### Timeout configurabili (nuovo)
+
+Per adattare la suite all'ambiente locale/CI, i timeout principali sono configurabili via env:
+
+- `SDCC_M10_EXT_SCENARIO_TIMEOUT` (default `120s`): timeout complessivo per lo scenario combinato scriptato;
+- `SDCC_M10_EXT_RESIDUAL_TIMEOUT` (default `20s`): finestra per osservare operatività del cluster residuo;
+- `SDCC_M10_EXT_REJOIN_TIMEOUT` (default `35s`): finestra di riconvergenza post-rejoin.
+
+Formato supportato: durata Go (`150s`, `1m`) oppure intero in secondi (`25`).
+
+Comando canonico:
+
+```bash
+go test ./tests/integration -run TestSequentialCrashPartitionAndRejoin -count=1
+```
+
+### Limiti ambientali documentati
+
+- lo scenario richiede Docker Engine + plugin `docker compose` operativi;
+- la partizione rete usa `docker network disconnect/connect` sulla rete Compose `${SDCC_PROJECT_NAME:-sdcc-bootstrap}_default`;
+- in ambienti CI con daemon Docker non privilegiato o policy restrittive sulla manipolazione reti, il test può fallire anche con codice corretto;
+- timeout troppo aggressivi in host lenti (build/pull immagini, I/O disco elevato) possono produrre falsi negativi.
+
 ## Comandi operativi canonici
 
 ### Verifica mirata M09

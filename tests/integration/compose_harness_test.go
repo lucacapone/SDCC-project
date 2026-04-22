@@ -393,6 +393,7 @@ type composeNodeMetrics struct {
 	Estimate     float64
 	Rounds       uint64
 	RemoteMerges uint64
+	KnownPeers   float64
 	Ready        bool
 }
 
@@ -451,10 +452,11 @@ func (h *composeHarness) readServiceMetrics(service string) (composeNodeMetrics,
 func parseComposeMetrics(raw []byte) (composeNodeMetrics, error) {
 	metrics := composeNodeMetrics{}
 	var (
-		foundEstimate bool
-		foundRounds   bool
-		foundMerges   bool
-		foundReady    bool
+		foundEstimate   bool
+		foundRounds     bool
+		foundMerges     bool
+		foundKnownPeers bool
+		foundReady      bool
 	)
 
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
@@ -491,6 +493,13 @@ func parseComposeMetrics(raw []byte) (composeNodeMetrics, error) {
 			}
 			metrics.RemoteMerges = value
 			foundMerges = true
+		case "sdcc_node_known_peers":
+			value, err := strconv.ParseFloat(fields[1], 64)
+			if err != nil {
+				return composeNodeMetrics{}, fmt.Errorf("known_peers gauge non parseabile: %w", err)
+			}
+			metrics.KnownPeers = value
+			foundKnownPeers = true
 		case "sdcc_node_ready":
 			value, err := strconv.ParseFloat(fields[1], 64)
 			if err != nil {
@@ -504,8 +513,8 @@ func parseComposeMetrics(raw []byte) (composeNodeMetrics, error) {
 	if err := scanner.Err(); err != nil {
 		return composeNodeMetrics{}, fmt.Errorf("scansione metrics: %w", err)
 	}
-	if !foundEstimate || !foundRounds || !foundMerges || !foundReady {
-		return composeNodeMetrics{}, fmt.Errorf("metriche incomplete: estimate=%t rounds=%t remote_merges=%t ready=%t", foundEstimate, foundRounds, foundMerges, foundReady)
+	if !foundEstimate || !foundRounds || !foundMerges || !foundKnownPeers || !foundReady {
+		return composeNodeMetrics{}, fmt.Errorf("metriche incomplete: estimate=%t rounds=%t remote_merges=%t known_peers=%t ready=%t", foundEstimate, foundRounds, foundMerges, foundKnownPeers, foundReady)
 	}
 	return metrics, nil
 }
@@ -558,6 +567,12 @@ func (h *composeHarness) runFaultScript(timeout time.Duration, action string, se
 		env[key] = value
 	}
 	h.runScriptWithEnv(timeout, env, filepath.Join("fault_injection", "node_stop_start.sh"))
+}
+
+// runCombinedFaultScenario invoca lo scenario composito crash->partition->rejoin per test M10 estesi.
+func (h *composeHarness) runCombinedFaultScenario(timeout time.Duration, extraEnv map[string]string) {
+	h.t.Helper()
+	h.runScriptWithEnv(timeout, extraEnv, filepath.Join("fault_injection", "scenario_sequential_crash_partition_rejoin.sh"))
 }
 
 // collectDebugSnapshot salva uno snapshot diagnostico e restituisce l'output dello script per i log del test.
