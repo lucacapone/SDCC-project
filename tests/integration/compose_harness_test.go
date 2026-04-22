@@ -352,6 +352,8 @@ func (h *composeHarness) execScript(timeout time.Duration, extraEnv map[string]s
 // execScriptCapture esegue uno script e restituisce anche l'output aggregato utile per artefatti e debug.
 func (h *composeHarness) execScriptCapture(timeout time.Duration, extraEnv map[string]string, scriptName string) (string, error) {
 	scriptPath := filepath.Join(h.scriptsDir, scriptName)
+	// Nota di compatibilità: gli script invocati da questo harness devono rimanere
+	// compatibili con Bash 3.2 (shell predefinita su macOS e setup GoLand tipici).
 	cmd := exec.Command("bash", scriptPath)
 	cmd.Dir = h.repoRoot
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")

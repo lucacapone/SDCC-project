@@ -26,18 +26,19 @@ trim_spaces() {
   printf '%s' "${value}"
 }
 
-# parse_services_list converte una lista separata da virgole/spazi in un array di servizi.
+# parse_services_list converte una lista separata da virgole/spazi nell'array globale SERVICES.
+# L'implementazione evita volontariamente `local -n` (nameref) perché non disponibile
+# in Bash 3.2 (shell di default su macOS /bin/bash).
 parse_services_list() {
   local raw="$1"
-  local -n parsed_ref="$2"
   local normalized token
 
   normalized="${raw//,/ }"
-  parsed_ref=()
+  SERVICES=()
   for token in ${normalized}; do
     token="$(trim_spaces "${token}")"
     [[ -z "${token}" ]] && continue
-    parsed_ref+=("${token}")
+    SERVICES+=("${token}")
   done
 }
 
@@ -57,16 +58,17 @@ load_services_from_file() {
     return 1
   fi
 
-  parse_services_list "${file_value}" SERVICES
+  parse_services_list "${file_value}"
   return 0
 }
 
 # load_services imposta SERVICES con precedenza env -> file -> default canonico.
 load_services() {
   local env_value="${SDCC_SERVICES:-}"
+  SERVICES=()
 
   if [[ -n "$(trim_spaces "${env_value}")" ]]; then
-    parse_services_list "${env_value}" SERVICES
+    parse_services_list "${env_value}"
   elif ! load_services_from_file; then
     SERVICES=(node1 node2 node3)
   fi
