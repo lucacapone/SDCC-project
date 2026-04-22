@@ -113,6 +113,12 @@ La lista viene letta in precedenza da:
 2. file `SDCC_SERVICES_FILE` (default `deploy/compose_services.env`);
 3. fallback canonico `node1 node2 node3`.
 
+Comando canonico dedicato per la validazione automatica della convergenza scale Compose (6 nodi):
+
+```bash
+go test ./tests/integration -run TestClusterConvergenceScaleCompose -count=1
+```
+
 ## Verifica dello stato dei servizi
 Per controllare lo stato dei container avviati:
 

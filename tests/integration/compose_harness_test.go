@@ -20,8 +20,8 @@ import (
 
 const (
 	composeBootstrapStrategy  = "cluster locale Docker Compose"
-	composeProjectName        = "sdcc-bootstrap"
-	composeFileName           = "docker-compose.yml"
+	composeProjectNameDefault = "sdcc-bootstrap"
+	composeFileNameDefault    = "docker-compose.yml"
 	composeNetworkName        = "sdcc-net"
 	composeReadyTimeout       = 90 * time.Second
 	composeReadyPollInterval  = 2 * time.Second
@@ -35,6 +35,12 @@ const composeServicesFileDefault = "deploy/compose_services.env"
 
 var composeServices = loadComposeServices()
 var composeServiceNodeIDs = buildComposeServiceNodeIDs(composeServices)
+
+type composeHarnessOptions struct {
+	composeFile string
+	projectName string
+	services    []string
+}
 
 var shutdownEstimatePattern = regexp.MustCompile(`node_id=([^ ]+) .*estimate=([-+0-9.eE]+)`)
 var composeServicePattern = regexp.MustCompile(`^node(\d+)$`)
@@ -116,18 +122,57 @@ type composeHarness struct {
 	repoRoot   string
 	artifacts  string
 	scriptsDir string
+
+	composeFileRel     string
+	composeProjectName string
+	composeServices    []string
+	serviceNodeIDs     map[string]string
 }
 
 // newComposeHarness costruisce l'harness reale basato sul deployment Compose di root.
 func newComposeHarness(t *testing.T) *composeHarness {
 	t.Helper()
+	return newComposeHarnessWithOptions(t, composeHarnessOptions{})
+}
+
+// newComposeHarnessWithOptions costruisce un harness Compose con override di file/progetto/servizi.
+func newComposeHarnessWithOptions(t *testing.T, options composeHarnessOptions) *composeHarness {
+	t.Helper()
 
 	repoRoot := integrationRepoRoot(t)
+	composeFileRel := strings.TrimSpace(options.composeFile)
+	if composeFileRel == "" {
+		composeFileRel = composeFileNameDefault
+	}
+	composeProjectName := strings.TrimSpace(options.projectName)
+	if composeProjectName == "" {
+		composeProjectName = composeProjectNameDefault
+	}
+	services := options.services
+	if len(services) == 0 {
+		services = append([]string(nil), composeServices...)
+	}
+	services = append([]string(nil), services...)
+	sort.Strings(services)
 	return &composeHarness{
 		t:          t,
 		repoRoot:   repoRoot,
 		artifacts:  filepath.Join(repoRoot, "artifacts", "cluster"),
 		scriptsDir: filepath.Join(repoRoot, "scripts"),
+
+		composeFileRel:     composeFileRel,
+		composeProjectName: composeProjectName,
+		composeServices:    services,
+		serviceNodeIDs:     buildComposeServiceNodeIDs(services),
+	}
+}
+
+// scriptEnv restituisce le variabili condivise per rendere gli script coerenti con opzioni compose custom.
+func (h *composeHarness) scriptEnv() map[string]string {
+	return map[string]string{
+		"SDCC_COMPOSE_FILE": h.composeFileRel,
+		"SDCC_PROJECT_NAME": h.composeProjectName,
+		"SDCC_SERVICES":     strings.Join(h.composeServices, ","),
 	}
 }
 
@@ -206,7 +251,7 @@ func (h *composeHarness) waitForConvergence(expectedValue float64, threshold flo
 
 // allNodesHealthy richiede che i tre nodi espongano /health con HTTP 200 sul bridge Docker locale.
 func (h *composeHarness) allNodesHealthy() bool {
-	for _, service := range composeServices {
+	for _, service := range h.composeServices {
 		baseURL, err := h.serviceBaseURL(service)
 		if err != nil {
 			return false
@@ -230,7 +275,7 @@ func (h *composeHarness) readFinalObservation(expectedValue float64) (clusterObs
 	if err != nil {
 		return clusterObservation{}, fmt.Errorf("read %s: %w", valuesPath, err)
 	}
-	values, err := parseShutdownEstimates(raw)
+	values, err := h.parseShutdownEstimates(raw)
 	if err != nil {
 		return clusterObservation{}, err
 	}
@@ -263,7 +308,7 @@ func (h *composeHarness) serviceBaseURL(service string) (string, error) {
 
 // composeContainerID risolve il container ID del servizio reale orchestrato dal file Compose di root.
 func (h *composeHarness) composeContainerID(service string) (string, error) {
-	cmd := exec.Command("docker", "compose", "-p", composeProjectName, "-f", composeFileName, "ps", "-q", service)
+	cmd := exec.Command("docker", "compose", "-p", h.composeProjectName, "-f", h.composeFileRel, "ps", "-q", service)
 	cmd.Dir = h.repoRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -310,6 +355,9 @@ func (h *composeHarness) execScriptCapture(timeout time.Duration, extraEnv map[s
 	cmd := exec.Command("bash", scriptPath)
 	cmd.Dir = h.repoRoot
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
+	for key, value := range h.scriptEnv() {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 	for key, value := range extraEnv {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
@@ -342,9 +390,10 @@ func (h *composeHarness) execScriptCapture(timeout time.Duration, extraEnv map[s
 
 // composeNodeMetrics raccoglie il sottoinsieme di metriche runtime usato dai test Compose reali.
 type composeNodeMetrics struct {
-	Estimate float64
-	Rounds   uint64
-	Ready    bool
+	Estimate     float64
+	Rounds       uint64
+	RemoteMerges uint64
+	Ready        bool
 }
 
 // readLiveObservation legge i valori correnti esposti via /metrics per un sottoinsieme di servizi Compose.
@@ -352,7 +401,7 @@ func (h *composeHarness) readLiveObservation(expectedValue float64, services []s
 	values := make(map[string]float64, len(services))
 	metricsByNode := make(map[string]composeNodeMetrics, len(services))
 	for _, service := range services {
-		nodeID, ok := composeServiceNodeIDs[service]
+		nodeID, ok := h.serviceNodeIDs[service]
 		if !ok {
 			return clusterObservation{}, nil, fmt.Errorf("mapping node_id assente per il servizio %s", service)
 		}
@@ -404,6 +453,7 @@ func parseComposeMetrics(raw []byte) (composeNodeMetrics, error) {
 	var (
 		foundEstimate bool
 		foundRounds   bool
+		foundMerges   bool
 		foundReady    bool
 	)
 
@@ -434,6 +484,13 @@ func parseComposeMetrics(raw []byte) (composeNodeMetrics, error) {
 			}
 			metrics.Rounds = value
 			foundRounds = true
+		case "sdcc_node_remote_merges_total":
+			value, err := strconv.ParseUint(fields[1], 10, 64)
+			if err != nil {
+				return composeNodeMetrics{}, fmt.Errorf("remote_merges_total non parseabile: %w", err)
+			}
+			metrics.RemoteMerges = value
+			foundMerges = true
 		case "sdcc_node_ready":
 			value, err := strconv.ParseFloat(fields[1], 64)
 			if err != nil {
@@ -447,8 +504,8 @@ func parseComposeMetrics(raw []byte) (composeNodeMetrics, error) {
 	if err := scanner.Err(); err != nil {
 		return composeNodeMetrics{}, fmt.Errorf("scansione metrics: %w", err)
 	}
-	if !foundEstimate || !foundRounds || !foundReady {
-		return composeNodeMetrics{}, fmt.Errorf("metriche incomplete: estimate=%t rounds=%t ready=%t", foundEstimate, foundRounds, foundReady)
+	if !foundEstimate || !foundRounds || !foundMerges || !foundReady {
+		return composeNodeMetrics{}, fmt.Errorf("metriche incomplete: estimate=%t rounds=%t remote_merges=%t ready=%t", foundEstimate, foundRounds, foundMerges, foundReady)
 	}
 	return metrics, nil
 }
@@ -522,7 +579,7 @@ func (h *composeHarness) waitForLiveObservationConvergence(expectedValue float64
 	var lastMetrics map[string]composeNodeMetrics
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		observation, metricsByNode, err := h.readLiveObservation(expectedValue, composeServices)
+		observation, metricsByNode, err := h.readLiveObservation(expectedValue, h.composeServices)
 		if err == nil {
 			lastObservation = observation
 			lastMetrics = metricsByNode
@@ -547,7 +604,7 @@ func (h *composeHarness) waitForResidualActivity(services []string, baseline map
 			lastMetrics = metricsByNode
 			active := true
 			for _, service := range services {
-				nodeID := composeServiceNodeIDs[service]
+				nodeID := h.serviceNodeIDs[service]
 				if !metricsByNode[nodeID].Ready || metricsByNode[nodeID].Rounds <= baseline[nodeID].Rounds {
 					active = false
 					break
@@ -563,7 +620,7 @@ func (h *composeHarness) waitForResidualActivity(services []string, baseline map
 }
 
 // parseShutdownEstimates ricostruisce il mapping node_id -> estimate a partire dai log finali strutturati.
-func parseShutdownEstimates(raw []byte) (map[string]float64, error) {
+func (h *composeHarness) parseShutdownEstimates(raw []byte) (map[string]float64, error) {
 	values := make(map[string]float64)
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	for scanner.Scan() {
@@ -581,8 +638,8 @@ func parseShutdownEstimates(raw []byte) (map[string]float64, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scansione artifact final-values: %w", err)
 	}
-	if len(values) != len(composeServices) {
-		return nil, fmt.Errorf("attesi %d valori finali, ottenuti %d", len(composeServices), len(values))
+	if len(values) != len(h.composeServices) {
+		return nil, fmt.Errorf("attesi %d valori finali, ottenuti %d", len(h.composeServices), len(values))
 	}
 	return values, nil
 }

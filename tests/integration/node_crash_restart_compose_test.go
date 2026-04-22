@@ -75,7 +75,7 @@ func TestNodeCrashAndRestart(t *testing.T) {
 		t.Fatalf("cluster residuo non osservabile dopo stop di %s entro %s: %s", m10ComposeCrashService, m10ComposeResidualTimeout, formatClusterObservation(residualObservation))
 	}
 	for _, service := range residualServices {
-		nodeID := composeServiceNodeIDs[service]
+		nodeID := harness.serviceNodeIDs[service]
 		before := baselineMetrics[nodeID]
 		after := residualMetrics[nodeID]
 		t.Logf("attività residua osservata: service=%s node_id=%s rounds_pre=%d rounds_post=%d estimate=%0.6f ready=%t",
@@ -109,7 +109,7 @@ func TestNodeCrashAndRestart(t *testing.T) {
 		t.Fatalf("cluster Compose non riconvergente dopo restart di %s entro %s: %s", m10ComposeCrashService, m10ComposeRejoinTimeout, formatClusterObservation(finalObservation))
 	}
 
-	restartedMetrics := finalMetrics[composeServiceNodeIDs[m10ComposeCrashService]]
+	restartedMetrics := finalMetrics[harness.serviceNodeIDs[m10ComposeCrashService]]
 	if !restartedMetrics.Ready {
 		t.Fatalf("il nodo riavviato %s non risulta ready nello snapshot finale", m10ComposeCrashService)
 	}
@@ -123,8 +123,8 @@ func TestNodeCrashAndRestart(t *testing.T) {
 		t.Fatalf("il nodo riavviato %s non si è avvicinato al cluster residuo: estimate=%0.6f target_residuo=%0.6f", m10ComposeCrashService, restartedMetrics.Estimate, m10ComposeResidualExpectedValue)
 	}
 
-	for _, service := range composeServices {
-		nodeID := composeServiceNodeIDs[service]
+	for _, service := range harness.composeServices {
+		nodeID := harness.serviceNodeIDs[service]
 		metrics := finalMetrics[nodeID]
 		t.Logf("metrica finale: service=%s node_id=%s rounds=%d estimate=%0.6f ready=%t",
 			service,
@@ -147,14 +147,14 @@ func TestNodeCrashAndRestart(t *testing.T) {
 	if !isClusterConverged(shutdownObservation, m10ComposeConvergenceBand) {
 		t.Fatalf("cluster non convergente nel teardown finale M10 Compose: %s", formatClusterObservation(shutdownObservation))
 	}
-	if math.Abs(shutdownObservation.values[composeServiceNodeIDs[m10ComposeCrashService]]-m10ComposeExpectedValue) > m10ComposeConvergenceBand {
-		t.Fatalf("il nodo riavviato non è rientrato nella banda finale: node_id=%s estimate=%0.6f", composeServiceNodeIDs[m10ComposeCrashService], shutdownObservation.values[composeServiceNodeIDs[m10ComposeCrashService]])
+	if math.Abs(shutdownObservation.values[harness.serviceNodeIDs[m10ComposeCrashService]]-m10ComposeExpectedValue) > m10ComposeConvergenceBand {
+		t.Fatalf("il nodo riavviato non è rientrato nella banda finale: node_id=%s estimate=%0.6f", harness.serviceNodeIDs[m10ComposeCrashService], shutdownObservation.values[harness.serviceNodeIDs[m10ComposeCrashService]])
 	}
-	if math.Abs(finalObservation.values[composeServiceNodeIDs[m10ComposeCrashService]]-shutdownObservation.values[composeServiceNodeIDs[m10ComposeCrashService]]) > m10ComposeConvergenceBand {
-		t.Fatalf("divergenza tra snapshot live finale e shutdown finale del nodo riavviato: live=%0.6f shutdown=%0.6f", finalObservation.values[composeServiceNodeIDs[m10ComposeCrashService]], shutdownObservation.values[composeServiceNodeIDs[m10ComposeCrashService]])
+	if math.Abs(finalObservation.values[harness.serviceNodeIDs[m10ComposeCrashService]]-shutdownObservation.values[harness.serviceNodeIDs[m10ComposeCrashService]]) > m10ComposeConvergenceBand {
+		t.Fatalf("divergenza tra snapshot live finale e shutdown finale del nodo riavviato: live=%0.6f shutdown=%0.6f", finalObservation.values[harness.serviceNodeIDs[m10ComposeCrashService]], shutdownObservation.values[harness.serviceNodeIDs[m10ComposeCrashService]])
 	}
 	for _, service := range residualServices {
-		nodeID := composeServiceNodeIDs[service]
+		nodeID := harness.serviceNodeIDs[service]
 		if residualMetrics[nodeID].Rounds <= baselineMetrics[nodeID].Rounds {
 			t.Fatalf("nessuna prova di round residui per %s: pre=%d post=%d", nodeID, baselineMetrics[nodeID].Rounds, residualMetrics[nodeID].Rounds)
 		}
