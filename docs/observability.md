@@ -44,6 +44,9 @@ Semantica esplicita per `event=remote_merge`:
 - `membership_entries` indica **solo** il numero di entry ricevute nel messaggio remoto (`len(msg.membership)`);
 - `peers` indica invece il numero peer **localmente noti dopo** merge stato + aggiornamento membership (`len(Membership.Snapshot())`);
 - i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo.
+- `unique_nodes` espone quanti contributi nodo unici sono presenti nello stato canonico della `sum`;
+- `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto;
+- `conflict_node_id` / `conflict_decision` tracciano la risoluzione deterministica dei conflitti per `sum` (`newer_version`, `tie_break`, `duplicate_ignored`).
 
 ## 3. Metriche esposte
 L'endpoint `/metrics` espone un formato testuale minimale pensato per verifica umana, scraping semplice e test automatici mirati. Le metriche/documenti di stato esposti sono:
