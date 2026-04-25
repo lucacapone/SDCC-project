@@ -431,20 +431,27 @@ func TestMergeSumOverflowSaturazione(t *testing.T) {
 
 func TestMergeSumNonUsaValueQuandoMetadataContributiPresente(t *testing.T) {
 	base := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)
+
+	// Stato locale con contributi multipli gia' consolidati.
 	local := shared.GossipState{
 		NodeID:          "node-1",
 		AggregationType: "sum",
-		Value:           10,
+		Value:           40,
 		Round:           2,
 		VersionCounter:  2,
 		UpdatedAt:       base,
 		AggregationData: shared.AggregationState{Sum: &shared.SumState{
-			Contributions: map[shared.NodeID]float64{"node-1": 10},
-			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-1": {Counter: 2}},
+			Contributions: map[shared.NodeID]float64{"node-1": 10, "node-2": 30},
+			Versions: map[shared.NodeID]shared.StateVersionStamp{
+				"node-1": {Counter: 2},
+				"node-2": {Counter: 2},
+			},
 		}},
 	}
+
+	// Primo messaggio remoto: versione piu' nuova per node-2 ma Value volutamente gonfiato.
 	msg := shared.GossipMessage{
-		MessageID:    "sum-msg-metadata-priority",
+		MessageID:    "sum-msg-metadata-priority-v3",
 		OriginNode:   "node-2",
 		SentAt:       base.Add(1 * time.Minute),
 		Version:      shared.MessageVersion{Major: 1, Minor: 0},
@@ -452,25 +459,42 @@ func TestMergeSumNonUsaValueQuandoMetadataContributiPresente(t *testing.T) {
 		State: shared.GossipState{
 			NodeID:          "node-2",
 			AggregationType: "sum",
-			// Payload volutamente divergente dal contributo per verificare che il merge
-			// usi solo `aggregation_data.sum.contributions[node-2]`.
-			Value:          999,
-			Round:          3,
-			VersionCounter: 3,
-			UpdatedAt:      base.Add(1 * time.Minute),
+			Value:           1000,
+			Round:           3,
+			VersionCounter:  3,
+			UpdatedAt:       base.Add(1 * time.Minute),
 			AggregationData: shared.AggregationState{Sum: &shared.SumState{
-				Contributions: map[shared.NodeID]float64{"node-2": 20},
+				Contributions: map[shared.NodeID]float64{"node-2": 30},
 				Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-2": {Counter: 3}},
 			}},
 		},
 	}
 
-	res := applyRemote(local, msg)
-	if res.State.Value != 30 {
-		t.Fatalf("merge sum ha usato value invece del contributo metadata: got=%v want=30", res.State.Value)
+	firstMerge := applyRemote(local, msg)
+	if got := firstMerge.State.AggregationData.Sum.Contributions["node-2"]; got != 30 {
+		t.Fatalf("il contributo node-2 non deve usare value remoto: got=%v want=30", got)
 	}
-	if got := res.State.AggregationData.Sum.Contributions["node-2"]; got != 20 {
-		t.Fatalf("contributo node-2 inatteso: got=%v want=20", got)
+	if got := firstMerge.State.Value; got != 40 {
+		t.Fatalf("totale inatteso dopo primo merge: got=%v want=40", got)
+	}
+
+	// Secondo merge: versione ancora piu' nuova ma contributo invariato per validare stabilita' nel tempo.
+	msgSecond := msg
+	msgSecond.MessageID = "sum-msg-metadata-priority-v4"
+	msgSecond.SentAt = base.Add(2 * time.Minute)
+	msgSecond.StateVersion = shared.StateVersionStamp{Counter: 4}
+	msgSecond.State.Round = 4
+	msgSecond.State.VersionCounter = 4
+	msgSecond.State.UpdatedAt = base.Add(2 * time.Minute)
+	msgSecond.State.AggregationData.Sum.Versions["node-2"] = shared.StateVersionStamp{Counter: 4}
+	msgSecond.State.Value = 1000
+
+	secondMerge := applyRemote(firstMerge.State, msgSecond)
+	if got := secondMerge.State.AggregationData.Sum.Contributions["node-2"]; got != 30 {
+		t.Fatalf("il contributo node-2 non e' stabile nel tempo: got=%v want=30", got)
+	}
+	if got := secondMerge.State.Value; got != 40 {
+		t.Fatalf("totale alterato artificialmente al secondo merge: got=%v want=40", got)
 	}
 }
 
