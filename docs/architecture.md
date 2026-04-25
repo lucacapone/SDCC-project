@@ -166,6 +166,7 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 - per `average`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.average.versions[node_id]`) e ricostruzione deterministica della media su `sum/count` totali;
 - per `min`: merge monotono robusto con metadati `aggregation_data.min.versions` per nodo; in caso di stato locale non inizializzato il valore remoto viene adottato deterministicamente (compatibilità messaggi legacy senza metadati);
 - per `max`: merge monotono robusto con metadati `aggregation_data.max.versions` per nodo; in caso di stato locale non inizializzato il valore remoto viene adottato deterministicamente (compatibilità messaggi legacy senza metadati);
+- messaggi auto-originati (`origin_node == local.node_id`, oppure fallback legacy con `origin_node` vuoto e `state.node_id == local.node_id`) sono classificati come `self_origin_noop` e non alterano `estimate`, `round` o versioni locali;
 - `new_round = max(local.round, remote.round) + 1`;
 - `updated_at = now_utc`;
 - tracciamento `last_message_id` e `last_sender_node_id` (derivati da `message_id`/`origin_node`);
@@ -175,6 +176,7 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 `applyRemote` restituisce `MergeResult` con:
 - `applied`: update remoto applicato;
 - `skipped`: no-op (duplicato, stessa versione+payload, versione vecchia/out-of-order);
+- `skipped/self_origin_noop`: messaggio auto-originato scartato come no-op silenziosa (log solo a livello `DEBUG`);
 - `conflict`: conflitto rilevato (es. stessa versione con payload diverso o aggregazione incompatibile).
 
 ### Risoluzione conflitti
