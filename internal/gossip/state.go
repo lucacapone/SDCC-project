@@ -24,6 +24,7 @@ type MergeResult struct {
 	Reason              string
 	EstimateBefore      float64
 	EstimateAfter       float64
+	MaxPreserved        bool
 	UniqueContributions int
 	NodeDecisions       map[shared.NodeID]string
 }
@@ -32,14 +33,15 @@ type MergeResult struct {
 func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult {
 	local.EnsureMergeMetadata()
 	estimateBefore := local.Value
+	aggregationType := effectiveAggregationType(local.AggregationType, msg.State.AggregationType)
 
 	if _, seen := local.SeenMessageIDs[msg.MessageID]; seen {
-		return buildMergeResult(local, MergeSkipped, "duplicate_message_id", estimateBefore, nil)
+		return buildMergeResult(local, MergeSkipped, "duplicate_message_id", estimateBefore, msg.State.Value, nil, false)
 	}
 
 	if local.AggregationType != "" && msg.State.AggregationType != "" && local.AggregationType != msg.State.AggregationType {
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
-		return buildMergeResult(local, MergeConflict, "aggregation_type_mismatch", estimateBefore, nil)
+		return buildMergeResult(local, MergeConflict, "aggregation_type_mismatch", estimateBefore, msg.State.Value, nil, false)
 	}
 
 	remoteVersion := normalizeMessageVersion(msg)
@@ -47,7 +49,7 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	lastSeen, ok := local.LastSeenVersionByNode[msg.OriginNode]
 	if ok && compareVersion(remoteVersion, lastSeen) < 0 {
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
-		return buildMergeResult(local, MergeSkipped, "out_of_order_stale", estimateBefore, nil)
+		return buildMergeResult(local, MergeSkipped, "out_of_order_stale", estimateBefore, msg.State.Value, nil, false)
 	}
 
 	cmp := compareVersion(remoteVersion, localVersion)
@@ -63,28 +65,27 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 		local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
 		local.LastMessageID = msg.MessageID
 		local.LastSenderNodeID = msg.OriginNode
-		return buildMergeResult(local, MergeApplied, "remote_contribution_merged", estimateBefore, nodeDecisions)
+		return buildMergeResult(local, MergeApplied, "remote_contribution_merged", estimateBefore, msg.State.Value, nodeDecisions, false)
 	}
 
-	switch {
-	case cmp < 0:
+	decision := resolveMergeDecision(local, msg, cmp, samePayload)
+	switch decision.Status {
+	case MergeSkipped:
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-		return buildMergeResult(local, MergeSkipped, "older_version", estimateBefore, nil)
-	case cmp == 0 && samePayload:
+		return buildMergeResult(local, decision.Status, decision.Reason, estimateBefore, msg.State.Value, nil, false)
+	case MergeConflict:
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-		return buildMergeResult(local, MergeSkipped, "same_version_same_payload", estimateBefore, nil)
-	case cmp == 0 && !samePayload:
-		local.SeenMessageIDs[msg.MessageID] = struct{}{}
-		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-		if samePayloadSemantically(local, msg.State) {
-			return buildMergeResult(local, MergeSkipped, "same_version_semantically_equivalent", estimateBefore, nil)
-		}
-		if preferRemoteOnConflict(msg, local) {
+		maxPreserved := false
+		if aggregationType == "max" {
+			local = mergeMaxState(local, msg.State)
+			local.Value = math.Max(estimateBefore, msg.State.Value)
+			maxPreserved = true
+		} else if decision.AdoptRemote {
 			local = adoptRemote(local, msg)
 		}
-		return buildMergeResult(local, MergeConflict, "same_version_different_payload", estimateBefore, nil)
+		return buildMergeResult(local, decision.Status, decision.Reason, estimateBefore, msg.State.Value, nil, maxPreserved)
 	}
 
 	local.SeenMessageIDs[msg.MessageID] = struct{}{}
@@ -96,7 +97,7 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
 	local.LastMessageID = msg.MessageID
 	local.LastSenderNodeID = msg.OriginNode
-	return buildMergeResult(local, MergeApplied, "remote_newer_version", estimateBefore, nodeDecisions)
+	return buildMergeResult(local, MergeApplied, "remote_newer_version", estimateBefore, msg.State.Value, nodeDecisions, false)
 }
 
 // ApplyRemote espone il merge remoto per le suite esterne che validano il contratto del package gossip.
@@ -215,7 +216,7 @@ func mergeSumState(local, remote shared.GossipState) (shared.GossipState, map[sh
 	return local, nodeDecisions
 }
 
-func buildMergeResult(state shared.GossipState, status MergeStatus, reason string, estimateBefore float64, nodeDecisions map[shared.NodeID]string) MergeResult {
+func buildMergeResult(state shared.GossipState, status MergeStatus, reason string, estimateBefore float64, remoteEstimate float64, nodeDecisions map[shared.NodeID]string, maxPreserved bool) MergeResult {
 	uniqueContributions := 0
 	if state.AggregationData.Sum != nil {
 		uniqueContributions = len(state.AggregationData.Sum.Contributions)
@@ -226,9 +227,44 @@ func buildMergeResult(state shared.GossipState, status MergeStatus, reason strin
 		Reason:              reason,
 		EstimateBefore:      estimateBefore,
 		EstimateAfter:       state.Value,
+		MaxPreserved:        maxPreserved || (state.AggregationType == "max" && math.Abs(state.Value-math.Max(estimateBefore, remoteEstimate)) <= 1e-9),
 		UniqueContributions: uniqueContributions,
 		NodeDecisions:       nodeDecisions,
 	}
+}
+
+type mergeDecision struct {
+	Status      MergeStatus
+	Reason      string
+	AdoptRemote bool
+}
+
+// resolveMergeDecision classifica l'esito logico del merge senza applicare trasformazioni numeriche.
+func resolveMergeDecision(local shared.GossipState, msg shared.GossipMessage, versionCompare int, samePayload bool) mergeDecision {
+	switch {
+	case versionCompare < 0:
+		return mergeDecision{Status: MergeSkipped, Reason: "older_version"}
+	case versionCompare == 0 && samePayload:
+		return mergeDecision{Status: MergeSkipped, Reason: "same_version_same_payload"}
+	case versionCompare == 0 && !samePayload:
+		if samePayloadSemantically(local, msg.State) {
+			return mergeDecision{Status: MergeSkipped, Reason: "same_version_semantically_equivalent"}
+		}
+		return mergeDecision{
+			Status:      MergeConflict,
+			Reason:      "same_version_different_payload",
+			AdoptRemote: preferRemoteOnConflict(msg, local),
+		}
+	default:
+		return mergeDecision{Status: MergeApplied, Reason: "remote_newer_version"}
+	}
+}
+
+func effectiveAggregationType(localAggregationType, remoteAggregationType string) string {
+	if localAggregationType != "" {
+		return localAggregationType
+	}
+	return remoteAggregationType
 }
 
 // ensureIncomingSumMetadata rende compatibili i messaggi legacy senza metadati sum.

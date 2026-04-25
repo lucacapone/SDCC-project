@@ -130,6 +130,7 @@ func (e *Engine) Start(ctx context.Context) error {
 				slog.Float64("estimate", localEstimate),
 				slog.Float64("estimate_before", merge.EstimateBefore),
 				slog.Float64("estimate_after", merge.EstimateAfter),
+				slog.Bool("max_preserved", merge.MaxPreserved),
 				slog.String("merge_status", string(merge.Status)),
 				slog.String("merge_reason", merge.Reason),
 				slog.Int("unique_nodes", merge.UniqueContributions),
