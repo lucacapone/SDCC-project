@@ -85,8 +85,13 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 		maxPreserved := false
 		if aggregationType == "max" {
 			local = mergeMaxState(local, msg.State)
+			// In caso di conflitto a parità versione preserviamo il massimo osservato.
 			local.Value = math.Max(estimateBefore, msg.State.Value)
 			maxPreserved = true
+		} else if aggregationType == "min" {
+			local = mergeMinState(local, msg.State)
+			// In caso di conflitto a parità versione preserviamo il minimo osservato.
+			local.Value = math.Min(estimateBefore, msg.State.Value)
 		} else if decision.AdoptRemote {
 			local = adoptRemote(local, msg)
 		}

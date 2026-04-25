@@ -727,3 +727,8 @@
 - **Descrizione task**: Hardening del layer ricezione/merge gossip con guardia anti auto-merge (`origin_node`/`state.node_id`), policy no-op silenziosa, riduzione rumore INFO e test di non regressione su `estimate`/`round`.
 - **File modificati**: `internal/gossip/state.go`, `tests/gossip/state_test.go`, `tests/gossip/engine_test.go`, `docs/architecture.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho introdotto un filtro esplicito `self_origin_noop` in `applyRemote` per evitare che messaggi auto-originati alterino lo stato locale; ho coperto sia envelope canonico (`origin_node`) sia fallback legacy (`origin_node` vuoto + `state.node_id`). Ho aggiunto test unitari e di integrazione del path ricezione per garantire invarianza di `estimate` e `round` e per verificare che il rumore log a livello INFO non nasconda i conflitti reali.
+
+## 2026-04-25 14:24:28 UTC
+- **Descrizione task**: Verifica semantica `aggregation=min` su cluster scale Compose e correzione merge in conflitto a parità versione (`same_version_different_payload`) per preservare il minimo.
+- **File modificati**: `internal/gossip/state.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Dai log runtime il cluster con `aggregation=min` convergeva a `70` invece di `10`, sintomo di conflitto a parità versione non monotono per `min`. Ho aggiornato il ramo `MergeConflict` in `applyRemote` per applicare esplicitamente `math.Min(estimateBefore, remote)` (oltre al merge metadata `MinState`), mantenendo comportamento simmetrico a `max` e idempotenza. Ho poi validato con suite `tests/aggregation/min` e regressione rapida su `max`.
