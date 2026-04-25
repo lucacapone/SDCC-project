@@ -113,15 +113,7 @@ func (e *Engine) Start(ctx context.Context) error {
 			if merge.Status == MergeApplied || merge.Status == MergeConflict {
 				logLevel = slog.LevelInfo
 			}
-			nodeConflictID := ""
-			nodeConflictDecision := ""
-			for nodeID, decision := range merge.NodeDecisions {
-				if decision == "tie_break" {
-					nodeConflictID = string(nodeID)
-					nodeConflictDecision = decision
-					break
-				}
-			}
+			nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision := summarizeMergeNodeDecisions(merge.NodeDecisions, msg.OriginNode)
 			e.Logger.LogAttrs(ctx, logLevel, "merge remoto gossip",
 				slog.String("event", "remote_merge"),
 				slog.String("node_id", string(e.NodeID)),
@@ -134,9 +126,13 @@ func (e *Engine) Start(ctx context.Context) error {
 				slog.String("merge_status", string(merge.Status)),
 				slog.String("merge_reason", merge.Reason),
 				slog.Int("unique_nodes", merge.UniqueContributions),
+				slog.Int("node_decisions_newer_version", nodeDecisionSummary.newerVersion),
+				slog.Int("node_decisions_duplicate_ignored", nodeDecisionSummary.duplicateIgnored),
+				slog.Int("node_decisions_tie_break", nodeDecisionSummary.tieBreak),
 				slog.String("conflict_node_id", nodeConflictID),
 				slog.String("conflict_decision", nodeConflictDecision),
 				slog.String("remote_node_id", string(msg.OriginNode)),
+				slog.String("remote_node_decision", remoteNodeDecision),
 				slog.Uint64("remote_round", uint64(incomingRound)),
 				slog.Float64("remote_estimate", incomingEstimate),
 				slog.Int("membership_entries", membershipEntries),
@@ -150,6 +146,41 @@ func (e *Engine) Start(ctx context.Context) error {
 
 	go e.loop(ctx)
 	return nil
+}
+
+type mergeNodeDecisionSummary struct {
+	newerVersion     int
+	duplicateIgnored int
+	tieBreak         int
+}
+
+// summarizeMergeNodeDecisions produce una sintesi leggera delle decisioni per nodo
+// e isola la decisione relativa al nodo remoto originatore, se disponibile.
+func summarizeMergeNodeDecisions(nodeDecisions map[shared.NodeID]string, remoteNodeID shared.NodeID) (mergeNodeDecisionSummary, string, string, string) {
+	summary := mergeNodeDecisionSummary{}
+	remoteNodeDecision := "not_present"
+	nodeConflictID := ""
+	nodeConflictDecision := ""
+
+	for nodeID, decision := range nodeDecisions {
+		switch decision {
+		case "newer_version":
+			summary.newerVersion++
+		case "duplicate_ignored":
+			summary.duplicateIgnored++
+		case "tie_break":
+			summary.tieBreak++
+			if nodeConflictID == "" {
+				nodeConflictID = string(nodeID)
+				nodeConflictDecision = decision
+			}
+		}
+		if nodeID == remoteNodeID {
+			remoteNodeDecision = decision
+		}
+	}
+
+	return summary, remoteNodeDecision, nodeConflictID, nodeConflictDecision
 }
 
 func (e *Engine) loop(ctx context.Context) {
