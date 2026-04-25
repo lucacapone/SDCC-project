@@ -737,3 +737,8 @@
 - **Descrizione task**: Refactor del merge `sum` in `internal/gossip/state.go` per eliminare il percorso speciale post-loop basato su `remote.Value`, mantenendo il merge per-node guidato da `aggregation_data.sum.contributions`/`versions` e centralizzando il fallback legacy in `ensureIncomingSumMetadata`.
 - **File modificati**: `internal/gossip/state.go`, `tests/gossip/state_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho rimosso il blocco che sovrascriveva il contributo del `remote.NodeID` fuori dal ciclo principale e che poteva introdurre un percorso parallelo basato su `remote.Value`; il fallback legacy ora popola il contributo solo se assente nei metadata `sum`, preservando la decisione versionale per-node. Ho aggiunto un test di regressione che verifica la priorità del contributo metadata rispetto a `state.value` quando entrambi sono presenti.
+
+## 2026-04-25 15:05:00 UTC
+- **Descrizione task**: Aggiunta regressione `sum` in `tests/gossip/state_test.go` per verificare che `applyRemote` ignori `state.value` remoto gonfiato quando sono presenti contributi per-nodo e che il comportamento resti stabile su merge successivi con versione crescente.
+- **File modificati**: `tests/gossip/state_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho esteso il caso `TestMergeSumNonUsaValueQuandoMetadataContributiPresente` costruendo uno stato locale con contributi multipli (`node-1=10`, `node-2=30`), poi applicando due messaggi remoti consecutivi da `node-2` con `Value=1000` ma contributo metadata invariato a `30` e versioni crescenti. Il test ora congela che il contributo per `node-2` rimanga 30 e che il totale resti 40 senza crescita artificiale nel tempo.
