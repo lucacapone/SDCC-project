@@ -61,6 +61,42 @@ func TestMergeRules(t *testing.T) {
 		}
 	})
 
+	t.Run("self_origin_noop_con_origin_node_uguale_al_locale", func(t *testing.T) {
+		local := fixtureState("node-1", 33, 7, base)
+		msg := fixtureMessage("self-origin-envelope", "node-1", 99, 8, base.Add(350*time.Second))
+		msg.State.NodeID = "node-x"
+
+		res := applyRemote(local, msg)
+
+		if res.Status != MergeSkipped || res.Reason != "self_origin_noop" {
+			t.Fatalf("auto-merge non classificato come no-op: status=%s reason=%s", res.Status, res.Reason)
+		}
+		if res.State.Round != local.Round {
+			t.Fatalf("round alterato da auto-merge: got=%d want=%d", res.State.Round, local.Round)
+		}
+		if math.Abs(res.State.Value-local.Value) > 1e-9 {
+			t.Fatalf("estimate alterata da auto-merge: got=%v want=%v", res.State.Value, local.Value)
+		}
+	})
+
+	t.Run("self_origin_noop_con_state_node_id_uguale_al_locale", func(t *testing.T) {
+		local := fixtureState("node-1", 44, 9, base)
+		msg := fixtureMessage("self-origin-state", "", 12, 10, base.Add(360*time.Second))
+		msg.State.NodeID = "node-1"
+
+		res := applyRemote(local, msg)
+
+		if res.Status != MergeSkipped || res.Reason != "self_origin_noop" {
+			t.Fatalf("auto-merge via state.node_id non classificato come no-op: status=%s reason=%s", res.Status, res.Reason)
+		}
+		if res.State.Round != local.Round {
+			t.Fatalf("round alterato da auto-merge via state.node_id: got=%d want=%d", res.State.Round, local.Round)
+		}
+		if math.Abs(res.State.Value-local.Value) > 1e-9 {
+			t.Fatalf("estimate alterata da auto-merge via state.node_id: got=%v want=%v", res.State.Value, local.Value)
+		}
+	})
+
 	// aggregation_type_mismatch verifica che un payload con aggregazione incompatibile
 	// venga segnalato come conflitto senza mutare il valore locale, marcando solo il message id.
 	t.Run("aggregation_type_mismatch", func(t *testing.T) {

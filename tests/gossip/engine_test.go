@@ -434,6 +434,66 @@ func TestRemoteMergeLoggingMantieneSeparatiPeersLocaliEMembershipEntries(t *test
 	}
 }
 
+func TestRemoteMergeSelfOriginRestaNoOpESenzaRumoreInfo(t *testing.T) {
+	tr := &spyTransportEngine{}
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	mset := membership.NewSet()
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
+
+	eng.State.Value = 17.25
+	eng.State.Round = 4
+	roundBefore := eng.State.Round
+	estimateBefore := eng.State.Value
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	now := time.Unix(1710000200, 0).UTC()
+	incoming := shared.GossipMessage{
+		MessageID:  "m-self-origin-1",
+		OriginNode: "node-1",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Epoch:   1,
+			Counter: 8,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-1",
+			AggregationType: "sum",
+			Value:           99.5,
+			VersionEpoch:    1,
+			VersionCounter:  8,
+			Round:           8,
+			UpdatedAt:       now,
+		},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	if eng.State.Round != roundBefore {
+		t.Fatalf("round alterato da auto-merge: got=%d want=%d", eng.State.Round, roundBefore)
+	}
+	if eng.State.Value != estimateBefore {
+		t.Fatalf("estimate alterata da auto-merge: got=%v want=%v", eng.State.Value, estimateBefore)
+	}
+
+	logged := logBuffer.String()
+	if strings.Contains(logged, "event=remote_merge") {
+		t.Fatalf("auto-merge non deve generare remote_merge a livello INFO: %s", logged)
+	}
+}
+
 func TestRoundAggiornaCollectorConValoriRuntime(t *testing.T) {
 	tr := &captureTransport{}
 	mset := membership.NewSet()

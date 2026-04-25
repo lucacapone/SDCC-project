@@ -34,6 +34,11 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	local.EnsureMergeMetadata()
 	estimateBefore := local.Value
 	aggregationType := effectiveAggregationType(local.AggregationType, msg.State.AggregationType)
+	if isSelfOriginMerge(local, msg) {
+		// Policy esplicita: auto-merge trattato come no-op silenziosa.
+		// Non aggiorniamo round/versione/stima per preservare l'invariante locale.
+		return buildMergeResult(local, MergeSkipped, "self_origin_noop", estimateBefore, msg.State.Value, nil, false)
+	}
 
 	if _, seen := local.SeenMessageIDs[msg.MessageID]; seen {
 		return buildMergeResult(local, MergeSkipped, "duplicate_message_id", estimateBefore, msg.State.Value, nil, false)
@@ -98,6 +103,23 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	local.LastMessageID = msg.MessageID
 	local.LastSenderNodeID = msg.OriginNode
 	return buildMergeResult(local, MergeApplied, "remote_newer_version", estimateBefore, msg.State.Value, nodeDecisions, false)
+}
+
+// isSelfOriginMerge identifica messaggi auto-originati usando entrambi i marker
+// (`origin_node` di envelope e `state.node_id` nel payload) per coprire mismatch parziali.
+func isSelfOriginMerge(local shared.GossipState, msg shared.GossipMessage) bool {
+	if local.NodeID == "" {
+		return false
+	}
+	if msg.OriginNode == local.NodeID {
+		return true
+	}
+	// `state.node_id` è considerato solo come fallback quando l'envelope non
+	// espone `origin_node` (messaggio legacy/parziale).
+	if msg.OriginNode == "" && msg.State.NodeID == local.NodeID {
+		return true
+	}
+	return false
 }
 
 // ApplyRemote espone il merge remoto per le suite esterne che validano il contratto del package gossip.
