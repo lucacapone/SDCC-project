@@ -429,6 +429,51 @@ func TestMergeSumOverflowSaturazione(t *testing.T) {
 	}
 }
 
+func TestMergeSumNonUsaValueQuandoMetadataContributiPresente(t *testing.T) {
+	base := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)
+	local := shared.GossipState{
+		NodeID:          "node-1",
+		AggregationType: "sum",
+		Value:           10,
+		Round:           2,
+		VersionCounter:  2,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Sum: &shared.SumState{
+			Contributions: map[shared.NodeID]float64{"node-1": 10},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-1": {Counter: 2}},
+		}},
+	}
+	msg := shared.GossipMessage{
+		MessageID:    "sum-msg-metadata-priority",
+		OriginNode:   "node-2",
+		SentAt:       base.Add(1 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 3},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			// Payload volutamente divergente dal contributo per verificare che il merge
+			// usi solo `aggregation_data.sum.contributions[node-2]`.
+			Value:          999,
+			Round:          3,
+			VersionCounter: 3,
+			UpdatedAt:      base.Add(1 * time.Minute),
+			AggregationData: shared.AggregationState{Sum: &shared.SumState{
+				Contributions: map[shared.NodeID]float64{"node-2": 20},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-2": {Counter: 3}},
+			}},
+		},
+	}
+
+	res := applyRemote(local, msg)
+	if res.State.Value != 30 {
+		t.Fatalf("merge sum ha usato value invece del contributo metadata: got=%v want=30", res.State.Value)
+	}
+	if got := res.State.AggregationData.Sum.Contributions["node-2"]; got != 20 {
+		t.Fatalf("contributo node-2 inatteso: got=%v want=20", got)
+	}
+}
+
 func TestMergeAverageContributiConvergentiPerNodo(t *testing.T) {
 	base := time.Date(2026, 3, 16, 18, 30, 0, 0, time.UTC)
 	local := shared.GossipState{
