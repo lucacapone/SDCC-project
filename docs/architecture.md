@@ -181,6 +181,7 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 - `aggregation_type` differente: conflitto e scarto update;
 - stessa versione ma payload differente:
   - `sum`: risoluzione deterministica per nodo con tie-break stabile nel merge per contributo;
+  - `max`: merge numerico sempre monotono su `estimate_after = max(estimate_before, remote_estimate)` anche in conflitto, preservando il massimo indipendentemente dai tie-break non numerici;
   - altre aggregazioni: conflitto con tie-break deterministico (timestamp più recente, poi `sender_node_id`, poi `message_id`).
 
 

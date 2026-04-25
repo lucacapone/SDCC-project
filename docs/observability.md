@@ -46,6 +46,7 @@ Semantica esplicita per `event=remote_merge`:
 - i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo.
 - `unique_nodes` espone quanti contributi nodo unici sono presenti nello stato canonico della `sum`;
 - `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto;
+- `max_preserved` espone la motivazione numerica per merge `max` (`true` quando il risultato mantiene esplicitamente `max(estimate_before, remote_estimate)`);
 - `conflict_node_id` / `conflict_decision` tracciano la risoluzione deterministica dei conflitti per `sum` (`newer_version`, `tie_break`, `duplicate_ignored`).
 
 ## 3. Metriche esposte

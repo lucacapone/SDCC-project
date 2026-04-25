@@ -619,3 +619,89 @@ func TestMergeMaxMonotonoGestisceStatoVuotoELegacy(t *testing.T) {
 		t.Fatalf("merge max monotono non aggiornato: got=%v want=9", second.State.Value)
 	}
 }
+
+func TestMergeMaxConflittoStessaVersionePreservaMassimoCommutativoEIdempotente(t *testing.T) {
+	base := time.Date(2026, 3, 16, 19, 30, 0, 0, time.UTC)
+	nodeA := shared.GossipState{
+		NodeID:          "node-a",
+		AggregationType: "max",
+		Value:           80,
+		Round:           5,
+		VersionCounter:  5,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Max: &shared.MaxState{
+			Versions: map[shared.NodeID]shared.StateVersionStamp{"node-a": {Counter: 5}},
+		}},
+	}
+	msgFromB := shared.GossipMessage{
+		MessageID:    "max-conflict-b",
+		OriginNode:   "node-b",
+		SentAt:       base.Add(2 * time.Minute),
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 5},
+		State: shared.GossipState{
+			NodeID:          "node-b",
+			AggregationType: "max",
+			Value:           40,
+			Round:           5,
+			VersionCounter:  5,
+			UpdatedAt:       base.Add(2 * time.Minute),
+			AggregationData: shared.AggregationState{Max: &shared.MaxState{
+				Versions: map[shared.NodeID]shared.StateVersionStamp{"node-b": {Counter: 5}},
+			}},
+		},
+	}
+
+	ab := applyRemote(nodeA, msgFromB)
+	if ab.Status != MergeConflict || ab.Reason != "same_version_different_payload" {
+		t.Fatalf("merge max in conflitto non classificato correttamente: status=%s reason=%s", ab.Status, ab.Reason)
+	}
+	if ab.State.Value != 80 {
+		t.Fatalf("merge max ha regredito il massimo locale: got=%v want=80", ab.State.Value)
+	}
+	if !ab.MaxPreserved {
+		t.Fatalf("merge max dovrebbe impostare max_preserved=true")
+	}
+
+	nodeB := shared.GossipState{
+		NodeID:          "node-b",
+		AggregationType: "max",
+		Value:           40,
+		Round:           5,
+		VersionCounter:  5,
+		UpdatedAt:       base.Add(2 * time.Minute),
+		AggregationData: shared.AggregationState{Max: &shared.MaxState{
+			Versions: map[shared.NodeID]shared.StateVersionStamp{"node-b": {Counter: 5}},
+		}},
+	}
+	msgFromA := shared.GossipMessage{
+		MessageID:    "max-conflict-a",
+		OriginNode:   "node-a",
+		SentAt:       base,
+		Version:      shared.MessageVersion{Major: 1, Minor: 0},
+		StateVersion: shared.StateVersionStamp{Counter: 5},
+		State: shared.GossipState{
+			NodeID:          "node-a",
+			AggregationType: "max",
+			Value:           80,
+			Round:           5,
+			VersionCounter:  5,
+			UpdatedAt:       base,
+			AggregationData: shared.AggregationState{Max: &shared.MaxState{
+				Versions: map[shared.NodeID]shared.StateVersionStamp{"node-a": {Counter: 5}},
+			}},
+		},
+	}
+	ba := applyRemote(nodeB, msgFromA)
+	if ba.State.Value != 80 {
+		t.Fatalf("merge max non commutativo sul valore: got=%v want=80", ba.State.Value)
+	}
+	if !ba.MaxPreserved {
+		t.Fatalf("merge max su ordine inverso dovrebbe impostare max_preserved=true")
+	}
+
+	repeat := applyRemote(ab.State, msgFromB)
+	if repeat.State.Value != ab.State.Value {
+		t.Fatalf("merge max non idempotente su duplicato: got=%v want=%v", repeat.State.Value, ab.State.Value)
+	}
+}

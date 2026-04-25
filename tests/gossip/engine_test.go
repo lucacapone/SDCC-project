@@ -362,6 +362,7 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 		"remote_round=7",
 		"remote_estimate=99.5",
 		"estimate=99.5",
+		"max_preserved=false",
 	} {
 		if !strings.Contains(logged, expected) {
 			t.Fatalf("log merge privo del campo atteso %q: %s", expected, logged)
