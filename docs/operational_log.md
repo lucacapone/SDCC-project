@@ -742,3 +742,8 @@
 - **Descrizione task**: Aggiunta regressione `sum` in `tests/gossip/state_test.go` per verificare che `applyRemote` ignori `state.value` remoto gonfiato quando sono presenti contributi per-nodo e che il comportamento resti stabile su merge successivi con versione crescente.
 - **File modificati**: `tests/gossip/state_test.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho esteso il caso `TestMergeSumNonUsaValueQuandoMetadataContributiPresente` costruendo uno stato locale con contributi multipli (`node-1=10`, `node-2=30`), poi applicando due messaggi remoti consecutivi da `node-2` con `Value=1000` ma contributo metadata invariato a `30` e versioni crescenti. Il test ora congela che il contributo per `node-2` rimanga 30 e che il totale resti 40 senza crescita artificiale nel tempo.
+
+## 2026-04-25 14:55:58 UTC
+- **Descrizione task**: Estensione observability del log `event=remote_merge` con sintesi `nodeDecisions` e campo dedicato alla decisione del `remote_node_id`, mantenendo payload leggero e aggiornando test/documentazione.
+- **File modificati**: `internal/gossip/engine.go`, `tests/gossip/engine_test.go`, `docs/observability.md`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho introdotto una funzione di sintesi che conta le decisioni `newer_version`/`duplicate_ignored`/`tie_break` senza serializzare mappe complete, e ho aggiunto `remote_node_decision` per tracciare in modo diretto l'esito relativo al nodo originatore remoto. Ho aggiornato i test di logging gossip per verificare i nuovi campi mantenendo i vincoli di payload leggero già presenti; `tests/observability/logger_test.go` non impone vincoli di formato aggiuntivi (copre solo la costruzione base del logger), quindi non sono stati necessari cambi in quel file.

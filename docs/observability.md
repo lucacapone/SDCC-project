@@ -48,6 +48,8 @@ Semantica esplicita per `event=remote_merge`:
 - `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto;
 - `max_preserved` espone la motivazione numerica per merge `max` (`true` quando il risultato mantiene esplicitamente `max(estimate_before, remote_estimate)`);
 - `conflict_node_id` / `conflict_decision` tracciano la risoluzione deterministica dei conflitti per `sum` (`newer_version`, `tie_break`, `duplicate_ignored`).
+- `node_decisions_newer_version` / `node_decisions_duplicate_ignored` / `node_decisions_tie_break` espongono una sintesi leggera (conteggi per tipo) delle decisioni per-nodo durante il merge `sum`.
+- `remote_node_decision` espone la decisione applicata al contributo del nodo `remote_node_id` (`newer_version`, `duplicate_ignored`, `tie_break` oppure `not_present` se assente nel payload contributi).
 
 ## 3. Metriche esposte
 L'endpoint `/metrics` espone un formato testuale minimale pensato per verifica umana, scraping semplice e test automatici mirati. Le metriche/documenti di stato esposti sono:
