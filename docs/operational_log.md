@@ -732,3 +732,8 @@
 - **Descrizione task**: Verifica semantica `aggregation=min` su cluster scale Compose e correzione merge in conflitto a parità versione (`same_version_different_payload`) per preservare il minimo.
 - **File modificati**: `internal/gossip/state.go`, `docs/operational_log.md`.
 - **Reasoning summary**: Dai log runtime il cluster con `aggregation=min` convergeva a `70` invece di `10`, sintomo di conflitto a parità versione non monotono per `min`. Ho aggiornato il ramo `MergeConflict` in `applyRemote` per applicare esplicitamente `math.Min(estimateBefore, remote)` (oltre al merge metadata `MinState`), mantenendo comportamento simmetrico a `max` e idempotenza. Ho poi validato con suite `tests/aggregation/min` e regressione rapida su `max`.
+
+## 2026-04-25 14:44:49 UTC
+- **Descrizione task**: Refactor del merge `sum` in `internal/gossip/state.go` per eliminare il percorso speciale post-loop basato su `remote.Value`, mantenendo il merge per-node guidato da `aggregation_data.sum.contributions`/`versions` e centralizzando il fallback legacy in `ensureIncomingSumMetadata`.
+- **File modificati**: `internal/gossip/state.go`, `tests/gossip/state_test.go`, `docs/operational_log.md`.
+- **Reasoning summary**: Ho rimosso il blocco che sovrascriveva il contributo del `remote.NodeID` fuori dal ciclo principale e che poteva introdurre un percorso parallelo basato su `remote.Value`; il fallback legacy ora popola il contributo solo se assente nei metadata `sum`, preservando la decisione versionale per-node. Ho aggiunto un test di regressione che verifica la priorità del contributo metadata rispetto a `state.value` quando entrambi sono presenti.

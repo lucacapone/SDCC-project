@@ -216,26 +216,6 @@ func mergeSumState(local, remote shared.GossipState) (shared.GossipState, map[sh
 		nodeDecisions[nodeID] = "duplicate_ignored"
 	}
 
-	if remote.NodeID != "" {
-		remoteContributionVersion := normalizeVersion(remote)
-		localContributionVersion := local.AggregationData.Sum.Versions[remote.NodeID]
-		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
-			local.AggregationData.Sum.Versions[remote.NodeID] = remoteContributionVersion
-			local.AggregationData.Sum.Contributions[remote.NodeID] = remote.Value
-			nodeDecisions[remote.NodeID] = "newer_version"
-		} else if compareVersion(remoteContributionVersion, localContributionVersion) == 0 {
-			localContribution := local.AggregationData.Sum.Contributions[remote.NodeID]
-			if remote.Value > localContribution {
-				local.AggregationData.Sum.Contributions[remote.NodeID] = remote.Value
-				nodeDecisions[remote.NodeID] = "tie_break"
-			} else if _, known := nodeDecisions[remote.NodeID]; !known {
-				nodeDecisions[remote.NodeID] = "duplicate_ignored"
-			}
-		} else if _, known := nodeDecisions[remote.NodeID]; !known {
-			nodeDecisions[remote.NodeID] = "duplicate_ignored"
-		}
-	}
-
 	if remote.AggregationData.Sum.Overflowed {
 		local.AggregationData.Sum.Overflowed = true
 	}
@@ -303,11 +283,20 @@ func ensureIncomingSumMetadata(state *shared.GossipState) {
 	if state.NodeID == "" {
 		return
 	}
+	// Percorso legacy centralizzato: se manca il contributo del nodo mittente
+	// nel metadata `sum`, lo materializziamo una sola volta da `state.Value`.
+	if _, hasContribution := state.AggregationData.Sum.Contributions[state.NodeID]; hasContribution {
+		if _, versionKnown := state.AggregationData.Sum.Versions[state.NodeID]; versionKnown {
+			return
+		}
+	}
 	version := normalizeVersion(*state)
 	knownVersion, ok := state.AggregationData.Sum.Versions[state.NodeID]
 	if !ok || compareVersion(version, knownVersion) > 0 {
 		state.AggregationData.Sum.Versions[state.NodeID] = version
-		state.AggregationData.Sum.Contributions[state.NodeID] = state.Value
+		if _, hasContribution := state.AggregationData.Sum.Contributions[state.NodeID]; !hasContribution {
+			state.AggregationData.Sum.Contributions[state.NodeID] = state.Value
+		}
 	}
 }
 
