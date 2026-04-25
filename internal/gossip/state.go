@@ -19,22 +19,27 @@ const (
 
 // MergeResult espone esito e motivazione del merge remoto.
 type MergeResult struct {
-	State  shared.GossipState
-	Status MergeStatus
-	Reason string
+	State               shared.GossipState
+	Status              MergeStatus
+	Reason              string
+	EstimateBefore      float64
+	EstimateAfter       float64
+	UniqueContributions int
+	NodeDecisions       map[shared.NodeID]string
 }
 
 // applyRemote applica merge idempotente con deduplica, filtro out-of-order e gestione conflitti.
 func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult {
 	local.EnsureMergeMetadata()
+	estimateBefore := local.Value
 
 	if _, seen := local.SeenMessageIDs[msg.MessageID]; seen {
-		return MergeResult{State: local, Status: MergeSkipped, Reason: "duplicate_message_id"}
+		return buildMergeResult(local, MergeSkipped, "duplicate_message_id", estimateBefore, nil)
 	}
 
 	if local.AggregationType != "" && msg.State.AggregationType != "" && local.AggregationType != msg.State.AggregationType {
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
-		return MergeResult{State: local, Status: MergeConflict, Reason: "aggregation_type_mismatch"}
+		return buildMergeResult(local, MergeConflict, "aggregation_type_mismatch", estimateBefore, nil)
 	}
 
 	remoteVersion := normalizeMessageVersion(msg)
@@ -42,7 +47,7 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	lastSeen, ok := local.LastSeenVersionByNode[msg.OriginNode]
 	if ok && compareVersion(remoteVersion, lastSeen) < 0 {
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
-		return MergeResult{State: local, Status: MergeSkipped, Reason: "out_of_order_stale"}
+		return buildMergeResult(local, MergeSkipped, "out_of_order_stale", estimateBefore, nil)
 	}
 
 	cmp := compareVersion(remoteVersion, localVersion)
@@ -51,47 +56,47 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	if usesPerNodeMerge(local.AggregationType, msg.State.AggregationType) {
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-		local = mergeAggregationState(local, msg.State)
+		local, nodeDecisions := mergeAggregationState(local, msg.State)
 		local.UpdatedAt = time.Now().UTC()
 		local.Round = maxCounter(local.Round, msg.State.Round) + 1
 		local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
 		local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
 		local.LastMessageID = msg.MessageID
 		local.LastSenderNodeID = msg.OriginNode
-		return MergeResult{State: local, Status: MergeApplied, Reason: "remote_contribution_merged"}
+		return buildMergeResult(local, MergeApplied, "remote_contribution_merged", estimateBefore, nodeDecisions)
 	}
 
 	switch {
 	case cmp < 0:
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-		return MergeResult{State: local, Status: MergeSkipped, Reason: "older_version"}
+		return buildMergeResult(local, MergeSkipped, "older_version", estimateBefore, nil)
 	case cmp == 0 && samePayload:
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-		return MergeResult{State: local, Status: MergeSkipped, Reason: "same_version_same_payload"}
+		return buildMergeResult(local, MergeSkipped, "same_version_same_payload", estimateBefore, nil)
 	case cmp == 0 && !samePayload:
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
 		if samePayloadSemantically(local, msg.State) {
-			return MergeResult{State: local, Status: MergeSkipped, Reason: "same_version_semantically_equivalent"}
+			return buildMergeResult(local, MergeSkipped, "same_version_semantically_equivalent", estimateBefore, nil)
 		}
 		if preferRemoteOnConflict(msg, local) {
 			local = adoptRemote(local, msg)
 		}
-		return MergeResult{State: local, Status: MergeConflict, Reason: "same_version_different_payload"}
+		return buildMergeResult(local, MergeConflict, "same_version_different_payload", estimateBefore, nil)
 	}
 
 	local.SeenMessageIDs[msg.MessageID] = struct{}{}
 	local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-	local = mergeAggregationState(local, msg.State)
+	local, nodeDecisions := mergeAggregationState(local, msg.State)
 	local.UpdatedAt = time.Now().UTC()
 	local.Round = maxCounter(local.Round, msg.State.Round) + 1
 	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
 	local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
 	local.LastMessageID = msg.MessageID
 	local.LastSenderNodeID = msg.OriginNode
-	return MergeResult{State: local, Status: MergeApplied, Reason: "remote_newer_version"}
+	return buildMergeResult(local, MergeApplied, "remote_newer_version", estimateBefore, nodeDecisions)
 }
 
 // ApplyRemote espone il merge remoto per le suite esterne che validano il contratto del package gossip.
@@ -111,14 +116,14 @@ func usesPerNodeMerge(localAggregationType, remoteAggregationType string) bool {
 		aggregationType = remoteAggregationType
 	}
 	switch aggregationType {
-	case "min", "max":
+	case "sum":
 		return true
 	default:
 		return false
 	}
 }
 
-func mergeAggregationState(local, remote shared.GossipState) shared.GossipState {
+func mergeAggregationState(local, remote shared.GossipState) (shared.GossipState, map[shared.NodeID]string) {
 	aggregationType := local.AggregationType
 	if aggregationType == "" {
 		aggregationType = remote.AggregationType
@@ -127,14 +132,14 @@ func mergeAggregationState(local, remote shared.GossipState) shared.GossipState 
 	case "sum":
 		return mergeSumState(local, remote)
 	case "average":
-		return mergeAverageState(local, remote)
+		return mergeAverageState(local, remote), nil
 	case "min":
-		return mergeMinState(local, remote)
+		return mergeMinState(local, remote), nil
 	case "max":
-		return mergeMaxState(local, remote)
+		return mergeMaxState(local, remote), nil
 	default:
 		local.Value = mergeAggregationValue(local, remote)
-		return local
+		return local, nil
 	}
 }
 
@@ -152,17 +157,35 @@ func mergeAggregationValue(local, remote shared.GossipState) float64 {
 }
 
 // mergeSumState implementa merge deterministico e idempotente su contributi per nodo.
-func mergeSumState(local, remote shared.GossipState) shared.GossipState {
+func mergeSumState(local, remote shared.GossipState) (shared.GossipState, map[shared.NodeID]string) {
 	local.EnsureSumMetadata()
 	ensureIncomingSumMetadata(&remote)
+	nodeDecisions := make(map[shared.NodeID]string)
 
-	for nodeID, remoteVersion := range remote.AggregationData.Sum.Versions {
+	for nodeID, remoteContribution := range remote.AggregationData.Sum.Contributions {
+		remoteVersion := remote.AggregationData.Sum.Versions[nodeID]
 		localVersion, exists := local.AggregationData.Sum.Versions[nodeID]
-		if exists && compareVersion(remoteVersion, localVersion) <= 0 {
+		if !exists || compareVersion(remoteVersion, localVersion) > 0 {
+			local.AggregationData.Sum.Versions[nodeID] = remoteVersion
+			local.AggregationData.Sum.Contributions[nodeID] = remoteContribution
+			nodeDecisions[nodeID] = "newer_version"
 			continue
 		}
-		local.AggregationData.Sum.Versions[nodeID] = remoteVersion
-		local.AggregationData.Sum.Contributions[nodeID] = remote.AggregationData.Sum.Contributions[nodeID]
+		if exists && compareVersion(remoteVersion, localVersion) < 0 {
+			nodeDecisions[nodeID] = "duplicate_ignored"
+			continue
+		}
+		localContribution := local.AggregationData.Sum.Contributions[nodeID]
+		if math.Abs(localContribution-remoteContribution) <= 1e-9 {
+			nodeDecisions[nodeID] = "duplicate_ignored"
+			continue
+		}
+		if remoteContribution > localContribution {
+			local.AggregationData.Sum.Contributions[nodeID] = remoteContribution
+			nodeDecisions[nodeID] = "tie_break"
+			continue
+		}
+		nodeDecisions[nodeID] = "duplicate_ignored"
 	}
 
 	if remote.NodeID != "" {
@@ -171,6 +194,17 @@ func mergeSumState(local, remote shared.GossipState) shared.GossipState {
 		if compareVersion(remoteContributionVersion, localContributionVersion) > 0 {
 			local.AggregationData.Sum.Versions[remote.NodeID] = remoteContributionVersion
 			local.AggregationData.Sum.Contributions[remote.NodeID] = remote.Value
+			nodeDecisions[remote.NodeID] = "newer_version"
+		} else if compareVersion(remoteContributionVersion, localContributionVersion) == 0 {
+			localContribution := local.AggregationData.Sum.Contributions[remote.NodeID]
+			if remote.Value > localContribution {
+				local.AggregationData.Sum.Contributions[remote.NodeID] = remote.Value
+				nodeDecisions[remote.NodeID] = "tie_break"
+			} else if _, known := nodeDecisions[remote.NodeID]; !known {
+				nodeDecisions[remote.NodeID] = "duplicate_ignored"
+			}
+		} else if _, known := nodeDecisions[remote.NodeID]; !known {
+			nodeDecisions[remote.NodeID] = "duplicate_ignored"
 		}
 	}
 
@@ -178,7 +212,23 @@ func mergeSumState(local, remote shared.GossipState) shared.GossipState {
 		local.AggregationData.Sum.Overflowed = true
 	}
 	local.Value, local.AggregationData.Sum.Overflowed = sumWithSaturation(local.AggregationData.Sum.Contributions, local.AggregationData.Sum.Overflowed)
-	return local
+	return local, nodeDecisions
+}
+
+func buildMergeResult(state shared.GossipState, status MergeStatus, reason string, estimateBefore float64, nodeDecisions map[shared.NodeID]string) MergeResult {
+	uniqueContributions := 0
+	if state.AggregationData.Sum != nil {
+		uniqueContributions = len(state.AggregationData.Sum.Contributions)
+	}
+	return MergeResult{
+		State:               state,
+		Status:              status,
+		Reason:              reason,
+		EstimateBefore:      estimateBefore,
+		EstimateAfter:       state.Value,
+		UniqueContributions: uniqueContributions,
+		NodeDecisions:       nodeDecisions,
+	}
 }
 
 // ensureIncomingSumMetadata rende compatibili i messaggi legacy senza metadati sum.

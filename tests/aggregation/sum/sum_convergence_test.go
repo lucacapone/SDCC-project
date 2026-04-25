@@ -138,13 +138,15 @@ func (h *testHarness) assertNodeValue(t *testing.T, id shared.NodeID, want float
 func TestSumConvergence(t *testing.T) {
 	base := time.Date(2026, 3, 17, 12, 0, 0, 0, time.UTC)
 
-	t.Run("convergenza su N nodi", func(t *testing.T) {
-		ids := []shared.NodeID{"node-1", "node-2", "node-3", "node-4"}
+	t.Run("convergenza su 6 nodi con input fisso", func(t *testing.T) {
+		ids := []shared.NodeID{"node-1", "node-2", "node-3", "node-4", "node-5", "node-6"}
 		h := newTestHarness(t, ids)
 		h.setLocalContribution("node-1", 10)
 		h.setLocalContribution("node-2", 20)
 		h.setLocalContribution("node-3", 30)
 		h.setLocalContribution("node-4", 40)
+		h.setLocalContribution("node-5", 50)
+		h.setLocalContribution("node-6", 60)
 
 		versionByReceiver := map[shared.NodeID]shared.StateVersion{}
 		for _, to := range ids {
@@ -159,7 +161,7 @@ func TestSumConvergence(t *testing.T) {
 		}
 
 		for _, id := range ids {
-			h.assertNodeValue(t, id, 100)
+			h.assertNodeValue(t, id, 210)
 		}
 	})
 
@@ -196,6 +198,38 @@ func TestSumConvergence(t *testing.T) {
 		}
 		if math.Abs(afterStale-45) > 1e-9 {
 			t.Fatalf("somma inattesa dopo out-of-order: got=%v want=45", afterStale)
+		}
+	})
+
+	t.Run("stessa versione payload diverso usa tie-break deterministico", func(t *testing.T) {
+		h := newTestHarness(t, []shared.NodeID{"node-1", "node-2"})
+		h.setLocalContribution("node-1", 10)
+		h.setLocalContribution("node-2", 20)
+
+		// Primo arrivo alla versione 7.
+		h.deliverSingleContribution(t, "node-2", "node-1", "node2-v7-a", 7, 25, base.Add(4*time.Minute))
+		first := h.nodes["node-1"].eng.State.Value
+
+		// Stessa versione ma payload diverso: deve vincere sempre la stessa regola.
+		h.deliverSingleContribution(t, "node-2", "node-1", "node2-v7-b", 7, 24, base.Add(5*time.Minute))
+		second := h.nodes["node-1"].eng.State.Value
+
+		// Nuova istanza per verificare determinismo del risultato finale.
+		h2 := newTestHarness(t, []shared.NodeID{"node-1", "node-2"})
+		h2.setLocalContribution("node-1", 10)
+		h2.setLocalContribution("node-2", 20)
+		h2.deliverSingleContribution(t, "node-2", "node-1", "node2-v7-c", 7, 25, base.Add(4*time.Minute))
+		h2.deliverSingleContribution(t, "node-2", "node-1", "node2-v7-d", 7, 24, base.Add(5*time.Minute))
+		replayed := h2.nodes["node-1"].eng.State.Value
+
+		if math.Abs(first-second) > 1e-9 {
+			t.Fatalf("tie-break non deterministico su stessa versione: first=%v second=%v", first, second)
+		}
+		if math.Abs(second-replayed) > 1e-9 {
+			t.Fatalf("tie-break non ripetibile su replay: second=%v replayed=%v", second, replayed)
+		}
+		if math.Abs(second-35) > 1e-9 {
+			t.Fatalf("somma inattesa dopo tie-break a stessa versione: got=%v want=35", second)
 		}
 	})
 

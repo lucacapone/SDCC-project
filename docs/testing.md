@@ -545,3 +545,16 @@ Comandi operativi dedicati:
 go test ./tests/integration -run TestVoluntaryLeaveMaintainsResidualConvergence -count=1
 go test ./tests/integration -run TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow -count=1
 ```
+
+## Verifiche convergenza `sum` idempotente
+
+La suite `tests/aggregation/sum/TestSumConvergence` copre esplicitamente:
+
+- convergenza deterministica su **6 nodi** con input fisso (`10,20,30,40,50,60`) e valore atteso costante `210`;
+- replay/duplicati e messaggi out-of-order senza alterazione del risultato finale;
+- conflitto `same_version_different_payload` sullo stesso `node_id` con risoluzione sempre ripetibile.
+
+Comando operativo dedicato:
+```bash
+go test ./tests/aggregation/sum -run TestSumConvergence -count=1
+```

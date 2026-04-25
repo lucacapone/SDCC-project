@@ -160,7 +160,8 @@ Implementazione attuale:
 Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramite `applyRemote` in `internal/gossip/state.go`.
 
 ### Regola di merge implementata
-- per `sum`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.sum.versions[node_id]`) e ricostruzione deterministica tramite somma dei contributi;
+- per `sum`: merge idempotente per chiave (`node_id`) sullo stato canonico `aggregation_data.sum.contributions`; per ogni nodo vince solo il contributo con versione più recente (`aggregation_data.sum.versions[node_id]`) e, a parità di versione ma payload diverso, si applica tie-break deterministico stabile (valore numericamente maggiore);
+- `estimate` per `sum` è sempre derivato da `sum(contributions[*])` dopo ogni merge/round e non viene mai usato come base canonica di merge;
 - in overflow numerico della `sum` viene applicata saturazione a `±math.MaxFloat64` e il flag `aggregation_data.sum.overflowed=true`;
 - per `average`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.average.versions[node_id]`) e ricostruzione deterministica della media su `sum/count` totali;
 - per `min`: merge monotono robusto con metadati `aggregation_data.min.versions` per nodo; in caso di stato locale non inizializzato il valore remoto viene adottato deterministicamente (compatibilità messaggi legacy senza metadati);
@@ -178,7 +179,9 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 
 ### Risoluzione conflitti
 - `aggregation_type` differente: conflitto e scarto update;
-- stessa versione ma payload differente: conflitto con tie-break deterministico (timestamp più recente, poi `sender_node_id`, poi `message_id`).
+- stessa versione ma payload differente:
+  - `sum`: risoluzione deterministica per nodo con tie-break stabile nel merge per contributo;
+  - altre aggregazioni: conflitto con tie-break deterministico (timestamp più recente, poi `sender_node_id`, poi `message_id`).
 
 
 ## Regole merge membership

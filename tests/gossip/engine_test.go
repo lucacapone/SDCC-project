@@ -357,7 +357,7 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 		"event=remote_merge",
 		"node_id=node-1",
 		"merge_status=applied",
-		"merge_reason=remote_newer_version",
+		"merge_reason=remote_contribution_merged",
 		"remote_node_id=node-2",
 		"remote_round=7",
 		"remote_estimate=99.5",

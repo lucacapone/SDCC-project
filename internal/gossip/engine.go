@@ -113,14 +113,28 @@ func (e *Engine) Start(ctx context.Context) error {
 			if merge.Status == MergeApplied || merge.Status == MergeConflict {
 				logLevel = slog.LevelInfo
 			}
+			nodeConflictID := ""
+			nodeConflictDecision := ""
+			for nodeID, decision := range merge.NodeDecisions {
+				if decision == "tie_break" {
+					nodeConflictID = string(nodeID)
+					nodeConflictDecision = decision
+					break
+				}
+			}
 			e.Logger.LogAttrs(ctx, logLevel, "merge remoto gossip",
 				slog.String("event", "remote_merge"),
 				slog.String("node_id", string(e.NodeID)),
 				slog.Uint64("round", uint64(localRound)),
 				slog.Int("peers", localPeers),
 				slog.Float64("estimate", localEstimate),
+				slog.Float64("estimate_before", merge.EstimateBefore),
+				slog.Float64("estimate_after", merge.EstimateAfter),
 				slog.String("merge_status", string(merge.Status)),
 				slog.String("merge_reason", merge.Reason),
+				slog.Int("unique_nodes", merge.UniqueContributions),
+				slog.String("conflict_node_id", nodeConflictID),
+				slog.String("conflict_decision", nodeConflictDecision),
 				slog.String("remote_node_id", string(msg.OriginNode)),
 				slog.Uint64("remote_round", uint64(incomingRound)),
 				slog.Float64("remote_estimate", incomingEstimate),
@@ -668,8 +682,20 @@ func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
 	switch state.AggregationType {
 	case "sum":
 		state.EnsureSumMetadata()
+		// Manteniamo il contributo locale stabile rispetto al valore originario del nodo.
+		// In questo modo `state.Value` resta un dato derivato dalla somma dei contributi
+		// e non diventa la sorgente canonica da riserializzare nei round successivi.
+		if _, hasLocalContribution := state.AggregationData.Sum.Contributions[state.NodeID]; !hasLocalContribution {
+			if state.LocalValue == 0 && state.Value != 0 {
+				state.LocalValue = state.Value
+			}
+		}
+		localContribution := state.LocalValue
+		if _, hasLocalContribution := state.AggregationData.Sum.Contributions[state.NodeID]; hasLocalContribution {
+			localContribution = state.AggregationData.Sum.Contributions[state.NodeID]
+		}
 		state.AggregationData.Sum.Versions[state.NodeID] = localVersion
-		state.AggregationData.Sum.Contributions[state.NodeID] = state.Value
+		state.AggregationData.Sum.Contributions[state.NodeID] = localContribution
 		state.Value, state.AggregationData.Sum.Overflowed = sumWithSaturation(state.AggregationData.Sum.Contributions, state.AggregationData.Sum.Overflowed)
 		return state
 	case "average":
