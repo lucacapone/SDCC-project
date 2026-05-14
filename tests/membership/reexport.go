@@ -22,8 +22,9 @@ const (
 )
 
 var (
-	ErrJoinNotAvailable = internalmembership.ErrJoinNotAvailable
-	NewSet             = internalmembership.NewSet
-	NewSetWithConfig   = internalmembership.NewSetWithConfig
-	Bootstrap          = internalmembership.Bootstrap
+	ErrJoinNotAvailable      = internalmembership.ErrJoinNotAvailable
+	NewSet                   = internalmembership.NewSet
+	NewSetWithConfig         = internalmembership.NewSetWithConfig
+	Bootstrap                = internalmembership.Bootstrap
+	IsEligibleForAggregation = internalmembership.IsEligibleForAggregation
 )

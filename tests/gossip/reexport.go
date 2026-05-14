@@ -24,6 +24,7 @@ var (
 	SerializeMembershipDigestForTest         = internalgossip.SerializeMembershipDigestForTest
 	SerializeMembershipDigestWithSelfForTest = internalgossip.SerializeMembershipDigestWithSelfForTest
 	BuildMessageMetadataForTest              = internalgossip.BuildMessageMetadataForTest
+	EligibleNodeIDsForTest                   = internalgossip.EligibleNodeIDsForTest
 	currentMessageVersion                    = internalgossip.CurrentMessageVersion()
 )
 

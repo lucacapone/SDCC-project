@@ -242,6 +242,34 @@ func (s *Set) TouchOrUpsertCanonical(nodeID, addr string, now time.Time) {
 	s.peers[nodeID] = peer
 }
 
+// IsEligibleForAggregation restituisce true solo per peer esplicitamente vivi.
+//
+// La funzione centralizza la semantica di eleggibilita' usata dai calcoli
+// aggregati: solo lo stato Alive contribuisce a sum/average, mentre Suspect,
+// Dead, Left e stati vuoti o non riconosciuti vengono esclusi.
+func IsEligibleForAggregation(peer Peer) bool {
+	return peer.Status == Alive
+}
+
+// IsEligibleForAggregation verifica se il nodo indicato e' eleggibile nello
+// snapshot locale del set. Il nodo locale e' considerato eleggibile anche se
+// non e' ancora rappresentato esplicitamente, cosi' il bootstrap non perde il
+// contributo self prima della propagazione completa della membership.
+func (s *Set) IsEligibleForAggregation(nodeID string) bool {
+	if s == nil || nodeID == "" {
+		return false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, ok := s.peers[nodeID]; !ok && s.selfNodeID == nodeID {
+		return true
+	}
+	peer, ok := s.peers[nodeID]
+	return ok && IsEligibleForAggregation(peer)
+}
+
 // Snapshot restituisce copia consistente dei peer correnti.
 func (s *Set) Snapshot() []Peer {
 	s.mu.RLock()
