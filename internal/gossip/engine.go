@@ -764,6 +764,18 @@ func recalculateStateForMembership(state shared.GossipState, selfID shared.NodeI
 		}
 		state.Value = averageFromEligibleContributions(state.AggregationData.Average.Contributions, eligible)
 		return state
+	case "min":
+		if state.AggregationData.Min == nil {
+			return state
+		}
+		state.Value = minFromEligibleContributions(state.AggregationData.Min.Contributions, eligible)
+		return state
+	case "max":
+		if state.AggregationData.Max == nil {
+			return state
+		}
+		state.Value = maxFromEligibleContributions(state.AggregationData.Max.Contributions, eligible)
+		return state
 	default:
 		return state
 	}
@@ -783,6 +795,16 @@ func countKnownContributions(state shared.GossipState) int {
 			return 0
 		}
 		return len(state.AggregationData.Average.Contributions)
+	case "min":
+		if state.AggregationData.Min == nil {
+			return 0
+		}
+		return len(state.AggregationData.Min.Contributions)
+	case "max":
+		if state.AggregationData.Max == nil {
+			return 0
+		}
+		return len(state.AggregationData.Max.Contributions)
 	default:
 		return 0
 	}
@@ -814,6 +836,38 @@ func averageFromEligibleContributions(contributions map[shared.NodeID]shared.Ave
 		filtered[nodeID] = contribution
 	}
 	return averageFromContributions(filtered)
+}
+
+// minFromEligibleContributions calcola il minimo solo sui contributi dei nodi
+// eleggibili. Se nessun contributore eleggibile ha un contributo noto, ritorna
+// 0 in continuita' con sum/average; nei round locali il contributo self viene
+// comunque registrato prima del calcolo quando il self e' eleggibile.
+func minFromEligibleContributions(contributions map[shared.NodeID]float64, eligible map[shared.NodeID]struct{}) float64 {
+	filtered := make(map[shared.NodeID]float64, len(eligible))
+	for nodeID := range eligible {
+		contribution, ok := contributions[nodeID]
+		if !ok {
+			continue
+		}
+		filtered[nodeID] = contribution
+	}
+	return minFromContributions(filtered)
+}
+
+// maxFromEligibleContributions calcola il massimo solo sui contributi dei nodi
+// eleggibili. Se nessun contributore eleggibile ha un contributo noto, ritorna
+// 0 in continuita' con sum/average; nei round locali il contributo self viene
+// comunque registrato prima del calcolo quando il self e' eleggibile.
+func maxFromEligibleContributions(contributions map[shared.NodeID]float64, eligible map[shared.NodeID]struct{}) float64 {
+	filtered := make(map[shared.NodeID]float64, len(eligible))
+	for nodeID := range eligible {
+		contribution, ok := contributions[nodeID]
+		if !ok {
+			continue
+		}
+		filtered[nodeID] = contribution
+	}
+	return maxFromContributions(filtered)
 }
 
 func prepareLocalStateForRound(state shared.GossipState, selfID shared.NodeID, membershipSnapshot []membership.Peer) shared.GossipState {
@@ -856,9 +910,43 @@ func prepareLocalStateForRound(state shared.GossipState, selfID shared.NodeID, m
 		state.AggregationData.Average.Contributions[state.NodeID] = localContribution
 		state.Value = averageFromEligibleContributions(state.AggregationData.Average.Contributions, eligible)
 		return state
+	case "min":
+		state.EnsureMinMetadata()
+		// Il contributo locale min resta stabile e separato dalla stima derivata,
+		// cosi' un cambio membership puo' ricalcolare il minimo senza perdere storia.
+		localContribution, hasLocalContribution := state.AggregationData.Min.Contributions[state.NodeID]
+		if !hasLocalContribution {
+			localContribution = localScalarContributionForRound(state)
+		}
+		state.AggregationData.Min.Versions[state.NodeID] = localVersion
+		state.AggregationData.Min.Contributions[state.NodeID] = localContribution
+		state.Value = minFromEligibleContributions(state.AggregationData.Min.Contributions, eligible)
+		return state
+	case "max":
+		state.EnsureMaxMetadata()
+		// Il contributo locale max resta stabile e separato dalla stima derivata,
+		// cosi' un cambio membership puo' ricalcolare il massimo senza perdere storia.
+		localContribution, hasLocalContribution := state.AggregationData.Max.Contributions[state.NodeID]
+		if !hasLocalContribution {
+			localContribution = localScalarContributionForRound(state)
+		}
+		state.AggregationData.Max.Versions[state.NodeID] = localVersion
+		state.AggregationData.Max.Contributions[state.NodeID] = localContribution
+		state.Value = maxFromEligibleContributions(state.AggregationData.Max.Contributions, eligible)
+		return state
 	default:
 		return state
 	}
+}
+
+// localScalarContributionForRound restituisce il contributo stabile del nodo locale
+// per aggregazioni scalari min/max, evitando di usare una stima aggregata derivata
+// come sorgente nei round successivi.
+func localScalarContributionForRound(state shared.GossipState) float64 {
+	if state.LocalValue == 0 && state.Value != 0 {
+		return state.Value
+	}
+	return state.LocalValue
 }
 
 func sanitizedStateForMessage(state shared.GossipState) shared.GossipState {
@@ -922,24 +1010,36 @@ func cloneAverageState(averageState *shared.AverageState) *shared.AverageState {
 	return clone
 }
 
-// cloneMinState duplica le versioni monotone del minimo.
+// cloneMinState duplica contributi e versioni del minimo membership-aware.
 func cloneMinState(minState *shared.MinState) *shared.MinState {
 	if minState == nil {
 		return nil
 	}
-	clone := &shared.MinState{Versions: make(map[shared.NodeID]shared.StateVersionStamp, len(minState.Versions))}
+	clone := &shared.MinState{
+		Contributions: make(map[shared.NodeID]float64, len(minState.Contributions)),
+		Versions:      make(map[shared.NodeID]shared.StateVersionStamp, len(minState.Versions)),
+	}
+	for nodeID, contribution := range minState.Contributions {
+		clone.Contributions[nodeID] = contribution
+	}
 	for nodeID, version := range minState.Versions {
 		clone.Versions[nodeID] = version
 	}
 	return clone
 }
 
-// cloneMaxState duplica le versioni monotone del massimo.
+// cloneMaxState duplica contributi e versioni del massimo membership-aware.
 func cloneMaxState(maxState *shared.MaxState) *shared.MaxState {
 	if maxState == nil {
 		return nil
 	}
-	clone := &shared.MaxState{Versions: make(map[shared.NodeID]shared.StateVersionStamp, len(maxState.Versions))}
+	clone := &shared.MaxState{
+		Contributions: make(map[shared.NodeID]float64, len(maxState.Contributions)),
+		Versions:      make(map[shared.NodeID]shared.StateVersionStamp, len(maxState.Versions)),
+	}
+	for nodeID, contribution := range maxState.Contributions {
+		clone.Contributions[nodeID] = contribution
+	}
 	for nodeID, version := range maxState.Versions {
 		clone.Versions[nodeID] = version
 	}

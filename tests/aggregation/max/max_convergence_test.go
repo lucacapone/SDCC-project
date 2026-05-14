@@ -85,6 +85,7 @@ func (h *testHarness) setLocalValue(id shared.NodeID, value float64) {
 	n.eng.State.Round = 0
 	n.eng.State.VersionCounter = 0
 	n.eng.State.UpdatedAt = time.Date(2026, 3, 17, 10, 0, 0, 0, time.UTC)
+	n.eng.State.AggregationData.Max.Contributions[id] = value
 	n.eng.State.AggregationData.Max.Versions[id] = shared.StateVersionStamp{Counter: 0}
 }
 
@@ -97,6 +98,12 @@ func (h *testHarness) deliverValue(t *testing.T, from, to shared.NodeID, message
 		SentAt:       sentAt,
 		Version:      shared.MessageVersion{Major: 1, Minor: 0},
 		StateVersion: shared.StateVersionStamp{Counter: version},
+		Membership: []shared.MembershipEntry{{
+			NodeID:   from,
+			Addr:     fmt.Sprintf("%s:7000", from),
+			Status:   string(membership.Alive),
+			LastSeen: sentAt,
+		}},
 		State: shared.GossipState{
 			NodeID:          from,
 			AggregationType: "max",
@@ -104,7 +111,10 @@ func (h *testHarness) deliverValue(t *testing.T, from, to shared.NodeID, message
 			Round:           version,
 			VersionCounter:  version,
 			UpdatedAt:       sentAt,
-			AggregationData: shared.AggregationState{Max: &shared.MaxState{Versions: map[shared.NodeID]shared.StateVersionStamp{from: {Counter: version}}}},
+			AggregationData: shared.AggregationState{Max: &shared.MaxState{
+				Contributions: map[shared.NodeID]float64{from: value},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{from: {Counter: version}},
+			}},
 		},
 	}
 	raw, err := json.Marshal(msg)

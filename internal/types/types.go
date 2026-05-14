@@ -67,14 +67,16 @@ type AverageState struct {
 	Versions      map[NodeID]StateVersionStamp   `json:"versions,omitempty"`
 }
 
-// MinState rappresenta metadati monotoni per il merge convergente del minimo.
+// MinState rappresenta metadati CRDT-like per il minimo membership-aware.
 type MinState struct {
-	Versions map[NodeID]StateVersionStamp `json:"versions,omitempty"`
+	Contributions map[NodeID]float64           `json:"contributions,omitempty"`
+	Versions      map[NodeID]StateVersionStamp `json:"versions,omitempty"`
 }
 
-// MaxState rappresenta metadati monotoni per il merge convergente del massimo.
+// MaxState rappresenta metadati CRDT-like per il massimo membership-aware.
 type MaxState struct {
-	Versions map[NodeID]StateVersionStamp `json:"versions,omitempty"`
+	Contributions map[NodeID]float64           `json:"contributions,omitempty"`
+	Versions      map[NodeID]StateVersionStamp `json:"versions,omitempty"`
 }
 
 // GossipMessage è il payload gossip con envelope e stato.
@@ -139,6 +141,9 @@ func (s *GossipState) EnsureMinMetadata() {
 	if s.AggregationData.Min == nil {
 		s.AggregationData.Min = &MinState{}
 	}
+	if s.AggregationData.Min.Contributions == nil {
+		s.AggregationData.Min.Contributions = make(map[NodeID]float64)
+	}
 	if s.AggregationData.Min.Versions == nil {
 		s.AggregationData.Min.Versions = make(map[NodeID]StateVersionStamp)
 	}
@@ -148,6 +153,9 @@ func (s *GossipState) EnsureMinMetadata() {
 func (s *GossipState) EnsureMaxMetadata() {
 	if s.AggregationData.Max == nil {
 		s.AggregationData.Max = &MaxState{}
+	}
+	if s.AggregationData.Max.Contributions == nil {
+		s.AggregationData.Max.Contributions = make(map[NodeID]float64)
 	}
 	if s.AggregationData.Max.Versions == nil {
 		s.AggregationData.Max.Versions = make(map[NodeID]StateVersionStamp)
