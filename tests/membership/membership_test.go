@@ -219,26 +219,35 @@ func byNodeID(peers []Peer) map[string]Peer {
 	return out
 }
 
-func TestIsEligibleForAggregationIncludeSoloAlive(t *testing.T) {
+func TestIsAggregationEligibleIncludeSoloAlive(t *testing.T) {
 	cases := []struct {
-		name string
-		peer Peer
-		want bool
+		name   string
+		status Status
+		want   bool
 	}{
-		{name: "alive", peer: Peer{NodeID: "node-1", Status: Alive}, want: true},
-		{name: "suspect", peer: Peer{NodeID: "node-2", Status: Suspect}, want: false},
-		{name: "dead", peer: Peer{NodeID: "node-3", Status: Dead}, want: false},
-		{name: "left", peer: Peer{NodeID: "node-4", Status: Left}, want: false},
-		{name: "empty", peer: Peer{NodeID: "node-5"}, want: false},
-		{name: "unknown", peer: Peer{NodeID: "node-6", Status: Status("unknown")}, want: false},
+		{name: "alive", status: Alive, want: true},
+		{name: "suspect", status: Suspect, want: false},
+		{name: "dead", status: Dead, want: false},
+		{name: "left", status: Left, want: false},
+		{name: "empty", status: "", want: false},
+		{name: "unknown", status: Status("unknown"), want: false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := IsEligibleForAggregation(tc.peer); got != tc.want {
+			if got := IsAggregationEligible(tc.status); got != tc.want {
 				t.Fatalf("eleggibilita' inattesa: got=%v want=%v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestIsEligibleForAggregationUsaPolicyStatus(t *testing.T) {
+	if !IsEligibleForAggregation(Peer{NodeID: "node-1", Status: Alive}) {
+		t.Fatalf("peer alive deve essere eleggibile")
+	}
+	if IsEligibleForAggregation(Peer{NodeID: "node-2", Status: Status("unknown")}) {
+		t.Fatalf("peer con stato non riconosciuto non deve essere eleggibile")
 	}
 }
 

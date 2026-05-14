@@ -330,12 +330,12 @@ go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|
 
 ## Regressioni eleggibilita' membership per aggregazioni con contributi
 
-La suite congela la regola per cui il valore locale di `sum`, `average`, `min` e `max` viene calcolato solo sui nodi `alive` secondo la membership, includendo il self node se assente dallo snapshot durante il bootstrap. I contributi dei nodi non eleggibili restano nei metadata per non perdere informazioni utili a riconvergenze o rejoin futuri. Per `min` e `max`, l'assenza di contributori eleggibili con contributi noti produce `0`; nei round locali, però, il contributo self eleggibile viene registrato prima del ricalcolo e quindi preserva il valore locale. Il caso `TestRemoteMergeRicalcolaEstimateConMembershipAggiornata` verifica inoltre che, dopo un merge remoto, il valore osservato da stato runtime, collector e log sia ricalcolato sulla membership aggiornata dal digest appena ricevuto.
+La suite congela la regola centralizzata in `membership.IsAggregationEligible`, per cui il valore locale di `sum`, `average`, `min` e `max` viene calcolato solo sui nodi `alive` secondo la membership, includendo il self node se assente dallo snapshot durante il bootstrap. I contributi dei nodi non eleggibili restano nei metadata per non perdere informazioni utili a riconvergenze o rejoin futuri. Per `min` e `max`, l'assenza di contributori eleggibili con contributi noti produce `0`; nei round locali, però, il contributo self eleggibile viene registrato prima del ricalcolo e quindi preserva il valore locale. Il caso `TestRemoteMergeRicalcolaEstimateConMembershipAggiornata` verifica inoltre che, dopo un merge remoto, il valore osservato da stato runtime, collector e log sia ricalcolato sulla membership aggiornata dal digest appena ricevuto.
 
 Comando mirato:
 
 ```bash
-go test ./tests/membership ./tests/gossip -run 'TestIsEligibleForAggregationIncludeSoloAlive|TestSetIsEligibleForAggregationIncludeSelfAssenteInBootstrap|TestEligibleNodeIDsIncludeSoloAliveESelfBootstrap|TestRoundSumFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMinFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMaxFiltraContributiNonEleggibiliSenzaCancellarli|TestRemoteMergeRicalcolaEstimateConMembershipAggiornata' -count=1
+go test ./tests/membership ./tests/gossip -run 'TestIsAggregationEligibleIncludeSoloAlive|TestIsEligibleForAggregationUsaPolicyStatus|TestSetIsEligibleForAggregationIncludeSelfAssenteInBootstrap|TestEligibleNodeIDsIncludeSoloAliveESelfBootstrap|TestRoundSumFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMinFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMaxFiltraContributiNonEleggibiliSenzaCancellarli|TestRemoteMergeRicalcolaEstimateConMembershipAggiornata' -count=1
 ```
 
 ## Test canonico observability
