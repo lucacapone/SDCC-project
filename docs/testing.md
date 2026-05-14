@@ -171,6 +171,8 @@ Questa suite conserva il vecchio harness `tests/integration/harness_test.go` e c
 
 La regressione `TestNodeCrashRestartSixNodesMembershipAwareAverage` usa valori `10, 30, 50, 70, 90, 110` e congela la nuova semantica di esclusione dei nodi non attivi: media iniziale `60`, media del cluster residuo `40` dopo `leave`/`dead` di `node-5` e `node-6`, e ritorno a `60` dopo rejoin `alive` e convergenza. Anche `TestNodeCrashAndRestartInMemory` usa ora come riferimento del cluster residuo la media dei soli nodi rimasti `alive`, non la media storica del cluster prima del crash.
 
+Sono inoltre presenti regressioni leave-specifiche in `tests/integration/node_leave_test.go`: `TestVoluntaryLeaveMaintainsResidualConvergence` verifica che un nodo in `leave` venga escluso dalla media osservabile del cluster residuo, mentre `TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow` controlla che, dopo propagazione e prune del tombstone, il nodo uscito non venga più targettato oltre la finestra di protocollo.
+
 È il test più veloce da usare durante lo sviluppo, ma non costituisce più da solo la prova completa del requisito M10 su deployment reale.
 
 Comando rapido:
@@ -318,16 +320,18 @@ go test ./tests/gossip -run TestMergeMembershipRealignsPlaceholderSeedWithCanoni
 
 ## Regressioni canoniche average
 
-Per l'aggregazione `average` il repository congela esplicitamente due rischi:
+Per l'aggregazione `average` il repository congela esplicitamente tre rischi:
 
 - il contributo locale di un nodo non deve driftare verso la media corrente del cluster dopo round multipli;
-- un payload remoto che include gia' metadata `average` completi non deve re-inferire il contributo del mittente a partire da `state.value`.
+- un payload remoto che include gia' metadata `average` completi non deve re-inferire il contributo del mittente a partire da `state.value`;
+- la media esposta deve filtrare i contributi dei nodi non eleggibili secondo membership (`suspect`, `dead`, `leave`) senza cancellarli dai metadata, così da permettere rejoin e riconvergenza.
 
 Comandi mirati:
 
 ```bash
 go test ./tests/aggregation/average -run 'TestAverageConvergence|TestAverageRoundDoesNotDriftLocalContribution' -count=1
-go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|TestMergeAverageNonReinferisceContributoDaRemoteValueQuandoMetadataCompleti' -count=1
+go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|TestMergeAverageNonReinferisceContributoDaRemoteValueQuandoMetadataCompleti|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli' -count=1
+go test ./tests/integration -run 'TestNodeCrashRestartSixNodesMembershipAwareAverage|TestVoluntaryLeaveMaintainsResidualConvergence|TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow' -count=1
 ```
 
 

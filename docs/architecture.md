@@ -92,6 +92,16 @@ Transizioni principali implementate:
 6. L'eleggibilità per il calcolo locale di `sum`, `average`, `min` e `max` deriva da una policy unica in `internal/membership.IsAggregationEligible`: contribuiscono solo peer con `status=alive`; `suspect`, `dead`, `leave` e stati vuoti/non riconosciuti restano nei metadata ma sono esclusi dal valore `state.value`. Il nodo locale è incluso se risulta `alive` nello snapshot oppure se non è ancora presente nella membership, così il bootstrap non perde il contributo self.
 7. Il ricalcolo di `state.value` è sempre agganciato a uno snapshot membership esplicito: nei round locali avviene dopo `ApplyTimeoutTransitions`, `Prune` e `Snapshot`; nei merge remoti avviene dopo `markPeerAlive` e dopo il merge del digest membership ricevuto. Questo mantiene intatte le mappe dei contributi per rejoin/recovery, ma fa sì che log e metriche espongano la stima derivata dalla vista membership corrente.
 
+## Separazione tra stato gossip, membership locale e risultato esposto
+
+Il cambio di comportamento va letto come una separazione intenzionale tra tre livelli che non devono essere confusi:
+
+1. **Stato gossip conosciuto**: `state.aggregation_data.*` conserva i contributi/versioni appresi per nodo (`sum`, `average`, `min`, `max`) anche quando un peer diventa `suspect`, `dead` o `leave`. Questo livello rappresenta la conoscenza CRDT-like propagata via gossip e serve a gestire duplicati, out-of-order, recovery e rejoin senza perdere contributi storici.
+2. **Stato membership locale**: `internal/membership.Set` mantiene la vista locale dei peer con `status`, `incarnation`, `last_seen`, timeout e tombstone. Questa vista decide l'eleggibilità operativa tramite `IsAggregationEligible(status)`: solo `alive` è eleggibile; `suspect`, `dead` e `leave` restano stati noti ma non contribuiscono al calcolo osservabile.
+3. **Risultato aggregato esposto**: `state.value`, la metrica `sdcc_node_estimate` e i log di round/merge non sono la somma grezza di tutto lo stato gossip conosciuto; sono il risultato ricalcolato usando solo i contributi dei nodi eleggibili secondo la membership locale corrente. Di conseguenza un contributo può rimanere in `aggregation_data` ma non apparire nel risultato finché il nodo non torna `alive` con un'incarnation valida.
+
+Questa separazione evita cancellazioni distruttive dei metadata gossip, ma rende esplicito che l'output osservabile rappresenta il cluster attualmente vivo secondo la vista locale del nodo.
+
 ## Formato messaggio gossip
 Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in JSON.
 

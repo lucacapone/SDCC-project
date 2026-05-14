@@ -109,9 +109,12 @@ La configurazione segue tre leve operative:
 - `initial_value`: valore locale iniziale con cui il nodo semina il proprio stato gossip al bootstrap.
 La validazione fallisce se `aggregation` non appartiene a `enabled_aggregations`.
 Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate in `sum`, `average`, `min` e `max`.
+
+Sintesi del comportamento osservabile: i contributi appresi via gossip restano nei metadata per convergenza e rejoin, ma il risultato esposto (`state.value`, metriche e log) viene ricalcolato solo sui nodi membership-eligible. Sono quindi esclusi dal risultato i nodi in stato `suspect`, `dead` e `leave`; tornano a contribuire solo dopo rejoin/heartbeat valido che li renda di nuovo `alive`.
+
 - **Stato reale `sum`**: algoritmo base in `internal/aggregation/sum/`; il merge gossip usa `state.aggregation_data.sum` con contributi/versioni per nodo ed è implementato in `internal/gossip/state.go`, dove mantiene semantica idempotente su duplicati/out-of-order; la suite canonica di convergenza è `tests/aggregation/sum/sum_convergence_test.go` con `TestSumConvergence`.
-- **Stato reale `average`**: merge gossip convergente con metadati `state.aggregation_data.average` (`contributions.sum/count` + `versions` per nodo); ogni nodo conserva inoltre il proprio contributo locale originario in stato runtime separato, evitando che round successivi sostituiscano il contributo con la media corrente del cluster.
-- **Stato reale `min`/`max`**: merge gossip monotono robusto con metadati opzionali `state.aggregation_data.min/max.versions` per nodo e fallback retrocompatibile su payload legacy senza metadati.
+- **Stato reale `average`**: merge gossip convergente con metadati `state.aggregation_data.average` (`contributions.sum/count` + `versions` per nodo); ogni nodo conserva inoltre il proprio contributo locale originario in stato runtime separato, evitando che round successivi sostituiscano il contributo con la media corrente del cluster. La media esposta considera solo contributi `alive`, escludendo `suspect`, `dead` e `leave`.
+- **Stato reale `min`/`max`**: merge gossip monotono robusto con metadati opzionali `state.aggregation_data.min/max.versions` per nodo e fallback retrocompatibile su payload legacy senza metadati; anche il valore esposto di `min`/`max` filtra i contributori non `alive`.
 - Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
 
 ## Observability minima
