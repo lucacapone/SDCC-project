@@ -83,7 +83,7 @@ func TestConcurrentRoundOnceAndRemoteDeliveryInvariants(t *testing.T) {
 		DeadTimeout:    2 * time.Second,
 		PruneRetention: 10 * time.Second,
 	})
-	base := time.Date(2026, time.April, 20, 10, 0, 0, 0, time.UTC)
+	base := time.Now().UTC()
 
 	set.Upsert(membership.Peer{NodeID: "node-2", Addr: "node2:7002", Status: membership.Alive, Incarnation: 1, LastSeen: base})
 	set.Upsert(membership.Peer{NodeID: "node-3", Addr: "node3:7003", Status: membership.Alive, Incarnation: 1, LastSeen: base})

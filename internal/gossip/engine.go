@@ -100,14 +100,22 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.mu.Lock()
 		merge := applyRemote(e.State, msg)
 		e.State = merge.State
-		localRound := e.State.Round
-		localEstimate := e.State.Value
 		e.mu.Unlock()
 
 		markPeerAlive(ctx, e.Logger, e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
 		mergeMembership(e.Membership, string(e.NodeID), collectSelfIdentityAliases(e.Membership, string(e.NodeID), e.SelfAddr), msg.Membership)
-		localPeers := len(e.Membership.Snapshot())
-		e.updateObservabilityFromRuntime(localEstimate, string(merge.Status))
+		membershipSnapshot := e.Membership.Snapshot()
+
+		e.mu.Lock()
+		e.State = recalculateStateForMembership(e.State, e.NodeID, membershipSnapshot)
+		localRound := e.State.Round
+		localEstimate := e.State.Value
+		merge.EstimateAfter = localEstimate
+		merge.UniqueContributions = countKnownContributions(e.State)
+		e.mu.Unlock()
+
+		localPeers := len(membershipSnapshot)
+		e.updateObservabilityFromRuntime(localEstimate, localPeers, string(merge.Status))
 		if e.Logger != nil {
 			logLevel := slog.LevelDebug
 			if merge.Status == MergeApplied || merge.Status == MergeConflict {
@@ -209,7 +217,7 @@ func (e *Engine) round(ctx context.Context) {
 	e.State.Round = nextRound
 	e.State.VersionCounter = nextVersion
 	e.State.UpdatedAt = sentAt
-	e.State = prepareLocalStateForRound(e.State, eligibleNodeIDs(e.NodeID, membershipSnapshot))
+	e.State = prepareLocalStateForRound(e.State, e.NodeID, membershipSnapshot)
 
 	stateSnapshot := sanitizedStateForMessage(e.State)
 	stateVersion := normalizeVersion(stateSnapshot)
@@ -234,7 +242,7 @@ func (e *Engine) round(ctx context.Context) {
 		_ = e.Transport.Send(ctx, p.Addr, raw)
 	}
 
-	e.updateObservabilityAfterRound(localEstimate)
+	e.updateObservabilityAfterRound(localEstimate, len(membershipSnapshot))
 	if e.Logger != nil {
 		e.Logger.Debug("round gossip eseguito",
 			"event", "gossip_round",
@@ -307,22 +315,22 @@ func (e *Engine) AnnounceLeave(ctx context.Context) error {
 }
 
 // updateObservabilityAfterRound riallinea il collector ai valori runtime dopo un round locale completato.
-func (e *Engine) updateObservabilityAfterRound(localEstimate float64) {
+func (e *Engine) updateObservabilityAfterRound(localEstimate float64, knownPeers int) {
 	if e.Collector == nil {
 		return
 	}
 	e.Collector.IncTotalRounds()
-	e.Collector.SetKnownPeers(len(e.Membership.Snapshot()))
+	e.Collector.SetKnownPeers(knownPeers)
 	e.Collector.SetCurrentEstimate(localEstimate)
 }
 
 // updateObservabilityFromRuntime aggiorna il collector dopo un merge remoto usando lo stato runtime effettivo.
-func (e *Engine) updateObservabilityFromRuntime(localEstimate float64, mergeStatus string) {
+func (e *Engine) updateObservabilityFromRuntime(localEstimate float64, knownPeers int, mergeStatus string) {
 	if e.Collector == nil {
 		return
 	}
 	e.Collector.IncRemoteMergeOutcome(mergeStatus)
-	e.Collector.SetKnownPeers(len(e.Membership.Snapshot()))
+	e.Collector.SetKnownPeers(knownPeers)
 	e.Collector.SetCurrentEstimate(localEstimate)
 }
 
@@ -737,6 +745,49 @@ func eligibleNodeIDs(selfID shared.NodeID, peers []membership.Peer) map[shared.N
 	return eligible
 }
 
+// recalculateStateForMembership riallinea la stima derivata alla membership
+// corrente senza cancellare contributi storici. Le mappe per nodo restano quindi
+// disponibili per rejoin/recovery, mentre Value rappresenta solo i nodi Alive
+// nello snapshot osservato.
+func recalculateStateForMembership(state shared.GossipState, selfID shared.NodeID, membershipSnapshot []membership.Peer) shared.GossipState {
+	eligible := eligibleNodeIDs(selfID, membershipSnapshot)
+	switch state.AggregationType {
+	case "sum":
+		if state.AggregationData.Sum == nil {
+			return state
+		}
+		state.Value, state.AggregationData.Sum.Overflowed = sumWithSaturationForEligible(state.AggregationData.Sum.Contributions, eligible, state.AggregationData.Sum.Overflowed)
+		return state
+	case "average":
+		if state.AggregationData.Average == nil {
+			return state
+		}
+		state.Value = averageFromEligibleContributions(state.AggregationData.Average.Contributions, eligible)
+		return state
+	default:
+		return state
+	}
+}
+
+// countKnownContributions restituisce il numero di contributi CRDT-like noti
+// senza applicare filtri di eleggibilita', utile per metriche e log diagnostici.
+func countKnownContributions(state shared.GossipState) int {
+	switch state.AggregationType {
+	case "sum":
+		if state.AggregationData.Sum == nil {
+			return 0
+		}
+		return len(state.AggregationData.Sum.Contributions)
+	case "average":
+		if state.AggregationData.Average == nil {
+			return 0
+		}
+		return len(state.AggregationData.Average.Contributions)
+	default:
+		return 0
+	}
+}
+
 // sumWithSaturationForEligible calcola la somma solo sui contributi dei nodi
 // eleggibili, senza rimuovere metadata storici dalle mappe CRDT-like.
 func sumWithSaturationForEligible(contributions map[shared.NodeID]float64, eligible map[shared.NodeID]struct{}, alreadyOverflowed bool) (float64, bool) {
@@ -765,7 +816,8 @@ func averageFromEligibleContributions(contributions map[shared.NodeID]shared.Ave
 	return averageFromContributions(filtered)
 }
 
-func prepareLocalStateForRound(state shared.GossipState, eligible map[shared.NodeID]struct{}) shared.GossipState {
+func prepareLocalStateForRound(state shared.GossipState, selfID shared.NodeID, membershipSnapshot []membership.Peer) shared.GossipState {
+	eligible := eligibleNodeIDs(selfID, membershipSnapshot)
 	localVersion := normalizeVersion(state)
 	switch state.AggregationType {
 	case "sum":
