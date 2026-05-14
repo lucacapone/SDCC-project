@@ -183,6 +183,7 @@ func bootstrapClusterWithMembershipConfig(t *testing.T, network *integrationNetw
 			2,
 		)
 		engine.State.Value = value
+		engine.State.LocalValue = value
 
 		if err := engine.Start(ctx); err != nil {
 			cancel()
@@ -212,6 +213,7 @@ func restartClusterNode(t *testing.T, network *integrationNetwork, address strin
 		2,
 	)
 	engine.State.Value = initialValue
+	engine.State.LocalValue = initialValue
 	if err := engine.Start(context.Background()); err != nil {
 		t.Fatalf("restart nodo %s: %v", address, err)
 	}
