@@ -734,7 +734,7 @@ func eligibleNodeIDs(selfID shared.NodeID, peers []membership.Peer) map[shared.N
 		if nodeID == selfID {
 			selfSeen = true
 		}
-		if membership.IsEligibleForAggregation(peer) {
+		if membership.IsAggregationEligible(peer.Status) {
 			eligible[nodeID] = struct{}{}
 		}
 	}

@@ -26,5 +26,6 @@ var (
 	NewSet                   = internalmembership.NewSet
 	NewSetWithConfig         = internalmembership.NewSetWithConfig
 	Bootstrap                = internalmembership.Bootstrap
+	IsAggregationEligible    = internalmembership.IsAggregationEligible
 	IsEligibleForAggregation = internalmembership.IsEligibleForAggregation
 )

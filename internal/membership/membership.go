@@ -242,13 +242,21 @@ func (s *Set) TouchOrUpsertCanonical(nodeID, addr string, now time.Time) {
 	s.peers[nodeID] = peer
 }
 
-// IsEligibleForAggregation restituisce true solo per peer esplicitamente vivi.
+// IsAggregationEligible restituisce true solo per stati esplicitamente vivi.
 //
 // La funzione centralizza la semantica di eleggibilita' usata dai calcoli
-// aggregati: solo lo stato Alive contribuisce a sum/average, mentre Suspect,
-// Dead, Left e stati vuoti o non riconosciuti vengono esclusi.
+// aggregati: solo lo stato Alive contribuisce a sum/average/min/max, mentre
+// Suspect, Dead, Left e stati vuoti o non riconosciuti vengono esclusi.
+func IsAggregationEligible(status Status) bool {
+	return status == Alive
+}
+
+// IsEligibleForAggregation restituisce true solo per peer esplicitamente vivi.
+//
+// Il wrapper mantiene testabile la policy sui peer senza duplicare confronti
+// sugli stati nelle call-site che lavorano con snapshot membership completi.
 func IsEligibleForAggregation(peer Peer) bool {
-	return peer.Status == Alive
+	return IsAggregationEligible(peer.Status)
 }
 
 // IsEligibleForAggregation verifica se il nodo indicato e' eleggibile nello
