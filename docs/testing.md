@@ -155,6 +155,7 @@ Gli script `scripts/cluster_*.sh` e l'harness reale `tests/integration/compose_h
 Per M10 il repository distingue ora in modo esplicito due livelli complementari:
 
 - **variante rapida/deterministica in-memory**: `tests/integration/TestNodeCrashAndRestartInMemory`;
+- **regressione esplicita membership-aware a 6 nodi**: `tests/integration/TestNodeCrashRestartSixNodesMembershipAwareAverage`;
 - **suite lenta/reale Compose**: `tests/integration/TestNodeCrashAndRestart`.
 
 La variante in-memory resta utile come controllo rapido di debug locale. La suite `TestNodeCrashAndRestart` è invece la verifica automatica richiesta per il crash/restart su **cluster locale reale** orchestrato via Docker Compose e pilotato dagli script canonici della repository.
@@ -168,12 +169,14 @@ Questa suite conserva il vecchio harness `tests/integration/harness_test.go` e c
 - restart del nodo fermato;
 - verifica del rejoin e della stabilizzazione finale.
 
+La regressione `TestNodeCrashRestartSixNodesMembershipAwareAverage` usa valori `10, 30, 50, 70, 90, 110` e congela la nuova semantica di esclusione dei nodi non attivi: media iniziale `60`, media del cluster residuo `40` dopo `leave`/`dead` di `node-5` e `node-6`, e ritorno a `60` dopo rejoin `alive` e convergenza. Anche `TestNodeCrashAndRestartInMemory` usa ora come riferimento del cluster residuo la media dei soli nodi rimasti `alive`, non la media storica del cluster prima del crash.
+
 È il test più veloce da usare durante lo sviluppo, ma non costituisce più da solo la prova completa del requisito M10 su deployment reale.
 
 Comando rapido:
 
 ```bash
-go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
+go test ./tests/integration -run 'TestNodeCrashAndRestartInMemory|TestNodeCrashRestartSixNodesMembershipAwareAverage' -count=1
 make test-crash-restart-internal
 ```
 
@@ -216,7 +219,7 @@ La suite reale non si limita a invocare gli script: richiede evidenze esplicite 
 
 ```bash
 go test ./tests/integration -run TestNodeCrashAndRestart -count=1
-go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
+go test ./tests/integration -run 'TestNodeCrashAndRestartInMemory|TestNodeCrashRestartSixNodesMembershipAwareAverage' -count=1
 make test-crash-restart
 make test-crash-restart-internal
 # alias equivalente del test reale: make test-m10
@@ -330,12 +333,13 @@ go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|
 
 ## Regressioni eleggibilita' membership per aggregazioni con contributi
 
-La suite congela la regola centralizzata in `membership.IsAggregationEligible`, per cui il valore locale di `sum`, `average`, `min` e `max` viene calcolato solo sui nodi `alive` secondo la membership, includendo il self node se assente dallo snapshot durante il bootstrap. I contributi dei nodi non eleggibili restano nei metadata per non perdere informazioni utili a riconvergenze o rejoin futuri. Per `min` e `max`, l'assenza di contributori eleggibili con contributi noti produce `0`; nei round locali, però, il contributo self eleggibile viene registrato prima del ricalcolo e quindi preserva il valore locale. Il caso `TestRemoteMergeRicalcolaEstimateConMembershipAggiornata` verifica inoltre che, dopo un merge remoto, il valore osservato da stato runtime, collector e log sia ricalcolato sulla membership aggiornata dal digest appena ricevuto.
+La suite congela la regola centralizzata in `membership.IsAggregationEligible`, per cui il valore locale di `sum`, `average`, `min` e `max` viene calcolato solo sui nodi `alive` secondo la membership, includendo il self node se assente dallo snapshot durante il bootstrap. Le suite `tests/aggregation/{average,sum,min,max}` contengono anche casi black-box senza rete reale che consegnano contributi deterministici, marcano uno o più peer come `leave`/`dead`, verificano il ricalcolo filtrato e poi simulano il rejoin `alive`. I contributi dei nodi non eleggibili restano nei metadata per non perdere informazioni utili a riconvergenze o rejoin futuri. Per `min` e `max`, l'assenza di contributori eleggibili con contributi noti produce `0`; nei round locali, però, il contributo self eleggibile viene registrato prima del ricalcolo e quindi preserva il valore locale. Il caso `TestRemoteMergeRicalcolaEstimateConMembershipAggiornata` verifica inoltre che, dopo un merge remoto, il valore osservato da stato runtime, collector e log sia ricalcolato sulla membership aggiornata dal digest appena ricevuto.
 
 Comando mirato:
 
 ```bash
 go test ./tests/membership ./tests/gossip -run 'TestIsAggregationEligibleIncludeSoloAlive|TestIsEligibleForAggregationUsaPolicyStatus|TestSetIsEligibleForAggregationIncludeSelfAssenteInBootstrap|TestEligibleNodeIDsIncludeSoloAliveESelfBootstrap|TestRoundSumFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMinFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMaxFiltraContributiNonEleggibiliSenzaCancellarli|TestRemoteMergeRicalcolaEstimateConMembershipAggiornata' -count=1
+go test ./tests/aggregation/average ./tests/aggregation/sum ./tests/aggregation/min ./tests/aggregation/max -run 'TestAverageConvergence/filtro|TestSumConvergence/filtro|TestMinConvergence/filtro|TestMaxConvergence/filtro' -count=1
 ```
 
 ## Test canonico observability

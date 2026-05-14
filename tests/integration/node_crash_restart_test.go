@@ -1,10 +1,13 @@
 package integration_test
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"testing"
 	"time"
+
+	"sdcc-project/internal/membership"
 )
 
 const (
@@ -71,7 +74,8 @@ func TestNodeCrashAndRestartInMemory(t *testing.T) {
 	t.Logf("nodo crashato deregistrato correttamente dal transport di test: node_id=%s", crashedNodeID)
 
 	residualNodes := []*clusterNode{nodes[1], nodes[2]}
-	residualObservation, residualConverged := waitForClusterConvergence(residualNodes, crashRestartCrashTimeout, crashRestartPollInterval, scenarioReferenceValue, crashRestartResidualExpectedBand)
+	residualReferenceValue := averageOf([]float64{initialValues[1], initialValues[2]})
+	residualObservation, residualConverged := waitForClusterConvergence(residualNodes, crashRestartCrashTimeout, crashRestartPollInterval, residualReferenceValue, crashRestartResidualExpectedBand)
 	t.Logf("valori del cluster residuo: %s", formatClusterObservation(residualObservation))
 	if !residualConverged {
 		t.Fatalf("cluster residuo non convergente dopo crash del nodo %s: %s", crashedNodeID, formatClusterObservation(residualObservation))
@@ -81,7 +85,7 @@ func TestNodeCrashAndRestartInMemory(t *testing.T) {
 		residualNodes,
 		crashRestartCrashTimeout,
 		crashRestartPollInterval,
-		scenarioReferenceValue,
+		residualReferenceValue,
 		crashRestartResidualExpectedBand,
 		crashRestartResidualSnapshotCount,
 	)
@@ -154,6 +158,86 @@ func TestNodeCrashAndRestartInMemory(t *testing.T) {
 	}
 	if math.Abs(finalObservation.values[crashedNodeID]-restartInitialValue) < crashRestartMinimumRejoinDelta {
 		t.Fatalf("il nodo rientrato %s è ancora troppo vicino al valore di restart %0.6f nel report finale", crashedNodeID, restartInitialValue)
+	}
+}
+
+// TestNodeCrashRestartSixNodesMembershipAwareAverage verifica esplicitamente che
+// i nodi non attivi vengano esclusi dal valore medio osservabile senza perdere
+// i contributi storici necessari al rejoin successivo.
+func TestNodeCrashRestartSixNodesMembershipAwareAverage(t *testing.T) {
+	initialValues := []float64{10, 30, 50, 70, 90, 110}
+	allAddresses := []string{"node-1", "node-2", "node-3", "node-4", "node-5", "node-6"}
+	initialReferenceValue := averageOf(initialValues)
+	residualReferenceValue := averageOf(initialValues[:4])
+
+	network := newIntegrationNetwork()
+	nodes, cancel := bootstrapCluster(t, network, crashRestartAggregation, initialValues, crashRestartGossipInterval)
+	defer cancel()
+	defer stopCluster(t, nodes)
+
+	initialObservation, initiallyConverged := waitForClusterConvergence(nodes, crashRestartRejoinTimeout, crashRestartPollInterval, initialReferenceValue, crashRestartResidualExpectedBand)
+	if !initiallyConverged || initialObservation.referenceMaxOffset > crashRestartResidualExpectedBand {
+		t.Fatalf("cluster iniziale non convergente alla media 60: %s", formatClusterObservation(initialObservation))
+	}
+	t.Logf("cluster iniziale convergente alla media attesa 60: %s", formatClusterObservation(initialObservation))
+
+	if err := nodes[4].engine.Stop(); err != nil {
+		t.Fatalf("leave simulato node-5: %v", err)
+	}
+	if err := nodes[5].engine.Stop(); err != nil {
+		t.Fatalf("dead simulato node-6: %v", err)
+	}
+	nodes[4] = nil
+	nodes[5] = nil
+	markPeerStatusForAliveNodes(nodes[:4], "node-5", membership.Left)
+	markPeerStatusForAliveNodes(nodes[:4], "node-6", membership.Dead)
+
+	residualNodes := nodes[:4]
+	residualObservation, residualConverged := waitForClusterConvergence(residualNodes, crashRestartCrashTimeout, crashRestartPollInterval, residualReferenceValue, crashRestartResidualExpectedBand)
+	if !residualConverged || residualObservation.referenceMaxOffset > crashRestartResidualExpectedBand {
+		t.Fatalf("cluster residuo non convergente alla media alive 40 dopo leave/dead: %s", formatClusterObservation(residualObservation))
+	}
+	t.Logf("cluster residuo convergente alla media alive 40: %s", formatClusterObservation(residualObservation))
+
+	nodes[4] = restartClusterNode(t, network, "node-5", crashRestartAggregation, initialValues[4], allAddresses, crashRestartGossipInterval)
+	nodes[5] = restartClusterNode(t, network, "node-6", crashRestartAggregation, initialValues[5], allAddresses, crashRestartGossipInterval)
+	markPeerAliveForAllNodes(nodes, "node-5")
+	markPeerAliveForAllNodes(nodes, "node-6")
+	finalObservation, rejoinedConverged := waitForClusterConvergence(nodes, crashRestartRejoinTimeout, crashRestartPollInterval, initialReferenceValue, crashRestartResidualExpectedBand)
+	if !rejoinedConverged || finalObservation.referenceMaxOffset > crashRestartResidualExpectedBand {
+		t.Fatalf("cluster non riconvergente alla media 60 dopo rejoin alive di node-5/node-6: %s", formatClusterObservation(finalObservation))
+	}
+	t.Logf("cluster riconvergente alla media 60 dopo rejoin: %s", formatClusterObservation(finalObservation))
+}
+
+// markPeerStatusForAliveNodes forza uno stato membership non attivo nei nodi rimasti
+// in esecuzione, rendendo deterministico il ricalcolo membership-aware del test.
+func markPeerStatusForAliveNodes(nodes []*clusterNode, nodeID string, status membership.Status) {
+	now := time.Now().UTC()
+	for _, node := range nodes {
+		if node == nil || node.engine == nil {
+			continue
+		}
+		node.engine.Membership.Upsert(membership.Peer{
+			NodeID:   nodeID,
+			Addr:     nodeID,
+			Status:   status,
+			LastSeen: now,
+		})
+		node.engine.RoundOnce(context.Background())
+	}
+}
+
+// markPeerAliveForAllNodes simula l'heartbeat di rejoin gia' osservato per tutti
+// i nodi del test, rendendo deterministica la fase "alive" dopo il restart.
+func markPeerAliveForAllNodes(nodes []*clusterNode, nodeID string) {
+	now := time.Now().UTC()
+	for _, node := range nodes {
+		if node == nil || node.engine == nil {
+			continue
+		}
+		node.engine.Membership.Touch(nodeID, now)
+		node.engine.RoundOnce(context.Background())
 	}
 }
 

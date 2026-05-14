@@ -231,6 +231,44 @@ func TestAverageConvergence(t *testing.T) {
 		}
 	})
 
+	t.Run("filtro membership senza rete reale", func(t *testing.T) {
+		ids := []shared.NodeID{"node-1", "node-2", "node-3", "node-4", "node-5", "node-6"}
+		h := newTestHarness(t, ids)
+		for index, value := range []float64{10, 30, 50, 70, 90, 110} {
+			id := ids[index]
+			h.setLocalContribution(id, value, 1)
+		}
+
+		for index, from := range ids[1:] {
+			contribution := h.nodes[from].eng.State.AggregationData.Average.Contributions[from]
+			version := shared.StateVersion((index + 1) * 10)
+			h.deliverContribution(t, from, "node-1", shared.MessageID(fmt.Sprintf("%s-to-node-1", from)), version, contribution.Sum, contribution.Count, base)
+		}
+		h.assertNodeValue(t, "node-1", 60)
+
+		node := h.nodes["node-1"]
+		for _, activeID := range []string{"node-2", "node-3", "node-4"} {
+			node.eng.Membership.Touch(activeID, time.Now().UTC())
+		}
+		node.eng.Membership.LeaveAt("node-5", time.Now().UTC())
+		node.eng.Membership.Upsert(membership.Peer{NodeID: "node-6", Addr: "node-6:7000", Status: membership.Dead, LastSeen: time.Now().UTC()})
+		node.eng.RoundOnce(context.Background())
+		h.assertNodeValue(t, "node-1", 40)
+
+		if _, retained := node.eng.State.AggregationData.Average.Contributions["node-5"]; !retained {
+			t.Fatalf("contributo node-5 rimosso invece di essere solo filtrato")
+		}
+		if _, retained := node.eng.State.AggregationData.Average.Contributions["node-6"]; !retained {
+			t.Fatalf("contributo node-6 rimosso invece di essere solo filtrato")
+		}
+
+		for _, activeID := range []string{"node-2", "node-3", "node-4", "node-5", "node-6"} {
+			node.eng.Membership.Touch(activeID, time.Now().UTC())
+		}
+		node.eng.RoundOnce(context.Background())
+		h.assertNodeValue(t, "node-1", 60)
+	})
+
 	t.Run("casi edge divisione per zero e stato vuoto", func(t *testing.T) {
 		h := newTestHarness(t, []shared.NodeID{"node-a"})
 		h.setLocalContribution("node-a", 0, 0)

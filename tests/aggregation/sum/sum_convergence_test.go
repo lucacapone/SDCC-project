@@ -262,6 +262,32 @@ func TestSumConvergence(t *testing.T) {
 		}
 	})
 
+	t.Run("filtro membership senza rete reale", func(t *testing.T) {
+		ids := []shared.NodeID{"node-1", "node-2", "node-3"}
+		h := newTestHarness(t, ids)
+		h.setLocalContribution("node-1", 10)
+		h.setLocalContribution("node-2", 30)
+		h.setLocalContribution("node-3", 50)
+
+		h.deliverSingleContribution(t, "node-2", "node-1", "node2-to-node1", 1, 30, base)
+		h.deliverSingleContribution(t, "node-3", "node-1", "node3-to-node1", 1, 50, base)
+		h.assertNodeValue(t, "node-1", 90)
+
+		node := h.nodes["node-1"]
+		node.eng.Membership.Touch("node-3", time.Now().UTC())
+		node.eng.Membership.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7000", Status: membership.Dead, LastSeen: time.Now().UTC()})
+		node.eng.RoundOnce(context.Background())
+		h.assertNodeValue(t, "node-1", 60)
+		if _, retained := node.eng.State.AggregationData.Sum.Contributions["node-2"]; !retained {
+			t.Fatalf("contributo node-2 rimosso invece di essere solo filtrato")
+		}
+
+		node.eng.Membership.Touch("node-3", time.Now().UTC())
+		node.eng.Membership.Touch("node-2", time.Now().UTC())
+		node.eng.RoundOnce(context.Background())
+		h.assertNodeValue(t, "node-1", 90)
+	})
+
 	t.Run("valori estremi overflow con saturazione", func(t *testing.T) {
 		h := newTestHarness(t, []shared.NodeID{"node-a", "node-b"})
 		h.setLocalContribution("node-a", math.MaxFloat64)

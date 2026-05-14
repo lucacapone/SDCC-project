@@ -186,6 +186,37 @@ func TestMinConvergence(t *testing.T) {
 		}
 	})
 
+	t.Run("filtro membership senza rete reale", func(t *testing.T) {
+		h := newTestHarness(t, []shared.NodeID{"node-1", "node-2", "node-3"})
+		h.setLocalValue("node-1", 40)
+		h.setLocalValue("node-2", 10)
+		h.setLocalValue("node-3", 50)
+
+		h.deliverValue(t, "node-2", "node-1", "node2-to-node1", 1, 10, base)
+		h.deliverValue(t, "node-3", "node-1", "node3-to-node1", 2, 50, base)
+		if got := h.nodes["node-1"].eng.State.Value; math.Abs(got-10) > 1e-9 {
+			t.Fatalf("min iniziale inatteso: got=%v want=10", got)
+		}
+
+		node := h.nodes["node-1"]
+		node.eng.Membership.Touch("node-3", time.Now().UTC())
+		node.eng.Membership.LeaveAt("node-2", time.Now().UTC())
+		node.eng.RoundOnce(context.Background())
+		if got := node.eng.State.Value; math.Abs(got-40) > 1e-9 {
+			t.Fatalf("min filtrato inatteso: got=%v want=40", got)
+		}
+		if _, retained := node.eng.State.AggregationData.Min.Contributions["node-2"]; !retained {
+			t.Fatalf("contributo node-2 rimosso invece di essere solo filtrato")
+		}
+
+		node.eng.Membership.Touch("node-3", time.Now().UTC())
+		node.eng.Membership.Touch("node-2", time.Now().UTC())
+		node.eng.RoundOnce(context.Background())
+		if got := node.eng.State.Value; math.Abs(got-10) > 1e-9 {
+			t.Fatalf("min dopo rejoin inatteso: got=%v want=10", got)
+		}
+	})
+
 	t.Run("nodo lento", func(t *testing.T) {
 		h := newTestHarness(t, []shared.NodeID{"node-1", "node-2", "node-3"})
 		h.setLocalValue("node-1", 10)
