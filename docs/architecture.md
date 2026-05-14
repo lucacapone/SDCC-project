@@ -89,7 +89,7 @@ Transizioni principali implementate:
 3. `dead` e `leave` non restano nella membership attiva per sempre: vengono mantenuti come tombstone locali per una retention temporanea separata (`PruneRetention`) così da poter propagare la rimozione via gossip.
 4. `Prune(now)` rimuove fisicamente dalla membership attiva i peer `dead`/`leave` il cui `last_seen` ha superato la retention; prima della cancellazione registra un watermark locale minimale (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) usato per rifiutare digest gossip obsoleti con `incarnation` non strettamente più nuova.
 5. aggiornamenti con `incarnation` più alta riattivano il peer e sovrascrivono stati precedenti, anche dopo una prune precedente; un digest con la stessa `incarnation` di un tombstone già potato non può reintrodurre il peer.
-6. L'eleggibilità per il calcolo locale di `sum` e `average` deriva dalla membership: contribuiscono solo peer con `status=alive`; `suspect`, `dead`, `leave` e stati vuoti/non riconosciuti restano nei metadata ma sono esclusi dal valore `state.value`. Il nodo locale è incluso se risulta `alive` nello snapshot oppure se non è ancora presente nella membership, così il bootstrap non perde il contributo self.
+6. L'eleggibilità per il calcolo locale di `sum`, `average`, `min` e `max` deriva dalla membership: contribuiscono solo peer con `status=alive`; `suspect`, `dead`, `leave` e stati vuoti/non riconosciuti restano nei metadata ma sono esclusi dal valore `state.value`. Il nodo locale è incluso se risulta `alive` nello snapshot oppure se non è ancora presente nella membership, così il bootstrap non perde il contributo self.
 7. Il ricalcolo di `state.value` è sempre agganciato a uno snapshot membership esplicito: nei round locali avviene dopo `ApplyTimeoutTransitions`, `Prune` e `Snapshot`; nei merge remoti avviene dopo `markPeerAlive` e dopo il merge del digest membership ricevuto. Questo mantiene intatte le mappe dei contributi per rejoin/recovery, ma fa sì che log e metriche espongano la stima derivata dalla vista membership corrente.
 
 ## Formato messaggio gossip
@@ -106,9 +106,9 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 8. `state.value` (`float64`): valore numerico corrente del nodo.
 9. `state.aggregation_data.sum` (`object`, opzionale): metadati minimali per `sum` idempotente (`contributions`, `versions`, `overflowed`).
 10. `state.aggregation_data.average` (`object`, opzionale): metadati per `average` convergente (`contributions` con `sum/count` per nodo + `versions`); il runtime locale mantiene separatamente il valore originario del nodo, cosi' il contributo locale non viene rimpiazzato dalla stima aggregata corrente durante i round successivi.
-11. `state.aggregation_data.min` (`object`, opzionale): metadati monotoni per `min` (versioni per nodo) usati per merge robusto e retrocompatibile.
-12. `state.aggregation_data.max` (`object`, opzionale): metadati monotoni per `max` (versioni per nodo) usati per merge robusto e retrocompatibile.
-10. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round, escludendo esplicitamente il nodo locale.
+11. `state.aggregation_data.min` (`object`, opzionale): metadati CRDT-like per `min` (`contributions` scalari per nodo + `versions`) usati per merge robusto, ricalcolo membership-aware e retrocompatibilità.
+12. `state.aggregation_data.max` (`object`, opzionale): metadati CRDT-like per `max` (`contributions` scalari per nodo + `versions`) usati per merge robusto, ricalcolo membership-aware e retrocompatibilità.
+13. `membership` (`array`): digest membership completo con entry (`node_id`, `addr`, `status`, `incarnation`, `last_seen`) propagato ad ogni round, escludendo esplicitamente il nodo locale.
 
 ### Payload gossip membership (dettaglio)
 Il campo `membership` è un array di `MembershipEntry` serializzato integralmente ad ogni messaggio:
@@ -166,8 +166,8 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 - `estimate` per `sum` è derivato dai contributi per nodo; nei round locali il calcolo filtra i contributi usando l'eleggibilità membership (`alive`), senza cancellare le entry da `aggregation_data.sum.contributions`;
 - in overflow numerico della `sum` viene applicata saturazione a `±math.MaxFloat64` e il flag `aggregation_data.sum.overflowed=true`;
 - per `average`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.average.versions[node_id]`) e ricostruzione deterministica della media su `sum/count`; nei round locali la media usa solo nodi membership-eligible e conserva comunque tutte le entry in `aggregation_data.average.contributions`;
-- per `min`: merge monotono robusto con metadati `aggregation_data.min.versions` per nodo; in caso di stato locale non inizializzato il valore remoto viene adottato deterministicamente (compatibilità messaggi legacy senza metadati);
-- per `max`: merge monotono robusto con metadati `aggregation_data.max.versions` per nodo; in caso di stato locale non inizializzato il valore remoto viene adottato deterministicamente (compatibilità messaggi legacy senza metadati);
+- per `min`: merge per-contributo nodo su `aggregation_data.min.contributions` guidato da `aggregation_data.min.versions`; a parità di versione vince deterministicamente il contributo più basso e il valore osservabile viene ricalcolato sui soli nodi membership-eligible senza cancellare contributi storici; se nessun contributore eleggibile ha contributi noti il valore derivato è `0`, salvo il normale caso di round locale in cui il contributo self eleggibile viene prima registrato;
+- per `max`: merge per-contributo nodo su `aggregation_data.max.contributions` guidato da `aggregation_data.max.versions`; a parità di versione vince deterministicamente il contributo più alto e il valore osservabile viene ricalcolato sui soli nodi membership-eligible senza cancellare contributi storici; se nessun contributore eleggibile ha contributi noti il valore derivato è `0`, salvo il normale caso di round locale in cui il contributo self eleggibile viene prima registrato;
 - messaggi auto-originati (`origin_node == local.node_id`, oppure fallback legacy con `origin_node` vuoto e `state.node_id == local.node_id`) sono classificati come `self_origin_noop` e non alterano `estimate`, `round` o versioni locali;
 - `new_round = max(local.round, remote.round) + 1`;
 - `updated_at = now_utc`;

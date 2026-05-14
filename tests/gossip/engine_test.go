@@ -735,3 +735,57 @@ func TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli(t *testing.T)
 		t.Fatalf("contributo dead non deve essere cancellato: got=%+v", got)
 	}
 }
+
+func TestRoundMinFiltraContributiNonEleggibiliSenzaCancellarli(t *testing.T) {
+	tr := &captureTransport{}
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Left, LastSeen: time.Now().UTC()})
+
+	eng := NewEngine("node-1", "min", tr, m, slog.Default(), nil, time.Hour, 3)
+	eng.State.LocalValue = 10
+	eng.State.EnsureMinMetadata()
+	eng.State.AggregationData.Min.Contributions["node-1"] = 10
+	eng.State.AggregationData.Min.Contributions["node-2"] = 30
+	eng.State.AggregationData.Min.Contributions["node-3"] = 5
+	eng.State.AggregationData.Min.Versions["node-1"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Min.Versions["node-2"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Min.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+
+	eng.RoundOnce(context.Background())
+
+	if got := eng.State.Value; got != 10 {
+		t.Fatalf("minimo filtrato inatteso: got=%v want=10", got)
+	}
+	if got := eng.State.AggregationData.Min.Contributions["node-3"]; got != 5 {
+		t.Fatalf("contributo left non deve essere cancellato: got=%v", got)
+	}
+}
+
+func TestRoundMaxFiltraContributiNonEleggibiliSenzaCancellarli(t *testing.T) {
+	tr := &captureTransport{}
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Dead, LastSeen: time.Now().UTC()})
+
+	eng := NewEngine("node-1", "max", tr, m, slog.Default(), nil, time.Hour, 3)
+	eng.State.LocalValue = 10
+	eng.State.EnsureMaxMetadata()
+	eng.State.AggregationData.Max.Contributions["node-1"] = 10
+	eng.State.AggregationData.Max.Contributions["node-2"] = 30
+	eng.State.AggregationData.Max.Contributions["node-3"] = 90
+	eng.State.AggregationData.Max.Versions["node-1"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Max.Versions["node-2"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Max.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+
+	eng.RoundOnce(context.Background())
+
+	if got := eng.State.Value; got != 30 {
+		t.Fatalf("massimo filtrato inatteso: got=%v want=30", got)
+	}
+	if got := eng.State.AggregationData.Max.Contributions["node-3"]; got != 90 {
+		t.Fatalf("contributo dead non deve essere cancellato: got=%v", got)
+	}
+}
