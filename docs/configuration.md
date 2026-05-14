@@ -127,6 +127,17 @@ Questa regola preserva due proprietà operative:
 | `100` | `50ms` | `100ms` |
 | `1` | `1ms` | `2ms` |
 
+### Effetto sull'eleggibilità dei contributi aggregati
+
+I timeout membership esistenti determinano anche quando un contributo smette di essere eleggibile per il risultato aggregato esposto:
+
+- allo scadere di `SuspectTimeout`, un peer passa da `alive` a `suspect` e il suo contributo resta nei metadata gossip ma viene escluso da `state.value`;
+- allo scadere di `DeadTimeout`, il peer passa a `dead` e continua a restare non eleggibile;
+- durante `PruneRetention`, i tombstone `dead`/`leave` permettono di propagare la rimozione e bloccare reintroduzioni obsolete, senza reintrodurre il contributo nel risultato;
+- dopo `Prune`, la rimozione fisica dalla membership non crea nuovi valori hardcoded: l'eventuale rientro del nodo richiede un aggiornamento valido con `incarnation` più nuova che lo riporti a `alive`.
+
+Non esistono timeout aggiuntivi o soglie hardcoded per l'eleggibilità aggregata: la decisione deriva dagli stati membership prodotti da `SuspectTimeout`, `DeadTimeout` e `PruneRetention` già configurati dal runtime.
+
 ## Default reali di `Default()`
 
 I default reali restituiti da `Default()` sono:
