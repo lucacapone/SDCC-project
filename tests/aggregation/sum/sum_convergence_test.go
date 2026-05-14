@@ -56,9 +56,19 @@ func newTestHarness(t *testing.T, ids []shared.NodeID) *testHarness {
 	t.Helper()
 
 	h := &testHarness{nodes: make(map[shared.NodeID]*testNode, len(ids))}
+	baseMembershipTime := time.Date(2026, 3, 17, 9, 0, 0, 0, time.UTC)
 	for _, id := range ids {
 		tr := &deterministicTransport{}
-		eng := gossip.NewEngine(string(id), "sum", tr, membership.NewSet(), slog.Default(), nil, 24*time.Hour, 2)
+		membershipSet := membership.NewSet()
+		for _, peerID := range ids {
+			membershipSet.Upsert(membership.Peer{
+				NodeID:   string(peerID),
+				Addr:     fmt.Sprintf("%s:7000", peerID),
+				Status:   membership.Alive,
+				LastSeen: baseMembershipTime,
+			})
+		}
+		eng := gossip.NewEngine(string(id), "sum", tr, membershipSet, slog.Default(), nil, 24*time.Hour, 2)
 		eng.State.EnsureMergeMetadata()
 		eng.State.EnsureSumMetadata()
 

@@ -523,6 +523,81 @@ func TestRoundAggiornaCollectorConValoriRuntime(t *testing.T) {
 	}
 }
 
+func TestRemoteMergeRicalcolaEstimateConMembershipAggiornata(t *testing.T) {
+	tr := &spyTransportEngine{}
+	now := time.Unix(1710000300, 0).UTC()
+	mset := membership.NewSet()
+	mset.Upsert(membership.Peer{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, Incarnation: 1, LastSeen: now})
+	mset.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, Incarnation: 1, LastSeen: now})
+	collector := observability.NewCollector(now)
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	eng := NewEngine("node-1", "sum", tr, mset, logger, collector, time.Hour, 2)
+	eng.State.LocalValue = 10
+	eng.State.Value = 60
+	eng.State.EnsureSumMetadata()
+	eng.State.AggregationData.Sum.Contributions["node-1"] = 10
+	eng.State.AggregationData.Sum.Contributions["node-3"] = 50
+	eng.State.AggregationData.Sum.Versions["node-1"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Sum.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	incoming := shared.GossipMessage{
+		MessageID:  "m-merge-membership-aware-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Epoch:   1,
+			Counter: 2,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           30,
+			VersionEpoch:    1,
+			VersionCounter:  2,
+			Round:           4,
+			UpdatedAt:       now,
+		},
+		Membership: []shared.MembershipEntry{
+			{NodeID: "node-2", Addr: "node-2:7002", Status: string(membership.Alive), Incarnation: 1, LastSeen: now},
+			{NodeID: "node-3", Addr: "node-3:7003", Status: string(membership.Dead), Incarnation: 2, LastSeen: now},
+		},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	if got := eng.State.Value; got != 40 {
+		t.Fatalf("stima post-merge non ricalcolata sulla membership aggiornata: got=%v want=40", got)
+	}
+	if got := eng.State.AggregationData.Sum.Contributions["node-3"]; got != 50 {
+		t.Fatalf("contributo del nodo dead non deve essere cancellato: got=%v", got)
+	}
+	snapshot := collector.Snapshot(time.Now().UTC())
+	if snapshot.CurrentEstimate != 40 {
+		t.Fatalf("collector non usa la stima ricalcolata: got=%v want=40", snapshot.CurrentEstimate)
+	}
+	logged := logBuffer.String()
+	for _, expected := range []string{"estimate=40", "estimate_after=40", "unique_nodes=3"} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log merge privo della stima membership-aware %q: %s", expected, logged)
+		}
+	}
+}
+
 func TestRemoteMergeAggiornaCollectorConEsitoEStatoRuntime(t *testing.T) {
 	tr := &spyTransportEngine{}
 	mset := membership.NewSet()

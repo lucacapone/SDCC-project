@@ -330,12 +330,12 @@ go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|
 
 ## Regressioni eleggibilita' membership per `sum` e `average`
 
-La suite congela la regola per cui il valore locale di `sum` e `average` viene calcolato solo sui nodi `alive` secondo la membership, includendo il self node se assente dallo snapshot durante il bootstrap. I contributi dei nodi non eleggibili restano nei metadata per non perdere informazioni utili a riconvergenze o rejoin futuri.
+La suite congela la regola per cui il valore locale di `sum` e `average` viene calcolato solo sui nodi `alive` secondo la membership, includendo il self node se assente dallo snapshot durante il bootstrap. I contributi dei nodi non eleggibili restano nei metadata per non perdere informazioni utili a riconvergenze o rejoin futuri. Il caso `TestRemoteMergeRicalcolaEstimateConMembershipAggiornata` verifica inoltre che, dopo un merge remoto, il valore osservato da stato runtime, collector e log sia ricalcolato sulla membership aggiornata dal digest appena ricevuto.
 
 Comando mirato:
 
 ```bash
-go test ./tests/membership ./tests/gossip -run 'TestIsEligibleForAggregationIncludeSoloAlive|TestSetIsEligibleForAggregationIncludeSelfAssenteInBootstrap|TestEligibleNodeIDsIncludeSoloAliveESelfBootstrap|TestRoundSumFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli' -count=1
+go test ./tests/membership ./tests/gossip -run 'TestIsEligibleForAggregationIncludeSoloAlive|TestSetIsEligibleForAggregationIncludeSelfAssenteInBootstrap|TestEligibleNodeIDsIncludeSoloAliveESelfBootstrap|TestRoundSumFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli|TestRemoteMergeRicalcolaEstimateConMembershipAggiornata' -count=1
 ```
 
 ## Test canonico observability
