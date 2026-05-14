@@ -218,3 +218,45 @@ func byNodeID(peers []Peer) map[string]Peer {
 	}
 	return out
 }
+
+func TestIsEligibleForAggregationIncludeSoloAlive(t *testing.T) {
+	cases := []struct {
+		name string
+		peer Peer
+		want bool
+	}{
+		{name: "alive", peer: Peer{NodeID: "node-1", Status: Alive}, want: true},
+		{name: "suspect", peer: Peer{NodeID: "node-2", Status: Suspect}, want: false},
+		{name: "dead", peer: Peer{NodeID: "node-3", Status: Dead}, want: false},
+		{name: "left", peer: Peer{NodeID: "node-4", Status: Left}, want: false},
+		{name: "empty", peer: Peer{NodeID: "node-5"}, want: false},
+		{name: "unknown", peer: Peer{NodeID: "node-6", Status: Status("unknown")}, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsEligibleForAggregation(tc.peer); got != tc.want {
+				t.Fatalf("eleggibilita' inattesa: got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSetIsEligibleForAggregationIncludeSelfAssenteInBootstrap(t *testing.T) {
+	set := NewSet()
+	set.SetSelfNodeID("node-self")
+
+	if !set.IsEligibleForAggregation("node-self") {
+		t.Fatalf("self node assente dallo snapshot deve restare eleggibile durante bootstrap")
+	}
+
+	set.Upsert(Peer{NodeID: "node-self", Addr: "node-self:7001", Status: Suspect})
+	if set.IsEligibleForAggregation("node-self") {
+		t.Fatalf("self node rappresentato come suspect non deve essere eleggibile")
+	}
+
+	set.Upsert(Peer{NodeID: "node-self", Addr: "node-self:7001", Status: Alive, Incarnation: 1})
+	if !set.IsEligibleForAggregation("node-self") {
+		t.Fatalf("self node alive deve essere eleggibile")
+	}
+}

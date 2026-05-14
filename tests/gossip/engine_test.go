@@ -278,6 +278,8 @@ func TestRoundNonLoggaMembershipTransitionPerAliasDelNodoLocale(t *testing.T) {
 func TestAverageRoundPreservaContributoLocaleOriginario(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: time.Now().UTC()})
 	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Second, 2)
 	eng.State.LocalValue = 10
 	eng.State.Value = 30
@@ -579,5 +581,82 @@ func TestRemoteMergeAggiornaCollectorConEsitoEStatoRuntime(t *testing.T) {
 	}
 	if snapshot.CurrentEstimate != 77.0 {
 		t.Fatalf("stima osservata inattesa dopo merge: got=%v want=77", snapshot.CurrentEstimate)
+	}
+}
+
+func TestEligibleNodeIDsIncludeSoloAliveESelfBootstrap(t *testing.T) {
+	peers := []membership.Peer{
+		{NodeID: "node-2", Status: membership.Alive},
+		{NodeID: "node-3", Status: membership.Suspect},
+		{NodeID: "node-4", Status: membership.Dead},
+		{NodeID: "node-5", Status: membership.Left},
+		{NodeID: "node-6"},
+	}
+
+	eligible := EligibleNodeIDsForTest("node-1", peers)
+	if _, ok := eligible["node-1"]; !ok {
+		t.Fatalf("self node assente dallo snapshot deve essere incluso")
+	}
+	if _, ok := eligible["node-2"]; !ok {
+		t.Fatalf("peer alive deve essere incluso")
+	}
+	for _, nodeID := range []shared.NodeID{"node-3", "node-4", "node-5", "node-6"} {
+		if _, ok := eligible[nodeID]; ok {
+			t.Fatalf("peer non alive %s non deve essere incluso: %+v", nodeID, eligible)
+		}
+	}
+}
+
+func TestRoundSumFiltraContributiNonEleggibiliSenzaCancellarli(t *testing.T) {
+	tr := &captureTransport{}
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Suspect, LastSeen: time.Now().UTC()})
+
+	eng := NewEngine("node-1", "sum", tr, m, slog.Default(), nil, time.Hour, 3)
+	eng.State.LocalValue = 10
+	eng.State.EnsureSumMetadata()
+	eng.State.AggregationData.Sum.Contributions["node-1"] = 10
+	eng.State.AggregationData.Sum.Contributions["node-2"] = 30
+	eng.State.AggregationData.Sum.Contributions["node-3"] = 50
+	eng.State.AggregationData.Sum.Versions["node-1"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Sum.Versions["node-2"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Sum.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+
+	eng.RoundOnce(context.Background())
+
+	if got := eng.State.Value; got != 40 {
+		t.Fatalf("somma filtrata inattesa: got=%v want=40", got)
+	}
+	if got := eng.State.AggregationData.Sum.Contributions["node-3"]; got != 50 {
+		t.Fatalf("contributo suspect non deve essere cancellato: got=%v", got)
+	}
+}
+
+func TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli(t *testing.T) {
+	tr := &captureTransport{}
+	m := membership.NewSet()
+	m.Upsert(membership.Peer{NodeID: "node-1", Addr: "node-1:7001", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Dead, LastSeen: time.Now().UTC()})
+
+	eng := NewEngine("node-1", "average", tr, m, slog.Default(), nil, time.Hour, 3)
+	eng.State.LocalValue = 10
+	eng.State.EnsureAverageMetadata()
+	eng.State.AggregationData.Average.Contributions["node-1"] = shared.AverageContribution{Sum: 10, Count: 1}
+	eng.State.AggregationData.Average.Contributions["node-2"] = shared.AverageContribution{Sum: 30, Count: 1}
+	eng.State.AggregationData.Average.Contributions["node-3"] = shared.AverageContribution{Sum: 90, Count: 1}
+	eng.State.AggregationData.Average.Versions["node-1"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Average.Versions["node-2"] = shared.StateVersionStamp{Counter: 1}
+	eng.State.AggregationData.Average.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+
+	eng.RoundOnce(context.Background())
+
+	if got := eng.State.Value; got != 20 {
+		t.Fatalf("media filtrata inattesa: got=%v want=20", got)
+	}
+	if got := eng.State.AggregationData.Average.Contributions["node-3"]; got != (shared.AverageContribution{Sum: 90, Count: 1}) {
+		t.Fatalf("contributo dead non deve essere cancellato: got=%+v", got)
 	}
 }

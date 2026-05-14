@@ -246,6 +246,8 @@ func TestAverageRoundDoesNotDriftLocalContribution(t *testing.T) {
 	n.eng.State.AggregationData.Average.Contributions["node-3"] = shared.AverageContribution{Sum: 50, Count: 1}
 	n.eng.State.AggregationData.Average.Versions["node-2"] = shared.StateVersionStamp{Counter: 1}
 	n.eng.State.AggregationData.Average.Versions["node-3"] = shared.StateVersionStamp{Counter: 1}
+	n.eng.Membership.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: time.Now().UTC()})
+	n.eng.Membership.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: time.Now().UTC()})
 	n.eng.State.Value = 30
 
 	for round := 0; round < 4; round++ {

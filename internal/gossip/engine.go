@@ -209,7 +209,7 @@ func (e *Engine) round(ctx context.Context) {
 	e.State.Round = nextRound
 	e.State.VersionCounter = nextVersion
 	e.State.UpdatedAt = sentAt
-	e.State = prepareLocalStateForRound(e.State)
+	e.State = prepareLocalStateForRound(e.State, eligibleNodeIDs(e.NodeID, membershipSnapshot))
 
 	stateSnapshot := sanitizedStateForMessage(e.State)
 	stateVersion := normalizeVersion(stateSnapshot)
@@ -709,7 +709,63 @@ func identityKey(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
+// eligibleNodeIDs costruisce il set dei nodi che possono contribuire al valore
+// aggregato corrente secondo la vista membership del round. Sono inclusi solo
+// peer Alive; il nodo locale resta incluso quando e' Alive nello snapshot oppure
+// quando non e' ancora rappresentato, evitando perdita del contributo self nel
+// bootstrap iniziale.
+func eligibleNodeIDs(selfID shared.NodeID, peers []membership.Peer) map[shared.NodeID]struct{} {
+	eligible := make(map[shared.NodeID]struct{}, len(peers)+1)
+	selfSeen := false
+
+	for _, peer := range peers {
+		if peer.NodeID == "" {
+			continue
+		}
+		nodeID := shared.NodeID(peer.NodeID)
+		if nodeID == selfID {
+			selfSeen = true
+		}
+		if membership.IsEligibleForAggregation(peer) {
+			eligible[nodeID] = struct{}{}
+		}
+	}
+
+	if selfID != "" && !selfSeen {
+		eligible[selfID] = struct{}{}
+	}
+	return eligible
+}
+
+// sumWithSaturationForEligible calcola la somma solo sui contributi dei nodi
+// eleggibili, senza rimuovere metadata storici dalle mappe CRDT-like.
+func sumWithSaturationForEligible(contributions map[shared.NodeID]float64, eligible map[shared.NodeID]struct{}, alreadyOverflowed bool) (float64, bool) {
+	filtered := make(map[shared.NodeID]float64, len(eligible))
+	for nodeID := range eligible {
+		contribution, ok := contributions[nodeID]
+		if !ok {
+			continue
+		}
+		filtered[nodeID] = contribution
+	}
+	return sumWithSaturation(filtered, alreadyOverflowed)
+}
+
+// averageFromEligibleContributions calcola la media usando solo i contributi
+// dei nodi eleggibili, preservando intatte le entry non eleggibili nei metadata.
+func averageFromEligibleContributions(contributions map[shared.NodeID]shared.AverageContribution, eligible map[shared.NodeID]struct{}) float64 {
+	filtered := make(map[shared.NodeID]shared.AverageContribution, len(eligible))
+	for nodeID := range eligible {
+		contribution, ok := contributions[nodeID]
+		if !ok {
+			continue
+		}
+		filtered[nodeID] = contribution
+	}
+	return averageFromContributions(filtered)
+}
+
+func prepareLocalStateForRound(state shared.GossipState, eligible map[shared.NodeID]struct{}) shared.GossipState {
 	localVersion := normalizeVersion(state)
 	switch state.AggregationType {
 	case "sum":
@@ -728,7 +784,7 @@ func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
 		}
 		state.AggregationData.Sum.Versions[state.NodeID] = localVersion
 		state.AggregationData.Sum.Contributions[state.NodeID] = localContribution
-		state.Value, state.AggregationData.Sum.Overflowed = sumWithSaturation(state.AggregationData.Sum.Contributions, state.AggregationData.Sum.Overflowed)
+		state.Value, state.AggregationData.Sum.Overflowed = sumWithSaturationForEligible(state.AggregationData.Sum.Contributions, eligible, state.AggregationData.Sum.Overflowed)
 		return state
 	case "average":
 		state.EnsureAverageMetadata()
@@ -746,7 +802,7 @@ func prepareLocalStateForRound(state shared.GossipState) shared.GossipState {
 		}
 		state.AggregationData.Average.Versions[state.NodeID] = localVersion
 		state.AggregationData.Average.Contributions[state.NodeID] = localContribution
-		state.Value = averageFromContributions(state.AggregationData.Average.Contributions)
+		state.Value = averageFromEligibleContributions(state.AggregationData.Average.Contributions, eligible)
 		return state
 	default:
 		return state
@@ -841,6 +897,11 @@ func cloneMaxState(maxState *shared.MaxState) *shared.MaxState {
 // RoundOnce espone un singolo round gossip per i test esterni e interni.
 func (e *Engine) RoundOnce(ctx context.Context) {
 	e.round(ctx)
+}
+
+// EligibleNodeIDsForTest espone la selezione di eleggibilita' ai test black-box del package esterno.
+func EligibleNodeIDsForTest(selfID shared.NodeID, peers []membership.Peer) map[shared.NodeID]struct{} {
+	return eligibleNodeIDs(selfID, peers)
 }
 
 func normalizeIncomingMessage(msg *shared.GossipMessage) {
