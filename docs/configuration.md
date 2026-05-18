@@ -148,8 +148,7 @@ Con i file correnti:
 
 | File | Peer configurati | `gossip_interval_ms` | `fanout` | Gap atteso | `membership_timeout_ms` | `SuspectTimeout` reale | Esito |
 |---|---:|---:|---:|---:|---:|---:|---|
-| `configs/node1.yaml`–`configs/node3.yaml` | `2` | `1000` | `2` | `1000ms` | `10000` | `5000ms` | valido |
-| `configs/node4.yaml`–`configs/node6.yaml` | `5` | `1000` | `3` | `2000ms` | `10000` | `5000ms` | valido |
+| `configs/node1.yaml`–`configs/node6.yaml` | fino a `5` | `1000` | `5` | `1000ms` | `10000` | `5000ms` | valido |
 | `configs/example.yaml` | `2` bootstrap / `2` seed | `1000` | `2` | `1000ms` | `5000` | `2500ms` | valido |
 
 Questa verifica non pretende di modellare un limite assoluto in presenza di perdite o partizioni di rete: serve a bloccare configurazioni sicuramente troppo aggressive rispetto alla frequenza nominale di heartbeat/merge prodotta dal gossip. In caso di topologie più grandi o `fanout` più basso, aumentare `membership_timeout_ms` oppure aumentare `fanout` in modo che `SuspectTimeout` resti strettamente maggiore del gap atteso.

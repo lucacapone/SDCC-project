@@ -258,7 +258,8 @@ Per passare configurazioni personalizzate basta cambiare i file montati. Il Comp
 ### Scale run (6 nodi)
 Per eseguire una variante di scala con nodi aggiuntivi usare il file dedicato:
 - `deploy/docker-compose.scale.yml` (servizi `node1`..`node6`);
-- config dedicate: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`.
+- config dedicate: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`;
+- `fanout: 5` su tutti i sei nodi, così ogni round gossip invia a tutti i peer eleggibili del cluster demo e mantiene stabile la media `average=60` finché tutti i nodi restano `alive`.
 
 Comandi:
 ```bash

@@ -912,3 +912,19 @@
 - **File modificati**:
   - `docs/operational_log.md`
 - **Reasoning summary**: Ho eseguito uno script Python di controllo sui sei file configurazione per evitare sostituzioni parziali o omissioni. Il controllo ha confermato che ogni file nodo usa il nuovo valore richiesto; non sono state rilevate ulteriori divergenze documentali nel perimetro della modifica.
+
+## 2026-05-18 15:58:28 UTC — Fanout completo demo average a 6 nodi
+
+- **Descrizione task**: Aggiornati i sei file di configurazione della demo scale per impostare `fanout: 5` su tutti i nodi e verificare la convergenza stabile della media a `60` con tutti i nodi vivi.
+- **File modificati**:
+  - `configs/node1.yaml`
+  - `configs/node2.yaml`
+  - `configs/node3.yaml`
+  - `configs/node4.yaml`
+  - `configs/node5.yaml`
+  - `configs/node6.yaml`
+  - `README.md`
+  - `docs/configuration.md`
+  - `docs/deployment.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura di documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho applicato la richiesta esplicita di portare il fanout della demo a sei nodi al massimo numero di peer remoti. In un cluster da 6 nodi ogni nodo può avere al massimo 5 destinatari eleggibili: con `fanout: 5`, la selezione runtime invia a tutti i peer disponibili invece di campionarli casualmente, riducendo i falsi `suspect` e mantenendo stabile l'aggregazione `average` sui sei contributi canonici `10, 30, 50, 70, 90, 110`, cioè `60`, finché tutti i nodi restano `alive`.
