@@ -6,9 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"math/rand"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"sdcc-project/internal/config"
 	"sdcc-project/internal/gossip"
 	"sdcc-project/internal/membership"
 	"sdcc-project/internal/transport"
@@ -308,6 +315,233 @@ func TestAverageRoundDoesNotDriftLocalContribution(t *testing.T) {
 	}
 	if math.Abs(n.eng.State.Value-30) > 1e-9 {
 		t.Fatalf("la media cluster attesa non e' stata preservata: got=%v want=30", n.eng.State.Value)
+	}
+}
+
+// routedTransport instrada i messaggi gossip verso altri transport in-memory usando
+// l'advertise_addr di configurazione come chiave di routing, senza aprire socket reali.
+type routedTransport struct {
+	addr    string
+	router  *inMemoryRouter
+	handler transport.MessageHandler
+}
+
+// Start registra l'handler locale e rende il nodo raggiungibile nel router condiviso.
+func (r *routedTransport) Start(_ context.Context, h transport.MessageHandler) error {
+	r.handler = h
+	r.router.register(r.addr, r)
+	return nil
+}
+
+// Send consegna sincronicamente il payload al nodo associato all'indirizzo di destinazione.
+func (r *routedTransport) Send(ctx context.Context, addr string, payload []byte) error {
+	return r.router.deliver(ctx, addr, payload)
+}
+
+// Close rimuove il transport dal router condiviso per evitare riusi accidentali tra test.
+func (r *routedTransport) Close() error {
+	r.router.unregister(r.addr)
+	return nil
+}
+
+// inMemoryRouter conserva la tabella address -> transport usata dallo scenario a sei nodi.
+type inMemoryRouter struct {
+	mu     sync.RWMutex
+	routes map[string]*routedTransport
+}
+
+// newInMemoryRouter inizializza una tabella di routing vuota e isolata per test.
+func newInMemoryRouter() *inMemoryRouter {
+	return &inMemoryRouter{routes: make(map[string]*routedTransport)}
+}
+
+// register pubblica un transport usando l'indirizzo applicativo configurato.
+func (r *inMemoryRouter) register(addr string, tr *routedTransport) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.routes[addr] = tr
+}
+
+// unregister elimina una route, rendendo il teardown idempotente.
+func (r *inMemoryRouter) unregister(addr string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.routes, addr)
+}
+
+// deliver copia il payload prima di invocare l'handler remoto, così ogni consegna
+// simula un pacchetto indipendente e non condivide buffer mutabili tra nodi.
+func (r *inMemoryRouter) deliver(ctx context.Context, addr string, payload []byte) error {
+	r.mu.RLock()
+	target := r.routes[addr]
+	r.mu.RUnlock()
+	if target == nil || target.handler == nil {
+		return fmt.Errorf("route gossip assente per %s", addr)
+	}
+	copied := append([]byte(nil), payload...)
+	return target.handler(ctx, copied)
+}
+
+// configClusterNode rappresenta un nodo test costruito dai file configs/node*.yaml.
+type configClusterNode struct {
+	cfg config.Config
+	eng *gossip.Engine
+}
+
+// TestAverageSixNodeClusterFromCanonicalConfigs verifica lo scenario richiesto a sei nodi
+// usando i file canonici configs/node1.yaml ... configs/node6.yaml e membership stabile.
+func TestAverageSixNodeClusterFromCanonicalConfigs(t *testing.T) {
+	clearConfigOverrideEnv(t)
+
+	cfgPaths := []string{
+		repoPathForAverageTest(t, "configs", "node1.yaml"),
+		repoPathForAverageTest(t, "configs", "node2.yaml"),
+		repoPathForAverageTest(t, "configs", "node3.yaml"),
+		repoPathForAverageTest(t, "configs", "node4.yaml"),
+		repoPathForAverageTest(t, "configs", "node5.yaml"),
+		repoPathForAverageTest(t, "configs", "node6.yaml"),
+	}
+	nodes := newConfigBackedCluster(t, cfgPaths)
+	ids := sortedConfigClusterIDs(nodes)
+
+	// Ventiquattro round sono volutamente superiori al minimo teorico: coprono più
+	// finestre fanout anche per i nodi con seed parziali e rendono stabile sia la
+	// membership canonica sia i contributi average appresi transitivamente.
+	for round := 0; round < 24; round++ {
+		for _, id := range ids {
+			nodes[id].eng.RoundOnce(context.Background())
+		}
+	}
+
+	for _, id := range ids {
+		assertSixNodeCanonicalAverageState(t, nodes[id])
+	}
+}
+
+// newConfigBackedCluster avvia un cluster in-memory rispettando bootstrap, fanout,
+// timeout membership, aggregation e initial_value definiti nei file di configurazione.
+func newConfigBackedCluster(t *testing.T, cfgPaths []string) map[shared.NodeID]*configClusterNode {
+	t.Helper()
+
+	router := newInMemoryRouter()
+	nodes := make(map[shared.NodeID]*configClusterNode, len(cfgPaths))
+	for index, cfgPath := range cfgPaths {
+		cfg, err := config.Load(cfgPath)
+		if err != nil {
+			t.Fatalf("load config %s: %v", cfgPath, err)
+		}
+		if cfg.Aggregation != "average" {
+			t.Fatalf("config %s usa aggregation=%q, atteso average", cfgPath, cfg.Aggregation)
+		}
+
+		now := time.Now().UTC()
+		mset := membership.NewSetWithConfig(cfg.MembershipConfig())
+		mset.SetSelfNodeID(cfg.NodeID)
+		mset.TouchOrUpsertCanonical(cfg.NodeID, cfg.AdvertiseEndpoint(), now)
+		membership.Bootstrap(
+			context.Background(),
+			mset,
+			membership.JoinRequest{NodeID: cfg.NodeID, Addr: cfg.AdvertiseEndpoint()},
+			cfg.JoinEndpoint,
+			cfg.DiscoveryPeers(),
+			membership.NoopJoinClient{},
+			now,
+		)
+
+		tr := &routedTransport{addr: cfg.AdvertiseEndpoint(), router: router}
+		eng := gossip.NewEngine(cfg.NodeID, cfg.Aggregation, tr, mset, slog.Default(), nil, 24*time.Hour, cfg.Fanout)
+		eng.RNG = rand.New(rand.NewSource(int64(index + 1)))
+		eng.State.LocalValue = cfg.InitialValue
+		eng.State.Value = cfg.InitialValue
+		eng.State.EnsureMergeMetadata()
+		eng.State.EnsureAverageMetadata()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		localEng := eng
+		t.Cleanup(func() {
+			cancel()
+			_ = localEng.Stop()
+		})
+		if err := eng.Start(ctx); err != nil {
+			t.Fatalf("start engine %s: %v", cfg.NodeID, err)
+		}
+
+		nodes[shared.NodeID(cfg.NodeID)] = &configClusterNode{cfg: cfg, eng: eng}
+	}
+	return nodes
+}
+
+// assertSixNodeCanonicalAverageState applica tutti gli invarianti richiesti dallo
+// scenario: sei peer, sei contributi canonici, stima 60 e assenza di medie parziali.
+func assertSixNodeCanonicalAverageState(t *testing.T, node *configClusterNode) {
+	t.Helper()
+
+	if got := len(node.eng.Membership.Snapshot()); got != 6 {
+		t.Fatalf("%s peers=%d, atteso peers=6", node.cfg.NodeID, got)
+	}
+
+	contributions := node.eng.State.AggregationData.Average.Contributions
+	canonical := canonicalAverageContributionIDs(contributions)
+	if len(canonical) != 6 {
+		t.Fatalf("%s conosce %d contributi average canonici (%v), attesi 6", node.cfg.NodeID, len(canonical), canonical)
+	}
+	for _, partial := range []float64{70, 76.666, 90} {
+		if math.Abs(node.eng.State.Value-partial) <= 1e-3 {
+			t.Fatalf("%s e' rimasto bloccato sulla media parziale %v", node.cfg.NodeID, node.eng.State.Value)
+		}
+	}
+	if math.Abs(node.eng.State.Value-60) > 1e-9 {
+		t.Fatalf("%s estimate=%v, atteso 60", node.cfg.NodeID, node.eng.State.Value)
+	}
+}
+
+// canonicalAverageContributionIDs restituisce solo le chiavi logiche node-* ordinate,
+// escludendo eventuali placeholder seed nel formato host:port.
+func canonicalAverageContributionIDs(contributions map[shared.NodeID]shared.AverageContribution) []string {
+	ids := make([]string, 0, len(contributions))
+	for id := range contributions {
+		text := string(id)
+		if strings.HasPrefix(text, "node-") {
+			ids = append(ids, text)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// sortedConfigClusterIDs rende deterministico l'ordine dei round nel cluster test.
+func sortedConfigClusterIDs(nodes map[shared.NodeID]*configClusterNode) []shared.NodeID {
+	ids := make([]shared.NodeID, 0, len(nodes))
+	for id := range nodes {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
+// repoPathForAverageTest risolve percorsi dal repository root indipendentemente
+// dalla working directory usata da `go test` per il package average.
+func repoPathForAverageTest(t *testing.T, parts ...string) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller non disponibile")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+	return filepath.Join(append([]string{root}, parts...)...)
+}
+
+// clearConfigOverrideEnv impedisce a variabili d'ambiente esterne di alterare i
+// file configs/node*.yaml durante questa verifica di scenario canonico.
+func clearConfigOverrideEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"NODE_ID", "BIND_ADDRESS", "ADVERTISE_ADDR", "NODE_PORT", "JOIN_ENDPOINT",
+		"BOOTSTRAP_PEERS", "SEED_PEERS", "GOSSIP_INTERVAL_MS", "FANOUT",
+		"MEMBERSHIP_TIMEOUT_MS", "ENABLED_AGGREGATIONS", "AGGREGATION",
+		"INITIAL_VALUE", "LOG_LEVEL",
+	} {
+		t.Setenv(name, "")
 	}
 }
 
