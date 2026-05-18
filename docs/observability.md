@@ -32,7 +32,7 @@ I log sono strutturati e ruotano attorno a un insieme piccolo di chiavi stabili,
 - `round`: round gossip locale, quando applicabile;
 - `peers`: numero di peer considerati nel round corrente;
 - `estimate`: stima/valore aggregato osservabile in quel momento;
-- `result`: esito sintetico di un merge remoto o di un'azione significativa (`applied`, `skipped`, `conflict`, `unknown`);
+- `result`: esito sintetico di un merge remoto o di un'azione significativa (`applied`, `partial_merge`, `skipped`, `conflict`, `unknown`);
 - `node_state`: stato lifecycle corrente del nodo, utile soprattutto in prossimità di readiness/shutdown.
 
 Scelte operative sui log:
@@ -70,18 +70,18 @@ Semantica esplicita per `event=remote_merge`:
 - i campi diagnostici sono emessi nel record `DEBUG` dello stesso merge, così da restare disponibili quando si abilita il debug senza aumentare il rumore dei log ordinari: `estimate_before`, `estimate_after`, `remote_round`, `remote_estimate`, `membership_entries`, `unique_nodes`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `max_preserved` e `merge_reason`;
 - `membership_entries` indica **solo** il numero di entry ricevute nel messaggio remoto (`len(msg.membership)`), mentre `peers` indica il numero peer **localmente noti dopo** merge stato + aggiornamento membership (`len(Membership.Snapshot())`); i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo;
 - `unique_nodes` espone quanti contributi nodo unici sono presenti nello stato canonico dell'aggregazione;
-- `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto;
+- `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto; per uno skip puro (`merge_status=skipped`) devono coincidere, mentre una variazione prodotta da componenti runtime collaterali viene classificata come `merge_status=partial_merge`;
 - `max_preserved` espone la motivazione numerica per merge `max` (`true` quando il risultato mantiene esplicitamente `max(estimate_before, remote_estimate)`);
 - `node_decisions_newer_version` / `node_decisions_duplicate_ignored` / `node_decisions_tie_break` espongono una sintesi leggera (conteggi per tipo) delle decisioni per-nodo durante il merge `sum`;
 - `remote_node_decision` espone la decisione applicata al contributo del nodo `remote_node_id` (`newer_version`, `duplicate_ignored`, `tie_break` oppure `not_present` se assente nel payload contributi);
-- quando `merge_status=conflict` o il merge viene classificato come comportamento anomalo, il livello `INFO` conserva il dettaglio completo includendo anche `merge_reason`, perché questo campo è necessario a diagnosticare immediatamente divergenze di payload, aggregazione o versioning;
+- quando `merge_status=conflict`, `merge_status=partial_merge` o il merge viene classificato come comportamento anomalo, il livello `INFO` conserva il dettaglio completo includendo anche `merge_reason`, perché questo campo è necessario a diagnosticare immediatamente divergenze di payload, aggregazione, versioning o ricalcoli membership-aware;
 - `conflict_node_id` e `conflict_decision` sono campi opzionali: vengono aggiunti al record `remote_merge` solo quando il merge ha prodotto una decisione di conflitto significativa, cioè quando esiste un nodo in conflitto (`conflict_node_id` non vuoto, per esempio una decisione per-nodo `tie_break`) oppure quando `merge_status=conflict`. Nei merge applicati o saltati senza conflitto questi campi non devono essere assunti presenti, nemmeno come stringhe vuote.
 
 ## 3. Metriche esposte
 L'endpoint `/metrics` espone un formato testuale minimale pensato per verifica umana, scraping semplice e test automatici mirati. Le metriche/documenti di stato esposti sono:
 
 - **round gossip**: conteggio aggregato dei round eseguiti dal nodo;
-- **merge remoti**: conteggio dei merge remoti per esito, con cardinalità limitata ai valori `applied`, `skipped`, `conflict`, `unknown`;
+- **merge remoti**: conteggio dei merge remoti per esito, con cardinalità limitata ai valori `applied`, `partial_merge`, `skipped`, `conflict`, `unknown`;
 - **readiness del nodo**: stato booleano/derivato che riflette se bootstrap ed engine risultano effettivamente completati;
 - **stato lifecycle del nodo**: gauge `sdcc_node_state{state=...}` che rende osservabile la fase corrente del nodo;
 - **health applicativa minima**: esposta indirettamente tramite gli handler HTTP e coerente con lo snapshot lifecycle corrente.

@@ -12,7 +12,10 @@ import (
 type MergeStatus string
 
 const (
-	MergeApplied  MergeStatus = "applied"
+	MergeApplied MergeStatus = "applied"
+	// MergePartial segnala che il payload aggregativo e' stato ignorato,
+	// ma il runtime ha applicato componenti collaterali come la membership.
+	MergePartial  MergeStatus = "partial_merge"
 	MergeSkipped  MergeStatus = "skipped"
 	MergeConflict MergeStatus = "conflict"
 )

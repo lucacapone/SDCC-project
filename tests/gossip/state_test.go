@@ -171,6 +171,9 @@ func TestMergeRules(t *testing.T) {
 		if res.State.Value != local.Value {
 			t.Fatalf("valore locale alterato da versione vecchia: got=%v want=%v", res.State.Value, local.Value)
 		}
+		if res.EstimateAfter != res.EstimateBefore {
+			t.Fatalf("stima after/before incoerente per older_version ignorato: before=%v after=%v", res.EstimateBefore, res.EstimateAfter)
+		}
 		if _, seen := res.State.SeenMessageIDs[msg.MessageID]; !seen {
 			t.Fatalf("message id non tracciato per older version")
 		}

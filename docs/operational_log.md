@@ -801,3 +801,20 @@
   - `docs/observability.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura della documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho aggiornato solo la documentazione di observability richiesta. La nuova sottosezione chiarisce quali campi restano normalmente visibili a livello `INFO` e quali sono destinati a `DEBUG` o ai casi anomali, preservando la leggibilità dei log Docker Compose e la diagnosi avanzata tramite `LOG_LEVEL=debug`.
+
+## 2026-05-18 12:56:06 UTC — Classificazione partial_merge per skip con ricalcolo runtime
+
+- **Descrizione task**: Ispezione e correzione della semantica `remote_merge` per payload remoti vecchi classificati come skip, con verifica esplicita dei campi `estimate_before`/`estimate_after`.
+- **File modificati**:
+  - `internal/gossip/state.go`
+  - `internal/gossip/engine.go`
+  - `internal/observability/metrics.go`
+  - `tests/gossip/state_test.go`
+  - `tests/gossip/engine_test.go`
+  - `tests/observability/metrics_test.go`
+  - `README.md`
+  - `docs/architecture.md`
+  - `docs/observability.md`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo aver riletto documentazione canonica, architettura, configurazione, testing e log operativo, ho verificato il percorso `remote_merge` generato da `applyRemote` e dall'handler runtime dell'engine. Gli skip puri, incluso `merge_reason=older_version`, mantengono ora esplicitamente `estimate_after == estimate_before`; se invece il payload aggregativo viene saltato ma il successivo ricalcolo membership-aware modifica la stima osservabile, l'evento viene promosso a `merge_status=partial_merge` con dettagli completi a livello `INFO`. Ho aggiornato metriche, documentazione e regressioni per coprire sia lo skip realmente ignorato sia il caso parziale.
