@@ -22,14 +22,19 @@ const (
 
 // MergeResult espone esito e motivazione del merge remoto.
 type MergeResult struct {
-	State               shared.GossipState
-	Status              MergeStatus
-	Reason              string
-	EstimateBefore      float64
-	EstimateAfter       float64
-	MaxPreserved        bool
-	UniqueContributions int
-	NodeDecisions       map[shared.NodeID]string
+	State                                shared.GossipState
+	Status                               MergeStatus
+	Reason                               string
+	EstimateBefore                       float64
+	EstimateAfter                        float64
+	EstimateAfterAggregationMerge        float64
+	EstimateAfterMembershipRecalculation float64
+	AggregationChanged                   bool
+	MembershipRecalculationChanged       bool
+	MembershipEligibilityChanged         bool
+	MaxPreserved                         bool
+	UniqueContributions                  int
+	NodeDecisions                        map[shared.NodeID]string
 }
 
 // applyRemote applica merge idempotente con deduplica, filtro out-of-order e gestione conflitti.
@@ -78,6 +83,11 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
 		local, nodeDecisions, changed := mergeAggregationState(local, msg.State)
 		if !changed {
+			// I merge per-contributo possono normalizzare una stima derivata anche quando
+			// non accettano nuovi contributi. Per rendere diagnostico lo stadio
+			// aggregativo, gli skip conservano la stima pre-merge e lasciano al runtime
+			// membership-aware l'eventuale ricalcolo successivo.
+			local.Value = estimateBefore
 			reason := "remote_contribution_duplicate"
 			if cmp < 0 {
 				reason = "older_version"
@@ -270,15 +280,24 @@ func buildMergeResult(state shared.GossipState, status MergeStatus, reason strin
 		uniqueContributions = len(state.AggregationData.Max.Contributions)
 	}
 	return MergeResult{
-		State:               state,
-		Status:              status,
-		Reason:              reason,
-		EstimateBefore:      estimateBefore,
-		EstimateAfter:       state.Value,
-		MaxPreserved:        maxPreserved || (state.AggregationType == "max" && math.Abs(state.Value-math.Max(estimateBefore, remoteEstimate)) <= 1e-9),
-		UniqueContributions: uniqueContributions,
-		NodeDecisions:       nodeDecisions,
+		State:                                state,
+		Status:                               status,
+		Reason:                               reason,
+		EstimateBefore:                       estimateBefore,
+		EstimateAfter:                        state.Value,
+		EstimateAfterAggregationMerge:        state.Value,
+		EstimateAfterMembershipRecalculation: state.Value,
+		AggregationChanged:                   estimateChanged(estimateBefore, state.Value),
+		MaxPreserved:                         maxPreserved || (state.AggregationType == "max" && math.Abs(state.Value-math.Max(estimateBefore, remoteEstimate)) <= 1e-9),
+		UniqueContributions:                  uniqueContributions,
+		NodeDecisions:                        nodeDecisions,
 	}
+}
+
+// estimateChanged centralizza il confronto float usato dai campi diagnostici,
+// evitando che rumore numerico minimo venga classificato come cambio reale.
+func estimateChanged(before, after float64) bool {
+	return math.Abs(after-before) > 1e-9
 }
 
 type mergeDecision struct {

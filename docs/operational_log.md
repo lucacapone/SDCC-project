@@ -871,3 +871,16 @@
   - `README.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura della documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho aggiunto uno scenario in-memory che carica le configurazioni canoniche, replica bootstrap/fanout/timeout/valori iniziali del runtime e instrada i messaggi tramite transport deterministico senza socket reali. La verifica esegue round sufficienti con membership stabile e controlla per ogni nodo `peers=6`, sei contributi `average` canonici, `estimate=60` e assenza delle medie parziali `70`, `76.666` e `90`. Ho aggiornato la documentazione dei comandi mirati `average` per includere la nuova regressione.
+
+## 2026-05-18 14:32:46 UTC — Diagnostica remote_merge a due stadi
+
+- **Descrizione task**: Resi espliciti nei log `remote_merge` gli effetti distinti del merge aggregativo remoto, del ricalcolo membership-aware e del cambio del set di node_id eleggibili.
+- **File modificati**:
+  - `internal/gossip/state.go`
+  - `internal/gossip/engine.go`
+  - `tests/gossip/engine_test.go`
+  - `docs/architecture.md`
+  - `docs/observability.md`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura di documentazione, architettura, configurazione, testing, file di configurazione e log operativo, ho separato la stima prodotta da `applyRemote`/`mergeAverageState` dalla stima finale dopo `recalculateStateForMembership`. I log strutturati ora includono `aggregation_changed`, `membership_recalculation_changed`, `membership_eligibility_changed`, `estimate_after_aggregation_merge` ed `estimate_after_membership_recalculation`, così un operatore può distinguere immediatamente i cambi dovuti a nuovi contributi dai cambi causati dal filtro membership. Ho inoltre evitato che uno skip per contributo duplicato venga classificato come cambio aggregativo solo perché la funzione di merge normalizza una stima derivata, lasciando tale variazione al ricalcolo runtime membership-aware.

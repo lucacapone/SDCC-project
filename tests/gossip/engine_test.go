@@ -17,7 +17,7 @@ import (
 )
 
 func TestBootstrapPlaceholderPromossoDaGossipEAverageUsaNodeIDLogici(t *testing.T) {
-	base := time.Date(2026, time.May, 18, 14, 20, 0, 0, time.UTC)
+	base := time.Now().UTC()
 	set := membership.NewSet()
 
 	res := membership.Bootstrap(
@@ -772,6 +772,11 @@ func TestRemoteMergeLoggingAverageDistingueContributiNotiEUsati(t *testing.T) {
 		"merge_status=applied",
 		"peers=2",
 		"estimate=20",
+		"aggregation_changed=true",
+		"membership_recalculation_changed=true",
+		"membership_eligibility_changed=true",
+		"estimate_after_aggregation_merge=43.333",
+		"estimate_after_membership_recalculation=20",
 		"average_known_contributions=3",
 		"average_eligible_contributions=2",
 		"average_eligible_node_ids=\"[node-1 node-2]\"",
@@ -857,6 +862,11 @@ func TestRemoteMergeSkippedConRicalcoloRuntimeDiventaPartialMerge(t *testing.T) 
 		"merge_reason=older_version",
 		"estimate_before=10",
 		"estimate_after=20",
+		"aggregation_changed=false",
+		"membership_recalculation_changed=true",
+		"membership_eligibility_changed=true",
+		"estimate_after_aggregation_merge=10",
+		"estimate_after_membership_recalculation=20",
 	} {
 		if !strings.Contains(logged, expected) {
 			t.Fatalf("log partial_merge privo del campo atteso %q: %s", expected, logged)
@@ -1022,7 +1032,16 @@ func TestRemoteMergeRicalcolaEstimateConMembershipAggiornata(t *testing.T) {
 		t.Fatalf("collector non usa la stima ricalcolata: got=%v want=40", snapshot.CurrentEstimate)
 	}
 	logged := logBuffer.String()
-	for _, expected := range []string{"estimate=40", "estimate_after=40", "unique_nodes=3"} {
+	for _, expected := range []string{
+		"estimate=40",
+		"estimate_after=40",
+		"aggregation_changed=true",
+		"membership_recalculation_changed=true",
+		"membership_eligibility_changed=true",
+		"estimate_after_aggregation_merge=90",
+		"estimate_after_membership_recalculation=40",
+		"unique_nodes=3",
+	} {
 		if !strings.Contains(logged, expected) {
 			t.Fatalf("log merge privo della stima membership-aware %q: %s", expected, logged)
 		}
