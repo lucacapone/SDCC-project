@@ -72,6 +72,17 @@ Conseguenze pratiche:
 - Le API membership sono safe per uso concorrente multi-goroutine.
 - Le invarianti di merge gossip (`incarnation` monotona e deduplica alias/canonico) sono progettate per restare stabili anche con delivery remota concorrente ai round.
 
+## Selezione fanout deterministica
+Il round gossip ordinario in `internal/gossip/engine.go` applica il fanout dopo la failure detection (`ApplyTimeoutTransitions`), la prune e il filtro dei peer non raggiungibili (`dead`/`leave`). La politica corrente non usa più un campionamento completamente random sull'intera membership eleggibile:
+
+1. copia i peer eleggibili e li ordina stabilmente per `node_id` e poi per `addr`, così l'ordine non dipende dall'iterazione interna delle mappe;
+2. mantiene nell'engine un cursore di rotazione tra round;
+3. seleziona una finestra circolare di dimensione `fanout` a partire dal cursore;
+4. avanza il cursore di `fanout` posizioni per il round successivo;
+5. se `fanout >= peer eleggibili`, invia a tutti i target e azzera la necessità pratica di rotazione.
+
+Con membership stabile, N peer eleggibili e fanout F, ogni peer viene quindi selezionato almeno una volta entro `ceil(N/F)` round. Per esempio, con 5 peer e `fanout=3`, le finestre attese sono `peer1,peer2,peer3`, poi `peer4,peer5,peer1`, poi `peer2,peer3,peer4`. La scelta resta decentralizzata e locale: ogni nodo mantiene il proprio cursore, senza coordinatore centrale o stato condiviso.
+
 ## Modello membership locale
 Ogni nodo mantiene una vista locale (`internal/membership.Set`) composta da record `Peer` con:
 
@@ -244,7 +255,7 @@ Trade-off principali:
 
 - timeout più bassi: rilevazione guasti più rapida, ma rischio maggiore di false positive su jitter/latency.
 - timeout più alti: maggiore stabilità della vista membership, ma tempi più lunghi per isolare nodi realmente down.
-- intervallo gossip influenza indirettamente la bontà della detection: round più radi aumentano la probabilità di transizioni conservative verso `suspect`/`dead`; il fanout riduce i destinatari per round e va calibrato con l'intervallo.
+- intervallo gossip influenza indirettamente la bontà della detection: round più radi aumentano la probabilità di transizioni conservative verso `suspect`/`dead`; il fanout riduce i destinatari per round e va calibrato con l'intervallo, ma la rotazione deterministica garantisce che i peer eleggibili vengano coperti periodicamente invece di dipendere solo dal caso.
 
 Per questo i timeout devono essere calibrati in base al profilo rete e al target operativo (reattività vs stabilità).
 
@@ -256,7 +267,7 @@ Per questo i timeout devono essere calibrati in base al profilo rete e al target
 
 ### Limiti noti
 - **Peer instabili/down**: partizioni temporanee riducono velocità/accuratezza della convergenza globale.
-- **Convergenza lenta**: intervallo gossip alto, latenza elevata o ritardi nel loop aumentano il tempo di stabilizzazione; anche fanout basso può rallentare la diffusione.
+- **Convergenza lenta**: intervallo gossip alto, latenza elevata o ritardi nel loop aumentano il tempo di stabilizzazione; anche fanout basso può rallentare la diffusione, pur mantenendo copertura periodica deterministica dei target in membership stabile.
 - **Duplicati/out-of-order**: per le aggregazioni supportate (`sum`, `average`, `min`, `max`) sono mitigati da deduplica/versioning e merge monotoni per nodo; restano comunque possibili ritardi temporanei di riallineamento in reti degradate.
 - **Assenza di anti-entropy strutturata**: in scenari avversi possono restare differenze residuali più a lungo.
 

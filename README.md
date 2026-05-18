@@ -25,11 +25,11 @@ Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentral
 Il sistema è pensato per nodi indipendenti che scambiano periodicamente informazioni in modalità peer-to-peer.
 
 ## Architettura ad alto livello
-Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo configurabile. Il parametro `fanout` è applicato nel runtime: dopo il filtro peer (`alive`/`suspect`) il nodo seleziona un sottoinsieme senza duplicati, oppure invia a tutti se `fanout >= peer eleggibili`.
+Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo configurabile. Il parametro `fanout` è applicato nel runtime: dopo il filtro peer (`alive`/`suspect`) il nodo ordina stabilmente i target per `node_id`/indirizzo e seleziona una finestra circolare senza duplicati, oppure invia a tutti se `fanout >= peer eleggibili`. La selezione non è più puramente random: un cursore conservato dall'engine avanza a ogni round e garantisce copertura periodica dei peer entro `ceil(N/fanout)` round in membership stabile.
 
 ## Scelte architetturali confermate
 - **Transport tra nodi**: UDP + payload JSON (`[]byte`) su adapter `Transport`.
-- **Strategia gossip (implementata oggi)**: push verso peer attivi (`alive`/`suspect`) con payload completo stato+membership; fanout applicato a runtime con selezione random senza duplicati.
+- **Strategia gossip (implementata oggi)**: push verso peer attivi (`alive`/`suspect`) con payload completo stato+membership; fanout applicato a runtime con selezione deterministica a finestra rotante, senza duplicati e con copertura periodica dei peer.
 - **Aggregazioni richieste**: `sum`, `average`, `min`, `max`.
 - **Membership/discovery**: join endpoint con fallback su seed statici da configurazione.
 
@@ -153,7 +153,7 @@ Parametri esterni principali:
 - `membership_timeout_ms`
 - `enabled_aggregations`
 
-Nota failure detection: `membership_timeout_ms` viene tradotto in `SuspectTimeout = max(1ms, membership_timeout_ms/2)` e `DeadTimeout = max(SuspectTimeout+1ms, membership_timeout_ms)`. La validazione rifiuta configurazioni in cui il timeout `suspect` non è strettamente maggiore del gap massimo atteso tra messaggi gossip dello stesso peer, stimato da `gossip_interval_ms`, `fanout` e numero di peer di discovery.
+Nota failure detection: `membership_timeout_ms` viene tradotto in `SuspectTimeout = max(1ms, membership_timeout_ms/2)` e `DeadTimeout = max(SuspectTimeout+1ms, membership_timeout_ms)`. La validazione rifiuta configurazioni in cui il timeout `suspect` non è strettamente maggiore del gap massimo atteso tra messaggi gossip dello stesso peer, stimato da `gossip_interval_ms`, `fanout` e numero di peer di discovery. La stima è coerente con la selezione fanout deterministica: con N peer eleggibili e fanout F, il cursore rotante visita periodicamente tutti i target entro `ceil(N/F)` round, salvo cambi di membership o perdite di rete.
 
 Esecuzione locale con file config:
 ```bash

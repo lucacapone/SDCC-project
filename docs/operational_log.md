@@ -856,6 +856,7 @@
 - **File modificati**:
   - `internal/gossip/engine.go`
   - `tests/gossip/engine_test.go`
+  - `tests/aggregation/average/average_convergence_test.go`
   - `README.md`
   - `docs/architecture.md`
   - `docs/testing.md`
@@ -928,3 +929,16 @@
   - `docs/deployment.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura di documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho applicato la richiesta esplicita di portare il fanout della demo a sei nodi al massimo numero di peer remoti. In un cluster da 6 nodi ogni nodo può avere al massimo 5 destinatari eleggibili: con `fanout: 5`, la selezione runtime invia a tutti i peer disponibili invece di campionarli casualmente, riducendo i falsi `suspect` e mantenendo stabile l'aggregazione `average` sui sei contributi canonici `10, 30, 50, 70, 90, 110`, cioè `60`, finché tutti i nodi restano `alive`.
+
+## 2026-05-18 16:08:21 UTC — Fanout gossip deterministico a copertura periodica
+
+- **Descrizione task**: Modificata la selezione dei target gossip per sostituire il campionamento completamente random con una finestra deterministica rotante e documentarne l'effetto operativo.
+- **File modificati**:
+  - `internal/gossip/engine.go`
+  - `tests/gossip/engine_test.go`
+  - `tests/aggregation/average/average_convergence_test.go`
+  - `README.md`
+  - `docs/architecture.md`
+  - `docs/configuration.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura della documentazione di progetto, architettura, configurazione, testing, note operative e log operativo, ho mantenuto il filtro runtime sui peer eleggibili (`alive`/`suspect`) ma ho reso deterministica l'applicazione del fanout: i target vengono ordinati stabilmente per `node_id`/indirizzo, selezionati tramite finestra circolare a partire da un cursore conservato dall'engine e il cursore avanza di `fanout` posizioni a ogni round. Con membership stabile, N peer e fanout F, la copertura avviene entro `ceil(N/F)` round invece di dipendere da estrazioni casuali. Ho aggiunto un test mirato con 5 peer e fanout 2 per verificare le finestre attese e la copertura completa entro 3 round, rimuovendo anche il seed RNG da un test average ormai non più necessario per la selezione target, quindi ho aggiornato README, architettura e configurazione per allineare il modello documentato alla nuova semantica.

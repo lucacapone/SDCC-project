@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"net"
 	"sort"
 	"strings"
@@ -32,21 +31,17 @@ func CurrentMessageVersion() shared.MessageVersion {
 
 // Engine coordina il ciclo gossip locale.
 type Engine struct {
-	NodeID      shared.NodeID
-	State       shared.GossipState
-	SelfAddr    string
-	Fanout      int
-	Membership  *membership.Set
-	Transport   transport.Transport
-	Logger      *slog.Logger
-	Collector   *observability.Collector
-	RoundTicker *time.Ticker
-	RNG         randomIntn
-	mu          sync.Mutex
-}
-
-type randomIntn interface {
-	Intn(n int) int
+	NodeID       shared.NodeID
+	State        shared.GossipState
+	SelfAddr     string
+	Fanout       int
+	Membership   *membership.Set
+	Transport    transport.Transport
+	Logger       *slog.Logger
+	Collector    *observability.Collector
+	RoundTicker  *time.Ticker
+	fanoutCursor int
+	mu           sync.Mutex
 }
 
 // NewEngine costruisce un engine con dipendenze minime.
@@ -67,14 +62,14 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 			AggregationType: aggregationType,
 			UpdatedAt:       time.Now().UTC(),
 		},
-		SelfAddr:    resolveSelfAdvertiseAddr(m, nodeID),
-		Fanout:      fanout,
-		Membership:  m,
-		Transport:   t,
-		Logger:      logger,
-		Collector:   collector,
-		RoundTicker: time.NewTicker(roundEvery),
-		RNG:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		SelfAddr:     resolveSelfAdvertiseAddr(m, nodeID),
+		Fanout:       fanout,
+		Membership:   m,
+		Transport:    t,
+		Logger:       logger,
+		Collector:    collector,
+		RoundTicker:  time.NewTicker(roundEvery),
+		fanoutCursor: 0,
 	}
 }
 
@@ -351,7 +346,7 @@ func (e *Engine) round(ctx context.Context) {
 	e.Membership.Prune(sentAt)
 	membershipSnapshot := e.Membership.Snapshot()
 	peers := selectGossipTargets(membershipSnapshot)
-	peers = pickFanoutTargets(peers, e.Fanout, e.RNG)
+	peers = e.pickFanoutTargets(peers)
 
 	e.mu.Lock()
 	nextRound := e.State.Round + 1
@@ -668,24 +663,64 @@ func selectGossipTargets(peers []membership.Peer) []membership.Peer {
 	return out
 }
 
-// pickFanoutTargets applica il fanout ai peer eleggibili senza produrre duplicati.
-func pickFanoutTargets(peers []membership.Peer, fanout int, rng randomIntn) []membership.Peer {
+// pickFanoutTargets applica il fanout con una finestra deterministica ordinata.
+//
+// La selezione non campiona piu' l'intero insieme in modo puramente casuale:
+// prima ordina stabilmente i peer eleggibili per node_id/addr, poi estrae una
+// finestra circolare di dimensione fanout a partire dal cursore runtime. Il
+// cursore avanza di fanout posizioni a ogni round, garantendo che N peer siano
+// coperti entro ceil(N/fanout) round quando la membership resta stabile.
+func (e *Engine) pickFanoutTargets(peers []membership.Peer) []membership.Peer {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	selected, nextCursor := pickFanoutTargets(peers, e.Fanout, e.fanoutCursor)
+	e.fanoutCursor = nextCursor
+	return selected
+}
+
+// pickFanoutTargets restituisce una copia ordinata/finestrata dei peer eleggibili
+// e il cursore da conservare per il round successivo.
+func pickFanoutTargets(peers []membership.Peer, fanout int, cursor int) ([]membership.Peer, int) {
+	if len(peers) == 0 {
+		return nil, 0
+	}
 	if fanout <= 0 {
 		fanout = 1
 	}
-	if fanout >= len(peers) {
-		return peers
-	}
-	if rng == nil {
-		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	ordered := append([]membership.Peer(nil), peers...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return fanoutPeerSortKey(ordered[i]) < fanoutPeerSortKey(ordered[j])
+	})
+
+	if fanout >= len(ordered) {
+		return ordered, 0
 	}
 
-	selected := append([]membership.Peer(nil), peers...)
-	for i := 0; i < fanout; i++ {
-		j := i + rng.Intn(len(selected)-i)
-		selected[i], selected[j] = selected[j], selected[i]
+	start := cursor % len(ordered)
+	if start < 0 {
+		start += len(ordered)
 	}
-	return selected[:fanout]
+
+	selected := make([]membership.Peer, 0, fanout)
+	for offset := 0; offset < fanout; offset++ {
+		selected = append(selected, ordered[(start+offset)%len(ordered)])
+	}
+	return selected, (start + fanout) % len(ordered)
+}
+
+// fanoutPeerSortKey rende stabile la rotazione anche quando la Snapshot deriva da mappe.
+func fanoutPeerSortKey(peer membership.Peer) string {
+	nodeID := strings.TrimSpace(peer.NodeID)
+	addr := strings.TrimSpace(peer.Addr)
+	if nodeID == "" {
+		nodeID = addr
+	}
+	if addr == "" {
+		addr = nodeID
+	}
+	return nodeID + "\x00" + addr
 }
 
 // serializeMembershipDigest converte la membership locale nel digest condiviso via gossip.
