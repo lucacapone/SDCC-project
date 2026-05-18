@@ -587,6 +587,92 @@ func TestRemoteMergeLoggingMantieneSeparatiPeersLocaliEMembershipEntries(t *test
 	}
 }
 
+func TestRemoteMergeLoggingAverageDistingueContributiNotiEUsati(t *testing.T) {
+	tr := &spyTransportEngine{}
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	mset := membership.NewSet()
+	now := time.Unix(1710000500, 0).UTC()
+	mset.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Dead, LastSeen: now.Add(-time.Minute)})
+
+	eng := NewEngine("node-1", "average", tr, mset, logger, nil, time.Hour, 2)
+	eng.State.Value = 30
+	eng.State.VersionCounter = 2
+	eng.State.AggregationData.Average = &shared.AverageState{
+		Contributions: map[shared.NodeID]shared.AverageContribution{
+			"node-1": {Sum: 10, Count: 1},
+			"node-3": {Sum: 90, Count: 1},
+		},
+		Versions: map[shared.NodeID]shared.StateVersionStamp{
+			"node-1": {Counter: 2},
+			"node-3": {Counter: 1},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	incoming := shared.GossipMessage{
+		MessageID:  "m-average-log-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Counter: 3,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "average",
+			Value:           30,
+			VersionCounter:  3,
+			Round:           4,
+			UpdatedAt:       now,
+			AggregationData: shared.AggregationState{Average: &shared.AverageState{
+				Contributions: map[shared.NodeID]shared.AverageContribution{
+					"node-2": {Sum: 30, Count: 1},
+				},
+				Versions: map[shared.NodeID]shared.StateVersionStamp{
+					"node-2": {Counter: 3},
+				},
+			}},
+		},
+		Membership: []shared.MembershipEntry{
+			{NodeID: "node-2", Addr: "node-2:7002", Status: string(membership.Alive), Incarnation: 1, LastSeen: now},
+			{NodeID: "node-3", Addr: "node-3:7003", Status: string(membership.Dead), Incarnation: 2, LastSeen: now},
+		},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	if got := eng.State.Value; got != 20 {
+		t.Fatalf("media filtrata inattesa: got=%v want=20", got)
+	}
+	logged := logBuffer.String()
+	for _, expected := range []string{
+		"event=remote_merge",
+		"merge_status=applied",
+		"peers=2",
+		"estimate=20",
+		"average_known_contributions=3",
+		"average_eligible_contributions=2",
+		"average_eligible_node_ids=\"[node-1 node-2]\"",
+		"average_contribution_node_ids=\"[node-1 node-2 node-3]\"",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log average privo del campo atteso %q: %s", expected, logged)
+		}
+	}
+}
+
 func TestRemoteMergeSkippedConRicalcoloRuntimeDiventaPartialMerge(t *testing.T) {
 	tr := &spyTransportEngine{}
 	var logBuffer bytes.Buffer

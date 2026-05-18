@@ -91,6 +91,16 @@ Principi adottati:
 - metriche centrate sul comportamento del nodo, non su tracing distribuito fine-grained;
 - naming e contenuto mantenuti abbastanza stabili da poter essere validati dal test canonico `TestMetricsExposure`.
 
+## 3.1 Log `remote_merge` per diagnostica average
+L'evento strutturato `remote_merge` mantiene `peers` come numero di peer noti nella membership locale dopo il merge. Per evitare ambiguità tra dimensione della membership e contributi effettivamente usati nel calcolo di `average`, quando l'aggregazione attiva è `average` l'evento include anche:
+
+- `average_known_contributions`: numero totale di entry presenti in `AggregationData.Average.Contributions`, incluse quelle storiche/non eleggibili conservate per convergenza e rejoin;
+- `average_eligible_contributions`: numero di contributi average realmente usati per calcolare `estimate`, cioè l'intersezione tra contributi noti e nodi membership-eligible;
+- `average_eligible_node_ids`: lista ordinata dei `node_id` che entrano effettivamente nella media esposta;
+- `average_contribution_node_ids`: lista ordinata dei `node_id` presenti in `AggregationData.Average.Contributions`.
+
+Questi campi rendono distinguibile, ad esempio, un cluster con `peers=6` da una media calcolata su un sottoinsieme più piccolo di contributi `alive`.
+
 ## 4. Endpoint disponibili
 Gli endpoint HTTP disponibili sono tre.
 
