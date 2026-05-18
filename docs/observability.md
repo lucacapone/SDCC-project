@@ -63,11 +63,16 @@ I campi diagnostici sono quelli da mostrare a livello `DEBUG` oppure a livello `
 - `estimate_after`;
 - `remote_estimate`;
 - `remote_round`;
+- `aggregation_changed`;
+- `membership_recalculation_changed`;
+- `membership_eligibility_changed`;
+- `estimate_after_aggregation_merge`;
+- `estimate_after_membership_recalculation`;
 - dettagli di conflitto e decisioni per nodo, inclusi `conflict_node_id`, `conflict_decision`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `merge_reason`, `unique_nodes` e `max_preserved`.
 
 Semantica esplicita per `event=remote_merge`:
-- per un merge significativo con `merge_status=applied`, il livello `INFO` mantiene solo i campi base necessari alla correlazione operativa: `event`, `node_id`, `round`, `peers`, `estimate`, `merge_status` e `remote_node_id`;
-- i campi diagnostici sono emessi nel record `DEBUG` dello stesso merge, così da restare disponibili quando si abilita il debug senza aumentare il rumore dei log ordinari: `estimate_before`, `estimate_after`, `remote_round`, `remote_estimate`, `membership_entries`, `unique_nodes`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `max_preserved` e `merge_reason`;
+- per un merge significativo con `merge_status=applied`, il livello `INFO` mantiene i campi base necessari alla correlazione operativa: `event`, `node_id`, `round`, `peers`, `estimate`, `merge_status`, `remote_node_id` e i campi diagnostici sintetici `aggregation_changed`, `membership_recalculation_changed`, `membership_eligibility_changed`, `estimate_after_aggregation_merge`, `estimate_after_membership_recalculation`;
+- i campi diagnostici di dettaglio sono emessi nel record `DEBUG` dello stesso merge, così da restare disponibili quando si abilita il debug senza aumentare il rumore dei log ordinari: `estimate_before`, `estimate_after`, `remote_round`, `remote_estimate`, `membership_entries`, `unique_nodes`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `max_preserved` e `merge_reason`;
 - `membership_entries` indica **solo** il numero di entry ricevute nel messaggio remoto (`len(msg.membership)`), mentre `peers` indica il numero peer **localmente noti dopo** merge stato + aggiornamento membership (`len(Membership.Snapshot())`); i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo;
 - `unique_nodes` espone quanti contributi nodo unici sono presenti nello stato canonico dell'aggregazione;
 - `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto; per uno skip puro (`merge_status=skipped`) devono coincidere, mentre una variazione prodotta da componenti runtime collaterali viene classificata come `merge_status=partial_merge`;
@@ -99,7 +104,7 @@ L'evento strutturato `remote_merge` mantiene `peers` come numero di peer noti ne
 - `average_eligible_node_ids`: lista ordinata dei `node_id` che entrano effettivamente nella media esposta;
 - `average_contribution_node_ids`: lista ordinata dei `node_id` presenti in `AggregationData.Average.Contributions`.
 
-Questi campi rendono distinguibile, ad esempio, un cluster con `peers=6` da una media calcolata su un sottoinsieme più piccolo di contributi `alive`.
+Questi campi rendono distinguibile, ad esempio, un cluster con `peers=6` da una media calcolata su un sottoinsieme più piccolo di contributi `alive`. Gli stessi eventi `remote_merge` espongono inoltre la pipeline della stima in due stadi: `estimate_after_aggregation_merge` fotografa il valore subito dopo `applyRemote`/`mergeAverageState`, mentre `estimate_after_membership_recalculation` fotografa il valore dopo `recalculateStateForMembership`. I booleani `aggregation_changed`, `membership_recalculation_changed` e `membership_eligibility_changed` indicano rispettivamente se la stima è cambiata durante il merge aggregativo, durante il ricalcolo membership-aware o perché il digest/heartbeat remoto ha cambiato il set di node_id eleggibili.
 
 ## 4. Endpoint disponibili
 Gli endpoint HTTP disponibili sono tre.

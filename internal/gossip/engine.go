@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"math/rand"
 	"net"
 	"sort"
@@ -98,6 +97,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		membershipEntries := len(msg.Membership)
 		incomingEstimate := msg.State.Value
 		incomingRound := msg.State.Round
+		membershipSnapshotBefore := e.Membership.Snapshot()
 
 		e.mu.Lock()
 		merge := applyRemote(e.State, msg)
@@ -109,11 +109,15 @@ func (e *Engine) Start(ctx context.Context) error {
 		membershipSnapshot := e.Membership.Snapshot()
 
 		e.mu.Lock()
+		estimateAfterAggregationMerge := merge.EstimateAfterAggregationMerge
 		e.State = recalculateStateForMembership(e.State, e.NodeID, membershipSnapshot)
 		localRound := e.State.Round
 		localEstimate := e.State.Value
 		averageDetails := averageRemoteMergeDetails(e.State, e.NodeID, membershipSnapshot)
 		merge.EstimateAfter = localEstimate
+		merge.EstimateAfterMembershipRecalculation = localEstimate
+		merge.MembershipRecalculationChanged = estimateChanged(estimateAfterAggregationMerge, localEstimate)
+		merge.MembershipEligibilityChanged = membershipEligibilityChanged(e.NodeID, membershipSnapshotBefore, membershipSnapshot)
 		merge = classifyRuntimeSideEffects(merge)
 		merge.UniqueContributions = countKnownContributions(e.State)
 		e.mu.Unlock()
@@ -122,7 +126,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.updateObservabilityFromRuntime(localEstimate, localPeers, string(merge.Status))
 		if e.Logger != nil {
 			nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision := summarizeMergeNodeDecisions(merge.NodeDecisions, msg.OriginNode)
-			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge.Status, msg.OriginNode, averageDetails)
+			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge, msg.OriginNode, averageDetails)
 			diagnosticAttrs := remoteMergeDiagnosticAttrs(merge, uint64(incomingRound), incomingEstimate, membershipEntries, nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision)
 
 			if remoteMergeNeedsInfoDetails(merge) {
@@ -151,7 +155,7 @@ func classifyRuntimeSideEffects(merge MergeResult) MergeResult {
 	if merge.Status != MergeSkipped {
 		return merge
 	}
-	if math.Abs(merge.EstimateAfter-merge.EstimateBefore) <= 1e-9 {
+	if !merge.MembershipRecalculationChanged {
 		return merge
 	}
 	merge.Status = MergePartial
@@ -169,15 +173,20 @@ type averageMergeDetails struct {
 }
 
 // remoteMergeBaseAttrs costruisce il set minimo e stabile di campi INFO per i merge significativi.
-func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimate float64, status MergeStatus, remoteNodeID shared.NodeID, averageDetails averageMergeDetails) []slog.Attr {
+func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimate float64, merge MergeResult, remoteNodeID shared.NodeID, averageDetails averageMergeDetails) []slog.Attr {
 	attrs := []slog.Attr{
 		slog.String("event", "remote_merge"),
 		slog.String("node_id", string(nodeID)),
 		slog.Uint64("round", round),
 		slog.Int("peers", peers),
 		slog.Float64("estimate", estimate),
-		slog.String("merge_status", string(status)),
+		slog.String("merge_status", string(merge.Status)),
 		slog.String("remote_node_id", string(remoteNodeID)),
+		slog.Bool("aggregation_changed", merge.AggregationChanged),
+		slog.Bool("membership_recalculation_changed", merge.MembershipRecalculationChanged),
+		slog.Bool("membership_eligibility_changed", merge.MembershipEligibilityChanged),
+		slog.Float64("estimate_after_aggregation_merge", merge.EstimateAfterAggregationMerge),
+		slog.Float64("estimate_after_membership_recalculation", merge.EstimateAfterMembershipRecalculation),
 	}
 	if !averageDetails.enabled {
 		return attrs
@@ -848,6 +857,22 @@ func aliasLookup(selfAliases []string) map[string]struct{} {
 
 func identityKey(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// membershipEligibilityChanged segnala se il digest remoto o l'heartbeat implicito
+// hanno modificato il filtro dei node_id eleggibili per il calcolo aggregativo.
+func membershipEligibilityChanged(selfID shared.NodeID, before, after []membership.Peer) bool {
+	beforeEligible := eligibleNodeIDs(selfID, before)
+	afterEligible := eligibleNodeIDs(selfID, after)
+	if len(beforeEligible) != len(afterEligible) {
+		return true
+	}
+	for nodeID := range beforeEligible {
+		if _, ok := afterEligible[nodeID]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // eligibleNodeIDs costruisce il set dei nodi che possono contribuire al valore
