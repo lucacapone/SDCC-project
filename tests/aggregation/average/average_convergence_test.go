@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"math/rand"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -425,7 +424,7 @@ func newConfigBackedCluster(t *testing.T, cfgPaths []string) map[shared.NodeID]*
 
 	router := newInMemoryRouter()
 	nodes := make(map[shared.NodeID]*configClusterNode, len(cfgPaths))
-	for index, cfgPath := range cfgPaths {
+	for _, cfgPath := range cfgPaths {
 		cfg, err := config.Load(cfgPath)
 		if err != nil {
 			t.Fatalf("load config %s: %v", cfgPath, err)
@@ -450,7 +449,6 @@ func newConfigBackedCluster(t *testing.T, cfgPaths []string) map[shared.NodeID]*
 
 		tr := &routedTransport{addr: cfg.AdvertiseEndpoint(), router: router}
 		eng := gossip.NewEngine(cfg.NodeID, cfg.Aggregation, tr, mset, slog.Default(), nil, 24*time.Hour, cfg.Fanout)
-		eng.RNG = rand.New(rand.NewSource(int64(index + 1)))
 		eng.State.LocalValue = cfg.InitialValue
 		eng.State.Value = cfg.InitialValue
 		eng.State.EnsureMergeMetadata()

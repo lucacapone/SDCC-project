@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -167,23 +168,6 @@ func (c *captureTransport) sendTo(target string, payload []byte) error {
 
 func (c *captureTransport) Close() error { return nil }
 
-type deterministicRNG struct {
-	values []int
-	index  int
-}
-
-func (d *deterministicRNG) Intn(n int) int {
-	if n <= 0 {
-		return 0
-	}
-	if len(d.values) == 0 {
-		return 0
-	}
-	value := d.values[d.index%len(d.values)] % n
-	d.index++
-	return value
-}
-
 func TestRoundMessageAndStateVersionAlignment(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
@@ -229,7 +213,6 @@ func TestRoundFanoutOneInviaUnSoloPeer(t *testing.T) {
 	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: now})
 
 	eng := NewEngine("node-1", "sum", tr, m, slog.Default(), nil, time.Second, 1)
-	eng.RNG = &deterministicRNG{values: []int{0}}
 
 	eng.RoundOnce(context.Background())
 
@@ -238,6 +221,46 @@ func TestRoundFanoutOneInviaUnSoloPeer(t *testing.T) {
 	}
 	if len(tr.addr) != 1 {
 		t.Fatalf("fanout=1 deve registrare un solo destinatario: got=%d", len(tr.addr))
+	}
+}
+
+func TestRoundFanoutDeterministicoCopreTuttiIPeerEntroCeil(t *testing.T) {
+	tr := &captureTransport{}
+	now := time.Now().UTC()
+	m := membership.NewSet()
+	for _, peer := range []membership.Peer{
+		{NodeID: "node-5", Addr: "node-5:7005", Status: membership.Alive, LastSeen: now},
+		{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: now},
+		{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Alive, LastSeen: now},
+		{NodeID: "node-6", Addr: "node-6:7006", Status: membership.Alive, LastSeen: now},
+		{NodeID: "node-4", Addr: "node-4:7004", Status: membership.Alive, LastSeen: now},
+	} {
+		m.Upsert(peer)
+	}
+
+	eng := NewEngine("node-1", "sum", tr, m, slog.Default(), nil, time.Second, 2)
+	seen := map[string]struct{}{}
+	expectedWindows := [][]string{
+		{"node-2:7002", "node-3:7003"},
+		{"node-4:7004", "node-5:7005"},
+		{"node-6:7006", "node-2:7002"},
+	}
+
+	for roundIndex, expected := range expectedWindows {
+		tr.addr = nil
+		tr.sent = nil
+		eng.RoundOnce(context.Background())
+
+		if !reflect.DeepEqual(tr.addr, expected) {
+			t.Fatalf("round %d finestra fanout inattesa: got=%v want=%v", roundIndex+1, tr.addr, expected)
+		}
+		for _, addr := range tr.addr {
+			seen[addr] = struct{}{}
+		}
+	}
+
+	if len(seen) != 5 {
+		t.Fatalf("la rotazione fanout deve coprire tutti i peer entro ceil(5/2)=3 round: got=%v", seen)
 	}
 }
 
@@ -265,7 +288,6 @@ func TestNewEngineFanoutNonPositivoNormalizzaAUno(t *testing.T) {
 	m.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, LastSeen: now})
 
 	eng := NewEngine("node-1", "sum", tr, m, slog.Default(), nil, time.Second, 0)
-	eng.RNG = &deterministicRNG{values: []int{0}}
 
 	if eng.Fanout != 1 {
 		t.Fatalf("fanout non positivo deve essere normalizzato a 1: got=%d", eng.Fanout)

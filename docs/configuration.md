@@ -95,7 +95,7 @@ La struct `Config` contiene esattamente i seguenti campi:
 | `BootstrapPeers` | `[]string` | Peer di bootstrap preferiti per la discovery iniziale. |
 | `SeedPeers` | `[]string` | Peer seed usati come fallback se `BootstrapPeers` è vuoto. |
 | `GossipIntervalMS` | `int` | Intervallo del round gossip in millisecondi. |
-| `Fanout` | `int` | Parametro di fanout validato a runtime. |
+| `Fanout` | `int` | Numero massimo di peer target per round; il runtime lo applica con finestra deterministica rotante sui peer eleggibili. |
 | `MembershipTimeoutMS` | `int` | Timeout membership in millisecondi. |
 | `EnabledAggregations` | `[]string` | Lista whitelist delle aggregazioni consentite. |
 | `Aggregation` | `string` | Aggregazione attiva del nodo. |
@@ -133,10 +133,10 @@ Questa regola preserva due proprietà operative:
 Il codice di validazione controlla anche la relazione tra failure detection e frequenza effettiva dei messaggi gossip. Ogni messaggio gossip ricevuto dal nodo origine viene trattato come heartbeat implicito: l'handler runtime aggiorna `LastSeen` del peer mittente prima di fondere il digest membership. La frequenza di heartbeat/merge osservabile per un peer dipende quindi da:
 
 - `gossip_interval_ms`, cioè la frequenza con cui un nodo apre un nuovo round e invia un payload completo stato+membership;
-- `fanout`, applicato dall'engine con selezione senza duplicati sui peer eleggibili;
+- `fanout`, applicato dall'engine con selezione senza duplicati e non puramente random: i peer eleggibili vengono ordinati stabilmente per `node_id`/indirizzo e visitati tramite cursore rotante;
 - numero di peer configurati tramite `bootstrap_peers` o, se assenti, `seed_peers`.
 
-La stima conservativa usata dalla configurazione è:
+Con membership stabile, questa rotazione copre N peer entro `ceil(N/fanout)` round. La stima conservativa usata dalla configurazione è quindi:
 
 ```text
 intervallo_massimo_atteso_peer = gossip_interval_ms * ceil(peer_configurati / fanout)
@@ -151,7 +151,7 @@ Con i file correnti:
 | `configs/node1.yaml`–`configs/node6.yaml` | fino a `5` | `1000` | `5` | `1000ms` | `10000` | `5000ms` | valido |
 | `configs/example.yaml` | `2` bootstrap / `2` seed | `1000` | `2` | `1000ms` | `5000` | `2500ms` | valido |
 
-Questa verifica non pretende di modellare un limite assoluto in presenza di perdite o partizioni di rete: serve a bloccare configurazioni sicuramente troppo aggressive rispetto alla frequenza nominale di heartbeat/merge prodotta dal gossip. In caso di topologie più grandi o `fanout` più basso, aumentare `membership_timeout_ms` oppure aumentare `fanout` in modo che `SuspectTimeout` resti strettamente maggiore del gap atteso.
+Questa verifica non pretende di modellare un limite assoluto in presenza di perdite, partizioni di rete o cambi di membership: serve a bloccare configurazioni sicuramente troppo aggressive rispetto alla frequenza nominale di heartbeat/merge prodotta dal gossip. Poiché il fanout usa una finestra deterministica rotante, il gap stimato non dipende più da una probabilità di estrazione casuale, ma dalla copertura periodica dei target. In caso di topologie più grandi o `fanout` più basso, aumentare `membership_timeout_ms` oppure aumentare `fanout` in modo che `SuspectTimeout` resti strettamente maggiore del gap atteso.
 
 ### Effetto sull'eleggibilità dei contributi aggregati
 
