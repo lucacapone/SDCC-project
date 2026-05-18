@@ -117,34 +117,18 @@ func (e *Engine) Start(ctx context.Context) error {
 		localPeers := len(membershipSnapshot)
 		e.updateObservabilityFromRuntime(localEstimate, localPeers, string(merge.Status))
 		if e.Logger != nil {
-			logLevel := slog.LevelDebug
-			if merge.Status == MergeApplied || merge.Status == MergeConflict {
-				logLevel = slog.LevelInfo
-			}
 			nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision := summarizeMergeNodeDecisions(merge.NodeDecisions, msg.OriginNode)
-			e.Logger.LogAttrs(ctx, logLevel, "merge remoto gossip",
-				slog.String("event", "remote_merge"),
-				slog.String("node_id", string(e.NodeID)),
-				slog.Uint64("round", uint64(localRound)),
-				slog.Int("peers", localPeers),
-				slog.Float64("estimate", localEstimate),
-				slog.Float64("estimate_before", merge.EstimateBefore),
-				slog.Float64("estimate_after", merge.EstimateAfter),
-				slog.Bool("max_preserved", merge.MaxPreserved),
-				slog.String("merge_status", string(merge.Status)),
-				slog.String("merge_reason", merge.Reason),
-				slog.Int("unique_nodes", merge.UniqueContributions),
-				slog.Int("node_decisions_newer_version", nodeDecisionSummary.newerVersion),
-				slog.Int("node_decisions_duplicate_ignored", nodeDecisionSummary.duplicateIgnored),
-				slog.Int("node_decisions_tie_break", nodeDecisionSummary.tieBreak),
-				slog.String("conflict_node_id", nodeConflictID),
-				slog.String("conflict_decision", nodeConflictDecision),
-				slog.String("remote_node_id", string(msg.OriginNode)),
-				slog.String("remote_node_decision", remoteNodeDecision),
-				slog.Uint64("remote_round", uint64(incomingRound)),
-				slog.Float64("remote_estimate", incomingEstimate),
-				slog.Int("membership_entries", membershipEntries),
-			)
+			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge.Status, msg.OriginNode)
+			diagnosticAttrs := remoteMergeDiagnosticAttrs(merge, uint64(incomingRound), incomingEstimate, membershipEntries, nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision)
+
+			if remoteMergeNeedsInfoDetails(merge) {
+				e.Logger.LogAttrs(ctx, slog.LevelInfo, "merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs)...)
+			} else if merge.Status == MergeApplied {
+				e.Logger.LogAttrs(ctx, slog.LevelInfo, "merge remoto gossip", baseAttrs...)
+				e.Logger.LogAttrs(ctx, slog.LevelDebug, "diagnostica merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs)...)
+			} else {
+				e.Logger.LogAttrs(ctx, slog.LevelDebug, "diagnostica merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs)...)
+			}
 		}
 		return nil
 	})
@@ -154,6 +138,68 @@ func (e *Engine) Start(ctx context.Context) error {
 
 	go e.loop(ctx)
 	return nil
+}
+
+// remoteMergeBaseAttrs costruisce il set minimo e stabile di campi INFO per i merge significativi.
+func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimate float64, status MergeStatus, remoteNodeID shared.NodeID) []slog.Attr {
+	return []slog.Attr{
+		slog.String("event", "remote_merge"),
+		slog.String("node_id", string(nodeID)),
+		slog.Uint64("round", round),
+		slog.Int("peers", peers),
+		slog.Float64("estimate", estimate),
+		slog.String("merge_status", string(status)),
+		slog.String("remote_node_id", string(remoteNodeID)),
+	}
+}
+
+// remoteMergeDiagnosticAttrs isola i dettagli ad alta verbosità, emessi a INFO solo per conflitti/anomalie.
+func remoteMergeDiagnosticAttrs(merge MergeResult, remoteRound uint64, remoteEstimate float64, membershipEntries int, nodeDecisionSummary mergeNodeDecisionSummary, remoteNodeDecision string, nodeConflictID string, nodeConflictDecision string) []slog.Attr {
+	return []slog.Attr{
+		slog.Float64("estimate_before", merge.EstimateBefore),
+		slog.Float64("estimate_after", merge.EstimateAfter),
+		slog.Uint64("remote_round", remoteRound),
+		slog.Float64("remote_estimate", remoteEstimate),
+		slog.Int("membership_entries", membershipEntries),
+		slog.Int("unique_nodes", merge.UniqueContributions),
+		slog.Int("node_decisions_newer_version", nodeDecisionSummary.newerVersion),
+		slog.Int("node_decisions_duplicate_ignored", nodeDecisionSummary.duplicateIgnored),
+		slog.Int("node_decisions_tie_break", nodeDecisionSummary.tieBreak),
+		slog.String("remote_node_decision", remoteNodeDecision),
+		slog.Bool("max_preserved", merge.MaxPreserved),
+		slog.String("merge_reason", merge.Reason),
+		slog.String("conflict_node_id", nodeConflictID),
+		slog.String("conflict_decision", nodeConflictDecision),
+	}
+}
+
+// remoteMergeNeedsInfoDetails abilita i dettagli completi in INFO solo per conflitti o skip anomali.
+func remoteMergeNeedsInfoDetails(merge MergeResult) bool {
+	if merge.Status == MergeConflict {
+		return true
+	}
+	if merge.Status != MergeSkipped {
+		return false
+	}
+	switch merge.Reason {
+	case "self_origin_noop", "duplicate_message_id", "same_version_same_payload", "same_version_semantically_equivalent":
+		return false
+	default:
+		return true
+	}
+}
+
+// appendAttrs concatena copie indipendenti dei gruppi di attributi per evitare aliasing accidentale.
+func appendAttrs(groups ...[]slog.Attr) []slog.Attr {
+	total := 0
+	for _, group := range groups {
+		total += len(group)
+	}
+	attrs := make([]slog.Attr, 0, total)
+	for _, group := range groups {
+		attrs = append(attrs, group...)
+	}
+	return attrs
 }
 
 type mergeNodeDecisionSummary struct {

@@ -41,15 +41,15 @@ Scelte operative sui log:
 - la cardinalità resta bassa per rendere i log leggibili e correlabili con le metriche.
 
 Semantica esplicita per `event=remote_merge`:
-- `membership_entries` indica **solo** il numero di entry ricevute nel messaggio remoto (`len(msg.membership)`);
-- `peers` indica invece il numero peer **localmente noti dopo** merge stato + aggiornamento membership (`len(Membership.Snapshot())`);
-- i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo.
-- `unique_nodes` espone quanti contributi nodo unici sono presenti nello stato canonico della `sum`;
+- per un merge significativo con `merge_status=applied`, il livello `INFO` mantiene solo i campi base necessari alla correlazione operativa: `event`, `node_id`, `round`, `peers`, `estimate`, `merge_status` e `remote_node_id`;
+- i campi diagnostici sono emessi nel record `DEBUG` dello stesso merge, così da restare disponibili quando si abilita il debug senza aumentare il rumore dei log ordinari: `estimate_before`, `estimate_after`, `remote_round`, `remote_estimate`, `membership_entries`, `unique_nodes`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision` e `max_preserved`;
+- `membership_entries` indica **solo** il numero di entry ricevute nel messaggio remoto (`len(msg.membership)`), mentre `peers` indica il numero peer **localmente noti dopo** merge stato + aggiornamento membership (`len(Membership.Snapshot())`); i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo;
+- `unique_nodes` espone quanti contributi nodo unici sono presenti nello stato canonico dell'aggregazione;
 - `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto;
 - `max_preserved` espone la motivazione numerica per merge `max` (`true` quando il risultato mantiene esplicitamente `max(estimate_before, remote_estimate)`);
-- `conflict_node_id` / `conflict_decision` tracciano la risoluzione deterministica dei conflitti per `sum` (`newer_version`, `tie_break`, `duplicate_ignored`).
-- `node_decisions_newer_version` / `node_decisions_duplicate_ignored` / `node_decisions_tie_break` espongono una sintesi leggera (conteggi per tipo) delle decisioni per-nodo durante il merge `sum`.
-- `remote_node_decision` espone la decisione applicata al contributo del nodo `remote_node_id` (`newer_version`, `duplicate_ignored`, `tie_break` oppure `not_present` se assente nel payload contributi).
+- `node_decisions_newer_version` / `node_decisions_duplicate_ignored` / `node_decisions_tie_break` espongono una sintesi leggera (conteggi per tipo) delle decisioni per-nodo durante il merge `sum`;
+- `remote_node_decision` espone la decisione applicata al contributo del nodo `remote_node_id` (`newer_version`, `duplicate_ignored`, `tie_break` oppure `not_present` se assente nel payload contributi);
+- quando `merge_status=conflict` o il merge viene classificato come comportamento anomalo, il livello `INFO` conserva il dettaglio completo includendo anche `merge_reason`, `conflict_node_id` e `conflict_decision`, perché questi campi sono necessari a diagnosticare immediatamente divergenze di payload, aggregazione o versioning.
 
 ## 3. Metriche esposte
 L'endpoint `/metrics` espone un formato testuale minimale pensato per verifica umana, scraping semplice e test automatici mirati. Le metriche/documenti di stato esposti sono:
