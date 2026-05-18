@@ -29,6 +29,7 @@ const (
 
 var allowedMergeResults = map[string]struct{}{
 	"applied":          {},
+	"partial_merge":    {},
 	"skipped":          {},
 	"conflict":         {},
 	mergeResultUnknown: {},

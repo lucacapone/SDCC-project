@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand"
 	"net"
 	"strings"
@@ -111,6 +112,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		localRound := e.State.Round
 		localEstimate := e.State.Value
 		merge.EstimateAfter = localEstimate
+		merge = classifyRuntimeSideEffects(merge)
 		merge.UniqueContributions = countKnownContributions(e.State)
 		e.mu.Unlock()
 
@@ -138,6 +140,20 @@ func (e *Engine) Start(ctx context.Context) error {
 
 	go e.loop(ctx)
 	return nil
+}
+
+// classifyRuntimeSideEffects distingue gli skip puri dai casi in cui il payload
+// aggregativo e' stato ignorato ma la fase runtime successiva ha comunque
+// modificato la stima esposta, ad esempio per un ricalcolo membership-aware.
+func classifyRuntimeSideEffects(merge MergeResult) MergeResult {
+	if merge.Status != MergeSkipped {
+		return merge
+	}
+	if math.Abs(merge.EstimateAfter-merge.EstimateBefore) <= 1e-9 {
+		return merge
+	}
+	merge.Status = MergePartial
+	return merge
 }
 
 // remoteMergeBaseAttrs costruisce il set minimo e stabile di campi INFO per i merge significativi.
@@ -185,7 +201,7 @@ func remoteMergeHasConflictDetails(merge MergeResult, nodeConflictID string) boo
 
 // remoteMergeNeedsInfoDetails abilita i dettagli completi in INFO solo per conflitti o skip anomali.
 func remoteMergeNeedsInfoDetails(merge MergeResult) bool {
-	if merge.Status == MergeConflict {
+	if merge.Status == MergeConflict || merge.Status == MergePartial {
 		return true
 	}
 	if merge.Status != MergeSkipped {

@@ -187,7 +187,8 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 ### Esiti merge esposti
 `applyRemote` restituisce `MergeResult` con:
 - `applied`: update remoto applicato;
-- `skipped`: no-op (duplicato, stessa versione+payload, versione vecchia/out-of-order);
+- `partial_merge`: il payload aggregativo remoto e' stato ignorato come skip, ma una fase runtime successiva ha modificato la stima osservabile, ad esempio per ricalcolo membership-aware dopo aggiornamento della vista peer;
+- `skipped`: no-op (duplicato, stessa versione+payload, versione vecchia/out-of-order) con `estimate_after == estimate_before` per gli skip realmente ignorati;
 - `skipped/self_origin_noop`: messaggio auto-originato scartato come no-op silenziosa (log solo a livello `DEBUG`);
 - `conflict`: conflitto rilevato (es. stessa versione con payload diverso o aggregazione incompatibile).
 

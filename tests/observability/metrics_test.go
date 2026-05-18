@@ -14,6 +14,7 @@ func TestMetricsExposure(t *testing.T) {
 	collector := NewCollector(startedAt)
 	collector.AddRounds(7)
 	collector.IncRemoteMergeOutcome("applied")
+	collector.IncRemoteMergeOutcome("partial_merge")
 	collector.IncRemoteMergeOutcome("skipped")
 	collector.IncRemoteMergeOutcome("dynamic-peer-should-collapse")
 	collector.SetKnownPeers(4)
@@ -38,6 +39,7 @@ func TestMetricsExposure(t *testing.T) {
 	for _, expected := range []string{
 		"sdcc_node_rounds_total 7",
 		"sdcc_node_remote_merges_total{result=\"applied\"} 1",
+		"sdcc_node_remote_merges_total{result=\"partial_merge\"} 1",
 		"sdcc_node_remote_merges_total{result=\"skipped\"} 1",
 		"sdcc_node_remote_merges_total{result=\"unknown\"} 1",
 		"sdcc_node_known_peers 4",

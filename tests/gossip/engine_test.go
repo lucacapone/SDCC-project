@@ -587,6 +587,94 @@ func TestRemoteMergeLoggingMantieneSeparatiPeersLocaliEMembershipEntries(t *test
 	}
 }
 
+func TestRemoteMergeSkippedConRicalcoloRuntimeDiventaPartialMerge(t *testing.T) {
+	tr := &spyTransportEngine{}
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	mset := membership.NewSet()
+	now := time.Unix(1710000400, 0).UTC()
+	mset.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7002", Status: membership.Dead, LastSeen: now.Add(-time.Minute)})
+
+	collector := observability.NewCollector(now)
+	eng := NewEngine("node-1", "average", tr, mset, logger, collector, time.Hour, 2)
+	eng.State.Value = 10
+	eng.State.VersionCounter = 10
+	eng.State.Round = 10
+	eng.State.AggregationData.Average = &shared.AverageState{
+		Contributions: map[shared.NodeID]shared.AverageContribution{
+			"node-1": {Sum: 10, Count: 1},
+			"node-2": {Sum: 30, Count: 1},
+		},
+		Versions: map[shared.NodeID]shared.StateVersionStamp{
+			"node-1": {Counter: 10},
+			"node-2": {Counter: 7},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	incoming := shared.GossipMessage{
+		MessageID:  "m-older-runtime-partial-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Counter: 7,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "average",
+			Value:           30,
+			VersionCounter:  7,
+			Round:           7,
+			UpdatedAt:       now,
+			AggregationData: shared.AggregationState{Average: &shared.AverageState{
+				Contributions: map[shared.NodeID]shared.AverageContribution{
+					"node-2": {Sum: 30, Count: 1},
+				},
+				Versions: map[shared.NodeID]shared.StateVersionStamp{
+					"node-2": {Counter: 7},
+				},
+			}},
+		},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	if eng.State.Value != 20 {
+		t.Fatalf("stima runtime attesa dopo ricalcolo membership: got=%v want=20", eng.State.Value)
+	}
+	logged := logBuffer.String()
+	for _, expected := range []string{
+		"event=remote_merge",
+		"merge_status=partial_merge",
+		"merge_reason=older_version",
+		"estimate_before=10",
+		"estimate_after=20",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log partial_merge privo del campo atteso %q: %s", expected, logged)
+		}
+	}
+	if strings.Contains(logged, "merge_status=skipped") {
+		t.Fatalf("merge con ricalcolo runtime non deve restare skipped: %s", logged)
+	}
+	snapshot := collector.Snapshot(time.Now().UTC())
+	if snapshot.RemoteMerges["partial_merge"] != 1 {
+		t.Fatalf("collector non conta partial_merge: %+v", snapshot.RemoteMerges)
+	}
+}
+
 func TestRemoteMergeSelfOriginRestaNoOpESenzaRumoreInfo(t *testing.T) {
 	tr := &spyTransportEngine{}
 	var logBuffer bytes.Buffer
