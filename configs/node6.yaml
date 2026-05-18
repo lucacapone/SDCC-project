@@ -10,7 +10,7 @@ seed_peers:
   - node5:7005
 gossip_interval_ms: 1000
 fanout: 3
-membership_timeout_ms: 5000
+membership_timeout_ms: 10000
 enabled_aggregations:
   - sum
   - average
