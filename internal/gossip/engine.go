@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -111,6 +112,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.State = recalculateStateForMembership(e.State, e.NodeID, membershipSnapshot)
 		localRound := e.State.Round
 		localEstimate := e.State.Value
+		averageDetails := averageRemoteMergeDetails(e.State, e.NodeID, membershipSnapshot)
 		merge.EstimateAfter = localEstimate
 		merge = classifyRuntimeSideEffects(merge)
 		merge.UniqueContributions = countKnownContributions(e.State)
@@ -120,7 +122,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.updateObservabilityFromRuntime(localEstimate, localPeers, string(merge.Status))
 		if e.Logger != nil {
 			nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision := summarizeMergeNodeDecisions(merge.NodeDecisions, msg.OriginNode)
-			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge.Status, msg.OriginNode)
+			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge.Status, msg.OriginNode, averageDetails)
 			diagnosticAttrs := remoteMergeDiagnosticAttrs(merge, uint64(incomingRound), incomingEstimate, membershipEntries, nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision)
 
 			if remoteMergeNeedsInfoDetails(merge) {
@@ -156,9 +158,19 @@ func classifyRuntimeSideEffects(merge MergeResult) MergeResult {
 	return merge
 }
 
+// averageMergeDetails raccoglie i dettagli che spiegano quali contributi average
+// sono stati realmente considerati nella stima membership-aware del nodo locale.
+type averageMergeDetails struct {
+	enabled                 bool
+	knownContributions      int
+	eligibleContributions   int
+	eligibleContributionIDs []string
+	knownContributionIDs    []string
+}
+
 // remoteMergeBaseAttrs costruisce il set minimo e stabile di campi INFO per i merge significativi.
-func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimate float64, status MergeStatus, remoteNodeID shared.NodeID) []slog.Attr {
-	return []slog.Attr{
+func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimate float64, status MergeStatus, remoteNodeID shared.NodeID, averageDetails averageMergeDetails) []slog.Attr {
+	attrs := []slog.Attr{
 		slog.String("event", "remote_merge"),
 		slog.String("node_id", string(nodeID)),
 		slog.Uint64("round", round),
@@ -167,6 +179,15 @@ func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimat
 		slog.String("merge_status", string(status)),
 		slog.String("remote_node_id", string(remoteNodeID)),
 	}
+	if !averageDetails.enabled {
+		return attrs
+	}
+	return append(attrs,
+		slog.Int("average_known_contributions", averageDetails.knownContributions),
+		slog.Int("average_eligible_contributions", averageDetails.eligibleContributions),
+		slog.Any("average_eligible_node_ids", averageDetails.eligibleContributionIDs),
+		slog.Any("average_contribution_node_ids", averageDetails.knownContributionIDs),
+	)
 }
 
 // remoteMergeDiagnosticAttrs isola i dettagli ad alta verbosità, emessi a INFO solo per conflitti/anomalie.
@@ -192,6 +213,46 @@ func remoteMergeDiagnosticAttrs(merge MergeResult, remoteRound uint64, remoteEst
 		)
 	}
 	return attrs
+}
+
+// averageRemoteMergeDetails costruisce una fotografia ordinata dei contributi average
+// noti e del sottoinsieme effettivamente usato dal calcolo corrente. La lista
+// `average_eligible_node_ids` e' intenzionalmente l'intersezione tra nodi eleggibili
+// e contributi noti: coincide quindi con i node_id che entrano nella media esposta.
+func averageRemoteMergeDetails(state shared.GossipState, selfID shared.NodeID, membershipSnapshot []membership.Peer) averageMergeDetails {
+	if state.AggregationType != "average" || state.AggregationData.Average == nil {
+		return averageMergeDetails{}
+	}
+
+	contributions := state.AggregationData.Average.Contributions
+	eligible := eligibleNodeIDs(selfID, membershipSnapshot)
+	knownContributionIDs := sortedContributionNodeIDs(contributions)
+	eligibleContributionIDs := make([]string, 0, len(eligible))
+	for nodeID := range eligible {
+		if _, ok := contributions[nodeID]; ok {
+			eligibleContributionIDs = append(eligibleContributionIDs, string(nodeID))
+		}
+	}
+	sort.Strings(eligibleContributionIDs)
+
+	return averageMergeDetails{
+		enabled:                 true,
+		knownContributions:      len(contributions),
+		eligibleContributions:   len(eligibleContributionIDs),
+		eligibleContributionIDs: eligibleContributionIDs,
+		knownContributionIDs:    knownContributionIDs,
+	}
+}
+
+// sortedContributionNodeIDs restituisce i node_id dei contributi average in ordine
+// stabile, così i log restano confrontabili tra round e test deterministici.
+func sortedContributionNodeIDs(contributions map[shared.NodeID]shared.AverageContribution) []string {
+	nodeIDs := make([]string, 0, len(contributions))
+	for nodeID := range contributions {
+		nodeIDs = append(nodeIDs, string(nodeID))
+	}
+	sort.Strings(nodeIDs)
+	return nodeIDs
 }
 
 // remoteMergeHasConflictDetails evita campi di conflitto vuoti nei log ordinari e diagnostici.
