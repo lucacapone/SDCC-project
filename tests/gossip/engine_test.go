@@ -382,6 +382,151 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 	}
 }
 
+func TestRemoteMergeLoggingInfoApplicatoMantieneSoloCampiBase(t *testing.T) {
+	tr := &spyTransportEngine{}
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	mset := membership.NewSet()
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	now := time.Unix(1710000000, 0).UTC()
+	incoming := shared.GossipMessage{
+		MessageID:  "m-info-base-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Epoch:   1,
+			Counter: 1,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "sum",
+			Value:           42,
+			VersionEpoch:    1,
+			VersionCounter:  1,
+			Round:           7,
+			UpdatedAt:       now,
+		},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	logged := logBuffer.String()
+	for _, expected := range []string{
+		"event=remote_merge",
+		"node_id=node-1",
+		"round=",
+		"peers=",
+		"estimate=",
+		"merge_status=applied",
+		"remote_node_id=node-2",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log INFO applicato privo del campo base %q: %s", expected, logged)
+		}
+	}
+	for _, diagnostic := range []string{
+		"estimate_before=",
+		"estimate_after=",
+		"remote_round=",
+		"remote_estimate=",
+		"membership_entries=",
+		"unique_nodes=",
+		"node_decisions_newer_version=",
+		"node_decisions_duplicate_ignored=",
+		"node_decisions_tie_break=",
+		"remote_node_decision=",
+		"max_preserved=",
+		"merge_reason=",
+		"conflict_node_id=",
+		"conflict_decision=",
+	} {
+		if strings.Contains(logged, diagnostic) {
+			t.Fatalf("log INFO applicato contiene campo diagnostico %q: %s", diagnostic, logged)
+		}
+	}
+}
+
+func TestRemoteMergeLoggingInfoConflittoMantieneDettagliCompleti(t *testing.T) {
+	tr := &spyTransportEngine{}
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	mset := membership.NewSet()
+	eng := NewEngine("node-1", "sum", tr, mset, logger, nil, time.Hour, 2)
+	eng.State.Value = 12
+	eng.State.VersionCounter = 2
+	eng.State.UpdatedAt = time.Unix(1710000000, 0).UTC()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatalf("start engine errore: %v", err)
+	}
+	defer eng.Stop()
+
+	now := time.Unix(1710000001, 0).UTC()
+	incoming := shared.GossipMessage{
+		MessageID:  "m-conflict-info-1",
+		OriginNode: "node-2",
+		SentAt:     now,
+		Version:    currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{
+			Counter: 2,
+		},
+		State: shared.GossipState{
+			NodeID:          "node-2",
+			AggregationType: "average",
+			Value:           99,
+			VersionCounter:  2,
+			Round:           5,
+			UpdatedAt:       now,
+		},
+	}
+	payload, err := json.Marshal(incoming)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if err := tr.deliver(context.Background(), payload); err != nil {
+		t.Fatalf("deliver handler: %v", err)
+	}
+
+	logged := logBuffer.String()
+	for _, expected := range []string{
+		"event=remote_merge",
+		"merge_status=conflict",
+		"remote_node_id=node-2",
+		"estimate_before=12",
+		"estimate_after=12",
+		"remote_round=5",
+		"remote_estimate=99",
+		"membership_entries=0",
+		"unique_nodes=0",
+		"node_decisions_newer_version=0",
+		"node_decisions_duplicate_ignored=0",
+		"node_decisions_tie_break=0",
+		"remote_node_decision=not_present",
+		"max_preserved=false",
+		"merge_reason=aggregation_type_mismatch",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("log INFO conflitto privo del dettaglio atteso %q: %s", expected, logged)
+		}
+	}
+}
+
 func TestRemoteMergeLoggingMantieneSeparatiPeersLocaliEMembershipEntries(t *testing.T) {
 	tr := &spyTransportEngine{}
 	var logBuffer bytes.Buffer
@@ -531,7 +676,7 @@ func TestRemoteMergeRicalcolaEstimateConMembershipAggiornata(t *testing.T) {
 	mset.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7003", Status: membership.Alive, Incarnation: 1, LastSeen: now})
 	collector := observability.NewCollector(now)
 	var logBuffer bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	eng := NewEngine("node-1", "sum", tr, mset, logger, collector, time.Hour, 2)
 	eng.State.LocalValue = 10
 	eng.State.Value = 60
