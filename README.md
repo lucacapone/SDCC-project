@@ -380,6 +380,9 @@ Comandi operativi M05:
 # average: suite canonica di convergenza end-to-end nel package reale dedicato
 go test ./tests/aggregation/average -run TestAverageConvergence -count=1
 
+# average: scenario config-backed a 6 nodi su configs/node1.yaml ... configs/node6.yaml
+go test ./tests/aggregation/average -run TestAverageSixNodeClusterFromCanonicalConfigs -count=1
+
 # min/max: suite canoniche di convergenza nei package reali dedicati
 go test ./tests/aggregation/min ./tests/aggregation/max -count=1
 

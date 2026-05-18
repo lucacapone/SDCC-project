@@ -861,3 +861,13 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura della documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho verificato che `TouchOrUpsertCanonical` e `mergeMembership` promuovono correttamente il placeholder seed-only quando un messaggio gossip espone `OriginNode=node-1` e `addr=node1:7001`. Ho rafforzato la selezione degli ID eleggibili per escludere placeholder `host:port` e aggiunto una difesa specifica nel calcolo `average`, così eventuali contributi storici indicizzati da endpoint restano nei metadata ma non entrano nella media. La regressione aggiunta simula bootstrap con `node1:7001`, ricezione gossip da `node-1`, assenza di duplicati e media calcolata solo su `node-1`/`node-2`.
+
+## 2026-05-18 14:19:07 UTC — Scenario average config-backed a 6 nodi
+
+- **Descrizione task**: Aggiunta una verifica deterministica per il cluster `average` a 6 nodi basata sui file `configs/node1.yaml` ... `configs/node6.yaml`.
+- **File modificati**:
+  - `tests/aggregation/average/average_convergence_test.go`
+  - `docs/testing.md`
+  - `README.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura della documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho aggiunto uno scenario in-memory che carica le configurazioni canoniche, replica bootstrap/fanout/timeout/valori iniziali del runtime e instrada i messaggi tramite transport deterministico senza socket reali. La verifica esegue round sufficienti con membership stabile e controlla per ogni nodo `peers=6`, sei contributi `average` canonici, `estimate=60` e assenza delle medie parziali `70`, `76.666` e `90`. Ho aggiornato la documentazione dei comandi mirati `average` per includere la nuova regressione.

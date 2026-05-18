@@ -320,16 +320,17 @@ go test ./tests/gossip -run 'TestMergeMembershipRealignsPlaceholderSeedWithCanon
 
 ## Regressioni canoniche average
 
-Per l'aggregazione `average` il repository congela esplicitamente tre rischi:
+Per l'aggregazione `average` il repository congela esplicitamente quattro rischi:
 
 - il contributo locale di un nodo non deve driftare verso la media corrente del cluster dopo round multipli;
 - un payload remoto che include gia' metadata `average` completi non deve re-inferire il contributo del mittente a partire da `state.value`;
-- la media esposta deve filtrare i contributi dei nodi non eleggibili secondo membership (`suspect`, `dead`, `leave`) senza cancellarli dai metadata, così da permettere rejoin e riconvergenza.
+- la media esposta deve filtrare i contributi dei nodi non eleggibili secondo membership (`suspect`, `dead`, `leave`) senza cancellarli dai metadata, così da permettere rejoin e riconvergenza;
+- lo scenario config-backed a 6 nodi (`configs/node1.yaml` ... `configs/node6.yaml`) deve arrivare, dopo round sufficienti con membership stabile, a `peers=6`, sei contributi average canonici e `estimate=60`, senza restare bloccato sulle medie parziali `70`, `76.666` o `90`.
 
 Comandi mirati:
 
 ```bash
-go test ./tests/aggregation/average -run 'TestAverageConvergence|TestAverageRoundDoesNotDriftLocalContribution' -count=1
+go test ./tests/aggregation/average -run 'TestAverageConvergence|TestAverageRoundDoesNotDriftLocalContribution|TestAverageSixNodeClusterFromCanonicalConfigs' -count=1
 go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|TestMergeAverageNonReinferisceContributoDaRemoteValueQuandoMetadataCompleti|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli' -count=1
 go test ./tests/integration -run 'TestNodeCrashRestartSixNodesMembershipAwareAverage|TestVoluntaryLeaveMaintainsResidualConvergence|TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow' -count=1
 ```
