@@ -783,3 +783,13 @@
 - **Descrizione task**: Separazione dei campi `event=remote_merge` tra set base a livello `INFO` e dettagli diagnostici a livello `DEBUG`, mantenendo i dettagli completi in `INFO` solo per conflitti o anomalie.
 - **File modificati**: `internal/gossip/engine.go`, `tests/gossip/engine_test.go`, `docs/observability.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Dopo aver riletto documentazione canonica, architettura, configurazione, testing, note operative e log operativo, ho isolato gli attributi base dei merge remoti dai campi diagnostici del payload/merge. I merge applicati ora emettono in `INFO` solo i campi operativi richiesti e mantengono il dettaglio in `DEBUG`; i conflitti e gli skip anomali restano invece diagnostici già a `INFO`. Ho aggiornato la documentazione di observability e aggiunto regressioni mirate per verificare sia la riduzione dei log applicati sia la conservazione dei dettagli nei conflitti.
+
+## 2026-05-18 12:29:50 UTC — Campi conflitto opzionali nei log remote_merge
+
+- **Descrizione task**: Resi condizionali i campi `conflict_node_id` e `conflict_decision` nei log `event=remote_merge`, con aggiornamento dei test e della documentazione di observability.
+- **File modificati**:
+  - `internal/gossip/engine.go`
+  - `tests/gossip/engine_test.go`
+  - `docs/observability.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la lettura della documentazione operativa, architetturale, di configurazione, testing e observability, ho verificato il flusso di logging del merge remoto e i test che ispezionano i log. Ho isolato la presenza dei campi di conflitto dietro una condizione esplicita basata su `nodeConflictID` non vuoto o `merge.Status == MergeConflict`, evitando campi vuoti nei merge non conflittuali. Ho aggiornato i test per non assumere la presenza incondizionata dei campi e la documentazione per dichiararli opzionali.

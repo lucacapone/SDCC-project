@@ -375,9 +375,9 @@ func TestRemoteMergeLoggingRiduceDettagliSensibiliAMetadataUtili(t *testing.T) {
 		}
 	}
 
-	for _, forbidden := range []string{"contributions", "versions", "SeenMessageIDs"} {
+	for _, forbidden := range []string{"contributions", "versions", "SeenMessageIDs", "conflict_node_id=", "conflict_decision="} {
 		if strings.Contains(logged, forbidden) {
-			t.Fatalf("log merge contiene dettagli troppo verbosi %q: %s", forbidden, logged)
+			t.Fatalf("log merge contiene dettagli non attesi %q: %s", forbidden, logged)
 		}
 	}
 }
@@ -520,6 +520,8 @@ func TestRemoteMergeLoggingInfoConflittoMantieneDettagliCompleti(t *testing.T) {
 		"remote_node_decision=not_present",
 		"max_preserved=false",
 		"merge_reason=aggregation_type_mismatch",
+		"conflict_node_id=",
+		"conflict_decision=",
 	} {
 		if !strings.Contains(logged, expected) {
 			t.Fatalf("log INFO conflitto privo del dettaglio atteso %q: %s", expected, logged)

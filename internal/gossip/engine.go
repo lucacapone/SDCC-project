@@ -155,7 +155,7 @@ func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimat
 
 // remoteMergeDiagnosticAttrs isola i dettagli ad alta verbosità, emessi a INFO solo per conflitti/anomalie.
 func remoteMergeDiagnosticAttrs(merge MergeResult, remoteRound uint64, remoteEstimate float64, membershipEntries int, nodeDecisionSummary mergeNodeDecisionSummary, remoteNodeDecision string, nodeConflictID string, nodeConflictDecision string) []slog.Attr {
-	return []slog.Attr{
+	attrs := []slog.Attr{
 		slog.Float64("estimate_before", merge.EstimateBefore),
 		slog.Float64("estimate_after", merge.EstimateAfter),
 		slog.Uint64("remote_round", remoteRound),
@@ -168,9 +168,19 @@ func remoteMergeDiagnosticAttrs(merge MergeResult, remoteRound uint64, remoteEst
 		slog.String("remote_node_decision", remoteNodeDecision),
 		slog.Bool("max_preserved", merge.MaxPreserved),
 		slog.String("merge_reason", merge.Reason),
-		slog.String("conflict_node_id", nodeConflictID),
-		slog.String("conflict_decision", nodeConflictDecision),
 	}
+	if remoteMergeHasConflictDetails(merge, nodeConflictID) {
+		attrs = append(attrs,
+			slog.String("conflict_node_id", nodeConflictID),
+			slog.String("conflict_decision", nodeConflictDecision),
+		)
+	}
+	return attrs
+}
+
+// remoteMergeHasConflictDetails evita campi di conflitto vuoti nei log ordinari e diagnostici.
+func remoteMergeHasConflictDetails(merge MergeResult, nodeConflictID string) bool {
+	return nodeConflictID != "" || merge.Status == MergeConflict
 }
 
 // remoteMergeNeedsInfoDetails abilita i dettagli completi in INFO solo per conflitti o skip anomali.
