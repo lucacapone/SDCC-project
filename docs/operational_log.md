@@ -793,3 +793,11 @@
   - `docs/observability.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la lettura della documentazione operativa, architetturale, di configurazione, testing e observability, ho verificato il flusso di logging del merge remoto e i test che ispezionano i log. Ho isolato la presenza dei campi di conflitto dietro una condizione esplicita basata su `nodeConflictID` non vuoto o `merge.Status == MergeConflict`, evitando campi vuoti nei merge non conflittuali. Ho aggiornato i test per non assumere la presenza incondizionata dei campi e la documentazione per dichiararli opzionali.
+
+## 2026-05-18 12:34:14 UTC — Categorie campi log observability
+
+- **Descrizione task**: Aggiunta in `docs/observability.md` della distinzione tra campi log operativi e diagnostici nella sezione “Campi log supportati”.
+- **File modificati**:
+  - `docs/observability.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura della documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho aggiornato solo la documentazione di observability richiesta. La nuova sottosezione chiarisce quali campi restano normalmente visibili a livello `INFO` e quali sono destinati a `DEBUG` o ai casi anomali, preservando la leggibilità dei log Docker Compose e la diagnosi avanzata tramite `LOG_LEVEL=debug`.

@@ -40,6 +40,31 @@ Scelte operative sui log:
 - i dettagli verbosi del payload gossip non vengono serializzati nei log ordinari;
 - la cardinalità resta bassa per rendere i log leggibili e correlabili con le metriche.
 
+### Categorie dei campi log
+Per mantenere leggibili i log prodotti da Docker Compose senza perdere la possibilità di diagnosi avanzata, i campi sono divisi in due categorie operative. In condizioni ordinarie il livello `INFO` deve privilegiare i campi essenziali; quando serve ricostruire merge, payload o decisioni per nodo, l'operatore può abilitare `LOG_LEVEL=debug` per ottenere il dettaglio diagnostico.
+
+#### Campi operativi
+I campi operativi sono quelli da mostrare normalmente a livello `INFO`, perché bastano per seguire il comportamento del nodo durante avvio, round gossip, merge remoti e shutdown:
+
+- `event`;
+- `node_id`;
+- `runtime_instance`;
+- `round`;
+- `peers`;
+- `estimate`;
+- eventuale `merge_status`, quando l'evento descrive un merge remoto o un esito equivalente.
+
+#### Campi diagnostici
+I campi diagnostici sono quelli da mostrare a livello `DEBUG` oppure a livello `INFO` solo in casi anomali, conflittuali o comunque utili per diagnosi immediata:
+
+- `message_id`;
+- `membership_entries`;
+- `estimate_before`;
+- `estimate_after`;
+- `remote_estimate`;
+- `remote_round`;
+- dettagli di conflitto e decisioni per nodo, inclusi `conflict_node_id`, `conflict_decision`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `merge_reason`, `unique_nodes` e `max_preserved`.
+
 Semantica esplicita per `event=remote_merge`:
 - per un merge significativo con `merge_status=applied`, il livello `INFO` mantiene solo i campi base necessari alla correlazione operativa: `event`, `node_id`, `round`, `peers`, `estimate`, `merge_status` e `remote_node_id`;
 - i campi diagnostici sono emessi nel record `DEBUG` dello stesso merge, così da restare disponibili quando si abilita il debug senza aumentare il rumore dei log ordinari: `estimate_before`, `estimate_after`, `remote_round`, `remote_estimate`, `membership_entries`, `unique_nodes`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `max_preserved` e `merge_reason`;
