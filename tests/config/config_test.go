@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultValidate(t *testing.T) {
@@ -159,6 +160,30 @@ func TestValidateConfig(t *testing.T) {
 				assertErrorContains(t, err, fragment)
 			}
 		})
+	}
+}
+
+func TestValidateMembershipFailureDetectionWindow(t *testing.T) {
+	cfg := Default()
+	cfg.SeedPeers = []string{"node-2:7002", "node-3:7003", "node-4:7004", "node-5:7005", "node-6:7006"}
+	cfg.Fanout = 2
+	cfg.GossipIntervalMS = 1000
+	cfg.MembershipTimeoutMS = 5000
+
+	if gap := cfg.ExpectedPeerReceiveGap(); gap != 3*time.Second {
+		t.Fatalf("intervallo massimo atteso inatteso: got=%s want=3s", gap)
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("config aggressiva accettata: suspect=%s gap=%s", cfg.MembershipConfig().SuspectTimeout, cfg.ExpectedPeerReceiveGap())
+	} else {
+		for _, fragment := range []string{"membership_timeout_ms", "SuspectTimeout", "intervallo massimo atteso"} {
+			assertErrorContains(t, err, fragment)
+		}
+	}
+
+	cfg.MembershipTimeoutMS = 7000
+	if err := Validate(cfg); err != nil {
+		fatalfWithConfig(t, "config con finestra suspect maggiore del gap atteso", cfg, err)
 	}
 }
 

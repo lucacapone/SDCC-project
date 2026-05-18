@@ -543,9 +543,12 @@ Nota runtime: `cmd/node/main.go` avvia anche il piccolo server HTTP di observabi
 ## Failure detection runtime nel cluster di test
 Lo scenario `TestRuntimeMembershipFailureDetection` verifica che il loop gossip degradi automaticamente un peer fermato dal runtime del cluster di test senza invocare manualmente `ApplyTimeoutTransitions` dal test stesso. Il test riduce i timeout membership per mantenere la suite rapida e osserva, su un nodo superstite, la sequenza `alive -> suspect -> dead` del peer inattivo dopo lo stop del relativo engine.
 
-Comando operativo dedicato:
+La prova documentata `TestRuntimeMembershipStableLongRunNoFalseSuspectConvergence` copre invece il caso opposto richiesto per evitare falsi positivi: avvia sei nodi in-memory con `gossip_interval=20ms`, `fanout=5`, `SuspectTimeout=180ms` e `DeadTimeout=360ms`. In questa configurazione ogni peer è target a ogni round, quindi il gap massimo atteso tra heartbeat/merge diretti dello stesso peer è `20ms`; il timeout `suspect` è 9 volte superiore. Il test attende prima la convergenza dell'aggregazione `average`, poi mantiene una finestra stabile di `600ms` verificando a ogni poll che il cluster resti convergente e che nessuna membership contenga peer diversi da `alive`.
+
+Comandi operativi dedicati:
 ```bash
 go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
+go test ./tests/integration -run TestRuntimeMembershipStableLongRunNoFalseSuspectConvergence -count=1
 ```
 
 ## Leave volontario (join/leave lifecycle) nel cluster di test

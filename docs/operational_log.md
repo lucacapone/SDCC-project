@@ -831,3 +831,16 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura di documentazione, architettura, configurazioni, testing e log operativo, ho verificato che `StateVersionStamp` contiene solo `version_epoch` e `version_counter`: `node_id`, `message_id`, `sent_at` e `incarnation` membership restano segnali separati. Poiché nodi diversi possono produrre legittimamente payload concorrenti con lo stesso counter locale, ho esteso il percorso CRDT-like per fondere per-contributo anche `average`, `min` e `max`, evitando conflitti globali impropri. Ho aggiunto un tie-break deterministico per il caso anomalo di contributi `average` dello stesso `node_id` con identica versione ma contenuto diverso e ho aggiornato test/documentazione per distinguere concorrenza valida da conflitti non risolvibili con metadati per-nodo.
+
+## 2026-05-18 13:41:26 UTC — Verifica timeout suspect e prova long-run anti falsi suspect
+
+- **Descrizione task**: Controllata la relazione tra timeout `suspect`, intervallo gossip, fanout e frequenza heartbeat/merge; aggiunta validazione config e prova documentata con run più lunga per confermare che falsi `suspect` non degradino la convergenza.
+- **File modificati**:
+  - `internal/config/config.go`
+  - `tests/config/config_test.go`
+  - `tests/integration/runtime_membership_failure_detection_test.go`
+  - `docs/configuration.md`
+  - `docs/testing.md`
+  - `README.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura di documentazione, architettura, configurazione, testing, file di configurazione e log operativo, ho verificato che il runtime tratta ogni gossip ricevuto come heartbeat implicito e che il round periodico invia payload stato+membership secondo `gossip_interval_ms` e `fanout`. Ho reso esplicita e validata la stima `gossip_interval_ms * ceil(peer_configurati/fanout)`, rifiutando configurazioni in cui il `SuspectTimeout` derivato da `membership_timeout_ms` non sia strettamente maggiore del gap atteso. Ho documentato che i file correnti restano validi e aggiunto una prova in-memory a sei nodi con fanout full-mesh e timeout meno aggressivi, che mantiene una finestra stabile di convergenza `average` senza peer non-`alive`.

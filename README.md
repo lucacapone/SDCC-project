@@ -153,6 +153,8 @@ Parametri esterni principali:
 - `membership_timeout_ms`
 - `enabled_aggregations`
 
+Nota failure detection: `membership_timeout_ms` viene tradotto in `SuspectTimeout = max(1ms, membership_timeout_ms/2)` e `DeadTimeout = max(SuspectTimeout+1ms, membership_timeout_ms)`. La validazione rifiuta configurazioni in cui il timeout `suspect` non è strettamente maggiore del gap massimo atteso tra messaggi gossip dello stesso peer, stimato da `gossip_interval_ms`, `fanout` e numero di peer di discovery.
+
 Esecuzione locale con file config:
 ```bash
 go run ./cmd/node --config configs/example.yaml

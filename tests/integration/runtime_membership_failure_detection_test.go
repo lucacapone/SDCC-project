@@ -79,6 +79,139 @@ func TestRuntimeMembershipFailureDetection(t *testing.T) {
 	}
 }
 
+const (
+	runtimeStableAggregation       = "average"
+	runtimeStableGossipInterval    = 20 * time.Millisecond
+	runtimeStablePollInterval      = 20 * time.Millisecond
+	runtimeStableBootstrapTimeout  = 600 * time.Millisecond
+	runtimeStableObservationWindow = 600 * time.Millisecond
+	runtimeStableSuspectTimeout    = 180 * time.Millisecond
+	runtimeStableDeadTimeout       = 360 * time.Millisecond
+	runtimeStableConvergenceBand   = 0.05
+)
+
+// TestRuntimeMembershipStableLongRunNoFalseSuspectConvergence documenta una run
+// più lunga con parametri failure-detection meno aggressivi: il timeout suspect
+// resta molto sopra il gap massimo atteso tra heartbeat gossip diretti e la
+// convergenza average rimane stabile senza peer falsamente sospetti.
+func TestRuntimeMembershipStableLongRunNoFalseSuspectConvergence(t *testing.T) {
+	initialValues := []float64{10, 30, 50, 70, 90, 110}
+	expectedValue := averageOf(initialValues)
+	network := newIntegrationNetwork()
+	nodes, cancel := bootstrapClusterWithMembershipConfig(
+		t,
+		network,
+		runtimeStableAggregation,
+		initialValues,
+		runtimeStableGossipInterval,
+		membership.Config{
+			SuspectTimeout: runtimeStableSuspectTimeout,
+			DeadTimeout:    runtimeStableDeadTimeout,
+		},
+	)
+	defer cancel()
+	defer stopCluster(t, nodes)
+
+	// La run usa fanout full-mesh per rendere la frequenza di heartbeat/merge
+	// diretta e verificabile: ogni peer è target a ogni round gossip.
+	for _, node := range nodes {
+		node.engine.Fanout = len(nodes) - 1
+	}
+
+	expectedReceiveGap := runtimeStableGossipInterval
+	if runtimeStableSuspectTimeout <= expectedReceiveGap {
+		t.Fatalf("parametri prova non conservativi: suspect=%s gap_atteso=%s", runtimeStableSuspectTimeout, expectedReceiveGap)
+	}
+	t.Logf(
+		"prova long-run failure detection: nodi=%d gossip_interval=%s fanout=%d gap_atteso_peer=%s suspect_timeout=%s dead_timeout=%s bootstrap_timeout=%s finestra_stabile=%s banda=%0.6f",
+		len(nodes),
+		runtimeStableGossipInterval,
+		len(nodes)-1,
+		expectedReceiveGap,
+		runtimeStableSuspectTimeout,
+		runtimeStableDeadTimeout,
+		runtimeStableBootstrapTimeout,
+		runtimeStableObservationWindow,
+		runtimeStableConvergenceBand,
+	)
+
+	bootstrapObservation, bootstrapped := waitForAliveConvergence(
+		nodes,
+		runtimeStableBootstrapTimeout,
+		runtimeStablePollInterval,
+		expectedValue,
+		runtimeStableConvergenceBand,
+	)
+	if !bootstrapped {
+		t.Fatalf("cluster non convergente senza suspect entro il bootstrap long-run: %s", formatClusterObservation(bootstrapObservation))
+	}
+
+	observation, stable := waitForStableAliveConvergence(
+		nodes,
+		runtimeStableObservationWindow,
+		runtimeStablePollInterval,
+		expectedValue,
+		runtimeStableConvergenceBand,
+	)
+	t.Logf("report finale long-run failure detection:\n%s", formatClusterObservation(observation))
+	if !stable {
+		t.Fatalf("convergenza non stabile o falsi suspect osservati nella run lunga: %s", formatClusterObservation(observation))
+	}
+}
+
+// waitForAliveConvergence attende il primo snapshot convergente che non contenga
+// peer sospetti, così la finestra stabile parte da uno stato già valido.
+func waitForAliveConvergence(nodes []*clusterNode, timeout time.Duration, pollEvery time.Duration, expectedValue float64, threshold float64) (clusterObservation, bool) {
+	return waitForCondition(timeout, pollEvery, func() clusterObservation {
+		return observeCluster(nodes, expectedValue)
+	}, func(observation clusterObservation) bool {
+		return isClusterConverged(observation, threshold) && allMembershipPeersAlive(nodes)
+	})
+}
+
+// waitForStableAliveConvergence richiede che, per l'intera finestra osservata,
+// il cluster resti convergente e ogni snapshot membership contenga solo peer alive.
+func waitForStableAliveConvergence(nodes []*clusterNode, window time.Duration, pollEvery time.Duration, expectedValue float64, threshold float64) (clusterObservation, bool) {
+	lastObservation := observeCluster(nodes, expectedValue)
+	if !isClusterConverged(lastObservation, threshold) || !allMembershipPeersAlive(nodes) {
+		return lastObservation, false
+	}
+
+	ticker := time.NewTicker(pollEvery)
+	defer ticker.Stop()
+	deadline := time.NewTimer(window)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			lastObservation = observeCluster(nodes, expectedValue)
+			if !isClusterConverged(lastObservation, threshold) || !allMembershipPeersAlive(nodes) {
+				return lastObservation, false
+			}
+		case <-deadline.C:
+			lastObservation = observeCluster(nodes, expectedValue)
+			return lastObservation, isClusterConverged(lastObservation, threshold) && allMembershipPeersAlive(nodes)
+		}
+	}
+}
+
+// allMembershipPeersAlive controlla che la failure detection non abbia prodotto
+// stati suspect/dead/leave su peer ancora attivi nella rete di test.
+func allMembershipPeersAlive(nodes []*clusterNode) bool {
+	for _, node := range nodes {
+		if node == nil || node.engine == nil || node.engine.Membership == nil {
+			return false
+		}
+		for _, peer := range node.engine.Membership.Snapshot() {
+			if peer.Status != membership.Alive {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // applyMembershipTimeouts sostituisce in modo esplicito la configurazione timeout dei nodi di test.
 func applyMembershipTimeouts(nodes []*clusterNode, addresses []string, cfg membership.Config) {
 	for _, node := range nodes {

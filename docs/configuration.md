@@ -127,6 +127,33 @@ Questa regola preserva due proprietà operative:
 | `100` | `50ms` | `100ms` |
 | `1` | `1ms` | `2ms` |
 
+
+### Vincolo di sicurezza tra `suspect`, gossip, fanout e heartbeat
+
+Il codice di validazione controlla anche la relazione tra failure detection e frequenza effettiva dei messaggi gossip. Ogni messaggio gossip ricevuto dal nodo origine viene trattato come heartbeat implicito: l'handler runtime aggiorna `LastSeen` del peer mittente prima di fondere il digest membership. La frequenza di heartbeat/merge osservabile per un peer dipende quindi da:
+
+- `gossip_interval_ms`, cioè la frequenza con cui un nodo apre un nuovo round e invia un payload completo stato+membership;
+- `fanout`, applicato dall'engine con selezione senza duplicati sui peer eleggibili;
+- numero di peer configurati tramite `bootstrap_peers` o, se assenti, `seed_peers`.
+
+La stima conservativa usata dalla configurazione è:
+
+```text
+intervallo_massimo_atteso_peer = gossip_interval_ms * ceil(peer_configurati / fanout)
+```
+
+Se non ci sono peer configurati, la validazione usa comunque almeno un peer logico e quindi richiede `SuspectTimeout > gossip_interval_ms`. La configurazione viene rifiutata quando il `SuspectTimeout` reale derivato da `membership_timeout_ms` è minore o uguale all'intervallo massimo atteso: l'uguaglianza non lascia margine per jitter, scheduling o ritardi locali.
+
+Con i file correnti:
+
+| File | Peer configurati | `gossip_interval_ms` | `fanout` | Gap atteso | `membership_timeout_ms` | `SuspectTimeout` reale | Esito |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `configs/node1.yaml`–`configs/node3.yaml` | `2` | `1000` | `2` | `1000ms` | `5000` | `2500ms` | valido |
+| `configs/node4.yaml`–`configs/node6.yaml` | `5` | `1000` | `3` | `2000ms` | `5000` | `2500ms` | valido |
+| `configs/example.yaml` | `2` bootstrap / `2` seed | `1000` | `2` | `1000ms` | `5000` | `2500ms` | valido |
+
+Questa verifica non pretende di modellare un limite assoluto in presenza di perdite o partizioni di rete: serve a bloccare configurazioni sicuramente troppo aggressive rispetto alla frequenza nominale di heartbeat/merge prodotta dal gossip. In caso di topologie più grandi o `fanout` più basso, aumentare `membership_timeout_ms` oppure aumentare `fanout` in modo che `SuspectTimeout` resti strettamente maggiore del gap atteso.
+
 ### Effetto sull'eleggibilità dei contributi aggregati
 
 I timeout membership esistenti determinano anche quando un contributo smette di essere eleggibile per il risultato aggregato esposto:

@@ -388,6 +388,46 @@ func (c Config) MembershipConfig() membership.Config {
 	}
 }
 
+// ExpectedPeerReceiveGap stima l'intervallo massimo atteso tra due messaggi gossip
+// diretti ricevuti dallo stesso peer in assenza di perdite, usando solo parametri
+// noti in configurazione. Il fanout runtime seleziona senza duplicati a ogni round:
+// servono quindi ceil(peerConfigurati/fanout) round per coprire tutti i peer attesi.
+func (c Config) ExpectedPeerReceiveGap() time.Duration {
+	peerCount := len(c.DiscoveryPeers())
+	if peerCount < 1 {
+		peerCount = 1
+	}
+	fanout := c.Fanout
+	if fanout < 1 {
+		fanout = 1
+	}
+	roundsPerCoverage := (peerCount + fanout - 1) / fanout
+	if roundsPerCoverage < 1 {
+		roundsPerCoverage = 1
+	}
+	return time.Duration(c.GossipIntervalMS) * time.Millisecond * time.Duration(roundsPerCoverage)
+}
+
+// validateMembershipFailureDetectionWindow evita configurazioni in cui la prima
+// soglia di sospetto scatta prima dell'intervallo massimo atteso tra heartbeat
+// gossip diretti dello stesso peer. Il confronto resta intenzionalmente stretto:
+// in caso di uguaglianza non c'è margine per jitter, scheduling o ritardi locali.
+func validateMembershipFailureDetectionWindow(cfg Config) error {
+	membershipCfg := cfg.MembershipConfig()
+	expectedReceiveGap := cfg.ExpectedPeerReceiveGap()
+	if membershipCfg.SuspectTimeout <= expectedReceiveGap {
+		return fmt.Errorf(
+			"membership_timeout_ms troppo aggressivo: SuspectTimeout reale %s deve essere > intervallo massimo atteso tra messaggi peer %s (gossip_interval_ms=%d, fanout=%d, peer_configurati=%d)",
+			membershipCfg.SuspectTimeout,
+			expectedReceiveGap,
+			cfg.GossipIntervalMS,
+			cfg.Fanout,
+			len(cfg.DiscoveryPeers()),
+		)
+	}
+	return nil
+}
+
 func Validate(cfg Config) error {
 	supportedAggregations := supportedAggregationSet()
 
@@ -420,6 +460,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.MembershipTimeoutMS <= 0 {
 		return errors.New("membership_timeout_ms deve essere > 0")
+	}
+	if err := validateMembershipFailureDetectionWindow(cfg); err != nil {
+		return err
 	}
 	if len(cfg.EnabledAggregations) == 0 {
 		return errors.New("enabled_aggregations deve contenere almeno un valore")
