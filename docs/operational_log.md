@@ -884,3 +884,31 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura di documentazione, architettura, configurazione, testing, file di configurazione e log operativo, ho separato la stima prodotta da `applyRemote`/`mergeAverageState` dalla stima finale dopo `recalculateStateForMembership`. I log strutturati ora includono `aggregation_changed`, `membership_recalculation_changed`, `membership_eligibility_changed`, `estimate_after_aggregation_merge` ed `estimate_after_membership_recalculation`, così un operatore può distinguere immediatamente i cambi dovuti a nuovi contributi dai cambi causati dal filtro membership. Ho inoltre evitato che uno skip per contributo duplicato venga classificato come cambio aggregativo solo perché la funzione di merge normalizza una stima derivata, lasciando tale variazione al ricalcolo runtime membership-aware.
+
+## 2026-05-18 15:53:00 UTC — Aumento timeout membership cluster a 6 nodi
+
+- **Descrizione task**: Aggiornati i file di configurazione runtime dei sei nodi per portare `membership_timeout_ms` da `5000` a `10000`.
+- **File modificati**:
+  - `configs/node1.yaml`
+  - `configs/node2.yaml`
+  - `configs/node3.yaml`
+  - `configs/node4.yaml`
+  - `configs/node5.yaml`
+  - `configs/node6.yaml`
+  - `docs/configuration.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura di documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho applicato la richiesta esplicita di aumentare la soglia utente dei sei nodi. Con la mappatura runtime documentata `SuspectTimeout = membership_timeout_ms / 2`, il cluster passa da `2500ms` a `5000ms` prima della transizione `alive -> suspect`, lasciando più margine a un deployment gossip a sei nodi con fanout probabilistico. Ho aggiornato la tabella di configurazione dei file correnti e previsto la verifica Compose dei log per confermare l'assenza di transizioni `event=membership_transition previous_status=alive status=suspect` in una run sana.
+
+## 2026-05-18 15:54:00 UTC — Validazione timeout membership aggiornato
+
+- **Descrizione task**: Eseguite verifiche automatiche dopo l'aumento di `membership_timeout_ms` nei sei file nodo.
+- **File modificati**:
+  - `docs/operational_log.md`
+- **Reasoning summary**: Ho eseguito la suite Go completa con esito positivo per confermare che parsing configurazione, gossip, membership, integrazioni in-memory e aggregazioni restino coerenti con il nuovo valore. Ho tentato anche la run sana Compose a sei nodi con `deploy/docker-compose.scale.yml` e grep dei log per `event=membership_transition previous_status=alive status=suspect`, ma l'ambiente corrente non espone il comando `docker`; la verifica log runtime resta quindi bloccata da una limitazione ambientale, non da un errore applicativo rilevato.
+
+## 2026-05-18 15:55:00 UTC — Verifica statica valori configurazione nodi
+
+- **Descrizione task**: Verificato staticamente che tutti i file `configs/node1.yaml` ... `configs/node6.yaml` espongano `membership_timeout_ms: 10000`.
+- **File modificati**:
+  - `docs/operational_log.md`
+- **Reasoning summary**: Ho eseguito uno script Python di controllo sui sei file configurazione per evitare sostituzioni parziali o omissioni. Il controllo ha confermato che ogni file nodo usa il nuovo valore richiesto; non sono state rilevate ulteriori divergenze documentali nel perimetro della modifica.
