@@ -849,3 +849,15 @@
 - **Descrizione task**: Estensione dei log strutturati `remote_merge` per l'aggregazione `average`, distinguendo peer membership da contributi average noti ed effettivamente usati nel calcolo della stima.
 - **File modificati**: `internal/gossip/engine.go`, `tests/gossip/engine_test.go`, `docs/architecture.md`, `docs/observability.md`, `docs/operational_log.md`.
 - **Reasoning summary**: Ho aggiunto una fotografia ordinata dei contributi `average` dopo il merge remoto e il ricalcolo membership-aware: totale contributi noti, numero di contributi eleggibili usati, lista dei `node_id` realmente inclusi nella media e lista dei `node_id` presenti in `AggregationData.Average.Contributions`. Ho mantenuto i nuovi campi nei base attrs dell'evento `remote_merge` solo per l'aggregazione `average`, così i log INFO dei merge applicati chiariscono quando `peers` non coincide con la cardinalità usata da `estimate`. Ho aggiunto una regressione dedicata e aggiornato la documentazione di architettura/observability.
+
+## 2026-05-18 14:08:01 UTC — Canonicalizzazione ID eleggibili average da placeholder seed
+
+- **Descrizione task**: Ispezione della pipeline membership da bootstrap statico, heartbeat gossip e ricalcolo `average`, con rafforzamento della garanzia che gli ID eleggibili siano `node_id` logici canonici e non endpoint `host:port`.
+- **File modificati**:
+  - `internal/gossip/engine.go`
+  - `tests/gossip/engine_test.go`
+  - `README.md`
+  - `docs/architecture.md`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura della documentazione di progetto, architettura, configurazione, testing, configurazioni runtime e log operativo, ho verificato che `TouchOrUpsertCanonical` e `mergeMembership` promuovono correttamente il placeholder seed-only quando un messaggio gossip espone `OriginNode=node-1` e `addr=node1:7001`. Ho rafforzato la selezione degli ID eleggibili per escludere placeholder `host:port` e aggiunto una difesa specifica nel calcolo `average`, così eventuali contributi storici indicizzati da endpoint restano nei metadata ma non entrano nella media. La regressione aggiunta simula bootstrap con `node1:7001`, ricezione gossip da `node-1`, assenza di duplicati e media calcolata solo su `node-1`/`node-2`.

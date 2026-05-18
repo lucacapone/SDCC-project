@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,115 @@ import (
 	"sdcc-project/internal/transport"
 	shared "sdcc-project/internal/types"
 )
+
+func TestBootstrapPlaceholderPromossoDaGossipEAverageUsaNodeIDLogici(t *testing.T) {
+	base := time.Date(2026, time.May, 18, 14, 20, 0, 0, time.UTC)
+	set := membership.NewSet()
+
+	res := membership.Bootstrap(
+		context.Background(),
+		set,
+		membership.JoinRequest{NodeID: "node-2", Addr: "node2:7002"},
+		"",
+		[]string{"node1:7001"},
+		membership.NoopJoinClient{},
+		base,
+	)
+	if !res.FallbackUsed || res.KnownPeers != 1 {
+		t.Fatalf("bootstrap statico inatteso: %+v", res)
+	}
+	if _, ok := membershipByNodeID(set.Snapshot())["node1:7001"]; !ok {
+		t.Fatalf("placeholder bootstrap node1:7001 mancante: %+v", set.Snapshot())
+	}
+
+	eng := NewEngine("node-2", "average", &captureTransport{}, set, nil, nil, time.Second, 1)
+	eng.State = shared.GossipState{
+		NodeID:          "node-2",
+		AggregationType: "average",
+		LocalValue:      30,
+		Value:           30,
+		VersionCounter:  1,
+		UpdatedAt:       base,
+		AggregationData: shared.AggregationState{Average: &shared.AverageState{
+			Contributions: map[shared.NodeID]shared.AverageContribution{
+				"node-2":     {Sum: 30, Count: 1},
+				"node1:7001": {Sum: 999, Count: 1},
+			},
+			Versions: map[shared.NodeID]shared.StateVersionStamp{
+				"node-2":     {Counter: 1},
+				"node1:7001": {Counter: 1},
+			},
+		}},
+	}
+
+	msg := shared.GossipMessage{
+		MessageID:    "node-1-average-v2",
+		OriginNode:   "node-1",
+		SentAt:       base.Add(time.Second),
+		Version:      currentMessageVersion,
+		StateVersion: shared.StateVersionStamp{Counter: 2},
+		State: shared.GossipState{
+			NodeID:          "node-1",
+			AggregationType: "average",
+			Value:           10,
+			VersionCounter:  2,
+			UpdatedAt:       base.Add(time.Second),
+			AggregationData: shared.AggregationState{Average: &shared.AverageState{
+				Contributions: map[shared.NodeID]shared.AverageContribution{
+					"node-1": {Sum: 10, Count: 1},
+				},
+				Versions: map[shared.NodeID]shared.StateVersionStamp{
+					"node-1": {Counter: 2},
+				},
+			}},
+		},
+		Membership: []shared.MembershipEntry{{
+			NodeID:      "node-1",
+			Addr:        "node1:7001",
+			Status:      string(membership.Alive),
+			Incarnation: 1,
+			LastSeen:    base.Add(time.Second),
+		}},
+	}
+
+	merge := applyRemote(eng.State, msg)
+	if merge.Status != MergeApplied {
+		t.Fatalf("merge gossip inatteso: status=%s reason=%s", merge.Status, merge.Reason)
+	}
+	eng.State = merge.State
+	MarkPeerAliveForTest(set, "node-2", msg.OriginNode, "node1:7001", msg.SentAt)
+	mergeMembership(set, msg.Membership)
+
+	peers := membershipByNodeID(set.Snapshot())
+	if len(peers) != 1 {
+		t.Fatalf("membership deve contenere solo il peer canonico remoto: %+v", peers)
+	}
+	if _, ok := peers["node1:7001"]; ok {
+		t.Fatalf("placeholder node1:7001 non rimosso dopo promozione: %+v", peers)
+	}
+	if peer, ok := peers["node-1"]; !ok || peer.Addr != "node1:7001" || peer.Status != membership.Alive {
+		t.Fatalf("peer canonico node-1 non promosso correttamente: %+v", peers)
+	}
+
+	eligible := EligibleNodeIDsForTest("node-2", set.Snapshot())
+	if _, ok := eligible["node1:7001"]; ok {
+		t.Fatalf("gli ID eleggibili non devono contenere endpoint host:port: %+v", eligible)
+	}
+	if _, ok := eligible["node-1"]; !ok {
+		t.Fatalf("node-1 deve essere eleggibile dopo la promozione canonica: %+v", eligible)
+	}
+	if _, ok := eligible["node-2"]; !ok {
+		t.Fatalf("self node node-2 deve restare eleggibile durante bootstrap: %+v", eligible)
+	}
+
+	eng.RoundOnce(context.Background())
+	if math.Abs(eng.State.Value-20) > 1e-9 {
+		t.Fatalf("average deve usare solo contributi node_id logici node-1/node-2: got=%v want=20", eng.State.Value)
+	}
+	if _, exists := eng.State.AggregationData.Average.Contributions["node1:7001"]; !exists {
+		t.Fatalf("il contributo storico placeholder deve restare nei metadata ma non nella media")
+	}
+}
 
 func TestEngineStartStop(t *testing.T) {
 	eng := NewEngine(

@@ -867,6 +867,14 @@ func eligibleNodeIDs(selfID shared.NodeID, peers []membership.Peer) map[shared.N
 		if nodeID == selfID {
 			selfSeen = true
 		}
+		// I peer nati dal bootstrap statico usano temporaneamente `host:port`
+		// come NodeID. Questi placeholder sono utili per raggiungere il nodo,
+		// ma non devono mai diventare chiavi eleggibili per il calcolo
+		// aggregativo: i contributi CRDT-like sono indicizzati dal node_id
+		// logico canonico propagato dal gossip remoto.
+		if !isLogicalAggregationNodeID(nodeID) {
+			continue
+		}
 		if membership.IsAggregationEligible(peer.Status) {
 			eligible[nodeID] = struct{}{}
 		}
@@ -962,6 +970,12 @@ func sumWithSaturationForEligible(contributions map[shared.NodeID]float64, eligi
 func averageFromEligibleContributions(contributions map[shared.NodeID]shared.AverageContribution, eligible map[shared.NodeID]struct{}) float64 {
 	filtered := make(map[shared.NodeID]shared.AverageContribution, len(eligible))
 	for nodeID := range eligible {
+		// Difesa aggiuntiva: anche se un chiamante costruisse manualmente una
+		// mappa eligible con chiavi `host:port`, la media deve restare basata
+		// solo sui node_id logici canonici (`node-1`, `node-2`, ...).
+		if !isLogicalAggregationNodeID(nodeID) {
+			continue
+		}
 		contribution, ok := contributions[nodeID]
 		if !ok {
 			continue
@@ -969,6 +983,14 @@ func averageFromEligibleContributions(contributions map[shared.NodeID]shared.Ave
 		filtered[nodeID] = contribution
 	}
 	return averageFromContributions(filtered)
+}
+
+// isLogicalAggregationNodeID distingue i node_id logici dagli endpoint di
+// bootstrap `host:port`, che possono comparire temporaneamente nella membership
+// ma non sono chiavi canoniche per i contributi aggregativi.
+func isLogicalAggregationNodeID(nodeID shared.NodeID) bool {
+	trimmed := strings.TrimSpace(string(nodeID))
+	return trimmed != "" && !isValidNetworkEndpoint(trimmed)
 }
 
 // minFromEligibleContributions calcola il minimo solo sui contributi dei nodi
