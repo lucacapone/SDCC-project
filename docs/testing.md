@@ -566,6 +566,20 @@ go test ./tests/integration -run TestVoluntaryLeaveMaintainsResidualConvergence 
 go test ./tests/integration -run TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow -count=1
 ```
 
+
+## Verifiche versioning e merge gossip
+
+La suite `tests/gossip/TestMergeRules` congela la semantica di confronto degli stati gossip:
+
+- `state_version` confronta solo `version_epoch` e `version_counter`; `origin_node`, `message_id`, `sent_at` e le `incarnation` membership restano segnali separati;
+- payload concorrenti di `sum`, `average`, `min` e `max` con stessa versione globale ma contributi di nodi diversi vengono fusi tramite metadata per-nodo invece di produrre `same_version_different_payload`;
+- il caso anomalo di due contributi `average` dello stesso `node_id` con identica versione ma contenuto diverso usa un tie-break deterministico (`sum` maggiore, poi `count` maggiore), allineato alle regole già presenti per `sum`, `min` e `max`.
+
+Comando operativo dedicato:
+```bash
+go test ./tests/gossip -run 'TestMergeRules|TestMergeMaxConcorrenza' -count=1
+```
+
 ## Verifiche convergenza `sum` idempotente
 
 La suite `tests/aggregation/sum/TestSumConvergence` copre esplicitamente:

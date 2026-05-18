@@ -818,3 +818,16 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo aver riletto documentazione canonica, architettura, configurazione, testing e log operativo, ho verificato il percorso `remote_merge` generato da `applyRemote` e dall'handler runtime dell'engine. Gli skip puri, incluso `merge_reason=older_version`, mantengono ora esplicitamente `estimate_after == estimate_before`; se invece il payload aggregativo viene saltato ma il successivo ricalcolo membership-aware modifica la stima osservabile, l'evento viene promosso a `merge_status=partial_merge` con dettagli completi a livello `INFO`. Ho aggiornato metriche, documentazione e regressioni per coprire sia lo skip realmente ignorato sia il caso parziale.
+
+## 2026-05-18 13:28:14 UTC — Versioning gossip e tie-break same-version
+
+- **Descrizione task**: Ispezione e correzione della logica che produceva `merge_reason=same_version_different_payload` per payload gossip concorrenti con stessa versione globale.
+- **File modificati**:
+  - `internal/gossip/state.go`
+  - `tests/gossip/state_test.go`
+  - `README.md`
+  - `docs/architecture.md`
+  - `docs/observability.md`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura di documentazione, architettura, configurazioni, testing e log operativo, ho verificato che `StateVersionStamp` contiene solo `version_epoch` e `version_counter`: `node_id`, `message_id`, `sent_at` e `incarnation` membership restano segnali separati. Poiché nodi diversi possono produrre legittimamente payload concorrenti con lo stesso counter locale, ho esteso il percorso CRDT-like per fondere per-contributo anche `average`, `min` e `max`, evitando conflitti globali impropri. Ho aggiunto un tie-break deterministico per il caso anomalo di contributi `average` dello stesso `node_id` con identica versione ma contenuto diverso e ho aggiornato test/documentazione per distinguere concorrenza valida da conflitti non risolvibili con metadati per-nodo.

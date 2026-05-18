@@ -110,7 +110,7 @@ Il messaggio applicativo è `internal/types.GossipMessage` ed è serializzato in
 2. `origin_node` (`string`): identificativo univoco del nodo mittente.
 3. `sent_at` (`timestamp`): timestamp UTC di emissione.
 4. `version` (`object`): versione esplicita del contratto messaggio (`major`, `minor`).
-5. `state_version` (`object`): versione dello stato (`epoch`, `counter`) usata dal merge.
+5. `state_version` (`object`): versione dello stato (`epoch`, `counter`) usata dal merge; non contiene `node_id`, timestamp logico, `incarnation` membership o `message_id`, che restano campi separati dell'envelope/digest.
 6. `state.round` (`uint64`): versione logica locale del mittente al momento dell'invio.
 7. `state.aggregation_type` (`string`): tipo aggregazione associata allo stato (`sum`, `average`, `min`, `max`).
 8. `state.value` (`float64`): valore numerico corrente del nodo.
@@ -153,7 +153,7 @@ Questa scelta privilegia robustezza di convergenza rispetto alla minimizzazione 
 - Il payload trasportato è `[]byte` JSON su canale di trasporto astratto.
 
 ## Strategia di versioning dello stato
-La versione logica è composta da **`version_epoch` + `version_counter`** (`internal/types.StateVersionStamp`).
+La versione logica è composta da **`version_epoch` + `version_counter`** (`internal/types.StateVersionStamp`). Questa versione è locale al flusso di stato del nodo che produce il messaggio: gli identificatori `node_id`/`origin_node`, `message_id`, `sent_at` e le `incarnation` membership non fanno parte del confronto `StateVersionStamp`, ma vengono usati rispettivamente per deduplica, osservabilità, tie-break diagnostici e merge membership.
 
 ### Regole
 1. Ogni round locale completato incrementa `State.Round` e `State.VersionCounter` di 1.
@@ -164,9 +164,10 @@ La versione logica è composta da **`version_epoch` + `version_counter`** (`inte
 ### Regole di confronto versione
 Implementazione attuale:
 - confronto lessicografico su `(version_epoch, version_counter)`;
-- messaggi con versione inferiore vengono scartati (`older_version`);
+- duplicati (`SeenMessageIDs`) vengono ignorati in modo idempotente;
 - out-of-order per mittente (`LastSeenVersionByNode`) vengono scartati (`out_of_order_stale`);
-- duplicati (`SeenMessageIDs`) vengono ignorati in modo idempotente.
+- per aggregazioni prive di metadati per-nodo, messaggi con versione globale inferiore vengono scartati (`older_version`);
+- per aggregazioni CRDT-like (`sum`, `average`, `min`, `max`), una versione globale uguale o inferiore può comunque trasportare contributi per-nodo non ancora osservati: il merge confronta quindi `aggregation_data.<tipo>.versions[node_id]` prima di decidere se applicare, ignorare o risolvere un tie-break locale.
 
 ## Regole di merge
 Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramite `applyRemote` in `internal/gossip/state.go`.
@@ -175,7 +176,7 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 - per `sum`: merge idempotente per chiave (`node_id`) sullo stato canonico `aggregation_data.sum.contributions`; per ogni nodo vince solo il contributo con versione più recente (`aggregation_data.sum.versions[node_id]`) e, a parità di versione ma payload diverso, si applica tie-break deterministico stabile (valore numericamente maggiore);
 - `estimate` per `sum` è derivato dai contributi per nodo; nei round locali il calcolo filtra i contributi usando l'eleggibilità membership (`alive`), senza cancellare le entry da `aggregation_data.sum.contributions`;
 - in overflow numerico della `sum` viene applicata saturazione a `±math.MaxFloat64` e il flag `aggregation_data.sum.overflowed=true`;
-- per `average`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.average.versions[node_id]`) e ricostruzione deterministica della media su `sum/count`; nei round locali la media usa solo nodi membership-eligible e conserva comunque tutte le entry in `aggregation_data.average.contributions`;
+- per `average`: merge CRDT-like per contributo nodo con deduplica su versione contributo (`aggregation_data.average.versions[node_id]`) e ricostruzione deterministica della media su `sum/count`; nei round locali la media usa solo nodi membership-eligible e conserva comunque tutte le entry in `aggregation_data.average.contributions`; a parità di versione per lo stesso `node_id`, caso che non dovrebbe essere generato da un nodo corretto perché ogni modifica locale incrementa `version_counter`, il tie-break stabile sceglie il contributo con `sum` maggiore e poi `count` maggiore;
 - per `min`: merge per-contributo nodo su `aggregation_data.min.contributions` guidato da `aggregation_data.min.versions`; a parità di versione vince deterministicamente il contributo più basso e il valore osservabile viene ricalcolato sui soli nodi membership-eligible senza cancellare contributi storici; se nessun contributore eleggibile ha contributi noti il valore derivato è `0`, salvo il normale caso di round locale in cui il contributo self eleggibile viene prima registrato;
 - per `max`: merge per-contributo nodo su `aggregation_data.max.contributions` guidato da `aggregation_data.max.versions`; a parità di versione vince deterministicamente il contributo più alto e il valore osservabile viene ricalcolato sui soli nodi membership-eligible senza cancellare contributi storici; se nessun contributore eleggibile ha contributi noti il valore derivato è `0`, salvo il normale caso di round locale in cui il contributo self eleggibile viene prima registrato;
 - messaggi auto-originati (`origin_node == local.node_id`, oppure fallback legacy con `origin_node` vuoto e `state.node_id == local.node_id`) sono classificati come `self_origin_noop` e non alterano `estimate`, `round` o versioni locali;
@@ -194,10 +195,10 @@ Lo stato locale è `internal/types.GossipState` e il merge remoto avviene tramit
 
 ### Risoluzione conflitti
 - `aggregation_type` differente: conflitto e scarto update;
-- stessa versione ma payload differente:
-  - `sum`: risoluzione deterministica per nodo con tie-break stabile nel merge per contributo;
-  - `max`: merge numerico sempre monotono su `estimate_after = max(estimate_before, remote_estimate)` anche in conflitto, preservando il massimo indipendentemente dai tie-break non numerici;
-  - altre aggregazioni: conflitto con tie-break deterministico (timestamp più recente, poi `sender_node_id`, poi `message_id`).
+- stessa versione globale ma payload differente:
+  - per `sum`, `average`, `min` e `max` è un caso valido quando payload concorrenti portano contributi di nodi diversi con lo stesso `version_counter` locale; non viene classificato come conflitto globale, ma come merge per-contributo (`remote_contribution_merged`);
+  - se lo stesso `node_id` compare con identica versione contributo e valore diverso, il payload è anomalo/legacy ma viene comunque risolto deterministicamente: `sum` sceglie il contributo numericamente maggiore, `average` sceglie la coppia lessicograficamente maggiore `(sum, count)`, `min` sceglie il contributo più basso e `max` quello più alto;
+  - per aggregazioni non CRDT-like resta il conflitto `same_version_different_payload`, risolto con tie-break deterministico su timestamp più recente, poi `sender_node_id`, poi `message_id`.
 
 
 ## Regole merge membership
