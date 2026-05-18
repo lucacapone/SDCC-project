@@ -6,7 +6,7 @@ seed_peers:
   - node1:7001
   - node3:7003
 gossip_interval_ms: 1000
-fanout: 2
+fanout: 5
 membership_timeout_ms: 10000
 enabled_aggregations:
   - sum

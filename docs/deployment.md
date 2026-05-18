@@ -92,7 +92,8 @@ Per scenari di convergenza multi-nodo più ampi è disponibile una variante Comp
 
 - file: `deploy/docker-compose.scale.yml`;
 - servizi: `node1`, `node2`, `node3`, `node4`, `node5`, `node6`;
-- configurazioni aggiuntive: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`.
+- configurazioni aggiuntive: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`;
+- `fanout: 5` in tutti i file `configs/node1.yaml` ... `configs/node6.yaml`, pari al massimo numero di peer remoti in un cluster da 6 nodi.
 
 Comandi operativi:
 
