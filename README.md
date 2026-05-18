@@ -43,8 +43,8 @@ Queste scelte sono definitive per il progetto corrente e sostituiscono la preced
 ## Protocollo gossip (M01)
 Sintesi operativa del protocollo M01:
 - `GossipMessage` include i campi principali `message_id`, `origin_node`, `state_version` (con `version_epoch` + `version_counter`), `payload`, `sent_at` e `membership` (digest serializzato con `status` + `incarnation` per peer).
-- Il versioning è composto da `version_epoch + version_counter`: l'epoch separa i cicli/logical reset, il counter ordina gli aggiornamenti nello stesso epoch.
-- Regole principali di merge: `duplicate_message_id` (idempotenza), `out_of_order_stale`/`older_version` (scarto update vecchi con `estimate_after == estimate_before` negli skip puri), `partial_merge` (payload aggregativo saltato ma stima variata da ricalcolo runtime), `same_version_different_payload` (conflitto a parità versione) e `remote_newer_version` (applicazione update più recente).
+- Il versioning è composto da `version_epoch + version_counter`: l'epoch separa i cicli/logical reset, il counter ordina gli aggiornamenti nello stesso epoch e non incorpora `node_id`, timestamp, incarnation membership o `message_id`.
+- Regole principali di merge: `duplicate_message_id` (idempotenza), `out_of_order_stale`/`older_version` (scarto update vecchi quando non portano contributi CRDT-like utili), `partial_merge` (payload aggregativo saltato ma stima variata da ricalcolo runtime), merge per-contributo per `sum`/`average`/`min`/`max` anche quando due nodi concorrenti hanno la stessa versione globale, `same_version_different_payload` solo per conflitti non risolvibili con metadati per-nodo e `remote_newer_version` per applicazione di update più recenti non CRDT-like.
 - Comando mirato di verifica: `go test ./tests/gossip -run TestMergeRules -count=1`.
 
 Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/architecture.md).

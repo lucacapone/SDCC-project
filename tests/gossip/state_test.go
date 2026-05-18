@@ -18,7 +18,7 @@ func TestMergeRules(t *testing.T) {
 		first := applyRemote(local, msg)
 		second := applyRemote(first.State, msg)
 
-		if first.Status != MergeApplied || first.Reason != "remote_newer_version" {
+		if first.Status != MergeApplied || first.Reason != "remote_contribution_merged" {
 			t.Fatalf("primo merge inatteso: status=%s reason=%s", first.Status, first.Reason)
 		}
 		if second.Status != MergeSkipped || second.Reason != "duplicate_message_id" {
@@ -165,14 +165,14 @@ func TestMergeRules(t *testing.T) {
 
 		res := applyRemote(local, msg)
 
-		if res.Status != MergeSkipped || res.Reason != "older_version" {
-			t.Fatalf("older version non gestita: status=%s reason=%s", res.Status, res.Reason)
+		if res.Status != MergeApplied || res.Reason != "remote_contribution_merged" {
+			t.Fatalf("contributo per-nodo con versione globale vecchia non fuso: status=%s reason=%s", res.Status, res.Reason)
 		}
-		if res.State.Value != local.Value {
-			t.Fatalf("valore locale alterato da versione vecchia: got=%v want=%v", res.State.Value, local.Value)
+		if _, ok := res.State.AggregationData.Average.Contributions[msg.OriginNode]; !ok {
+			t.Fatalf("contributo remoto assente dopo merge CRDT-like")
 		}
-		if res.EstimateAfter != res.EstimateBefore {
-			t.Fatalf("stima after/before incoerente per older_version ignorato: before=%v after=%v", res.EstimateBefore, res.EstimateAfter)
+		if res.EstimateAfter == res.EstimateBefore {
+			t.Fatalf("stima invariata nonostante nuovo contributo per-nodo: before=%v after=%v", res.EstimateBefore, res.EstimateAfter)
 		}
 		if _, seen := res.State.SeenMessageIDs[msg.MessageID]; !seen {
 			t.Fatalf("message id non tracciato per older version")
@@ -182,17 +182,20 @@ func TestMergeRules(t *testing.T) {
 		}
 	})
 
-	t.Run("conflitto versione stato", func(t *testing.T) {
+	t.Run("stessa_versione_payload_concorrente_average", func(t *testing.T) {
 		local := fixtureState("node-1", 11, 8, base.Add(10*time.Minute))
-		msg := fixtureMessage("msg-conflict", "node-2", 99, 8, base.Add(11*time.Minute))
+		msg := fixtureMessage("msg-concurrent-average", "node-2", 99, 8, base.Add(11*time.Minute))
 
 		res := applyRemote(local, msg)
 
-		if res.Status != MergeConflict || res.Reason != "same_version_different_payload" {
-			t.Fatalf("conflitto versione non rilevato: status=%s reason=%s", res.Status, res.Reason)
+		if res.Status != MergeApplied || res.Reason != "remote_contribution_merged" {
+			t.Fatalf("payload concorrente average non fuso per contributo: status=%s reason=%s", res.Status, res.Reason)
 		}
-		if res.State.Value != 99 {
-			t.Fatalf("tie-break conflitto non applicato: got=%v want=%v", res.State.Value, 99.0)
+		if res.State.AggregationData.Average.Contributions["node-2"].Sum != 99 {
+			t.Fatalf("contributo remoto mancante dopo merge per-nodo: got=%+v", res.State.AggregationData.Average.Contributions["node-2"])
+		}
+		if math.Abs(res.State.Value-55) > 1e-9 {
+			t.Fatalf("media concorrente inattesa: got=%v want=55", res.State.Value)
 		}
 	})
 
@@ -230,12 +233,12 @@ func TestMergeRules(t *testing.T) {
 		}
 	})
 
-	t.Run("same_version_different_payload_reale_su_average", func(t *testing.T) {
+	t.Run("tie_break_average_stesso_nodo_stessa_versione", func(t *testing.T) {
 		local := fixtureState("node-1", 20, 12, base.Add(14*time.Minute))
-		msg := fixtureMessage("msg-real-conflict-average", "node-3", 20, 12, base.Add(15*time.Minute))
+		msg := fixtureMessage("msg-real-tie-break-average", "node-3", 20, 12, base.Add(15*time.Minute))
 		msg.State.AggregationData.Average.Contributions = map[shared.NodeID]shared.AverageContribution{
-			"node-1": {Sum: 10, Count: 1},
-			"node-3": {Sum: 80, Count: 1},
+			"node-1": {Sum: 80, Count: 1},
+			"node-3": {Sum: 40, Count: 1},
 		}
 		msg.State.AggregationData.Average.Versions = map[shared.NodeID]shared.StateVersionStamp{
 			"node-1": {Counter: 12},
@@ -243,8 +246,14 @@ func TestMergeRules(t *testing.T) {
 		}
 
 		res := applyRemote(local, msg)
-		if res.Status != MergeConflict || res.Reason != "same_version_different_payload" {
-			t.Fatalf("conflitto reale average non classificato come conflict: status=%s reason=%s", res.Status, res.Reason)
+		if res.Status != MergeApplied || res.Reason != "remote_contribution_merged" {
+			t.Fatalf("tie-break average non applicato come merge per-nodo: status=%s reason=%s", res.Status, res.Reason)
+		}
+		if got := res.State.AggregationData.Average.Contributions["node-1"].Sum; got != 80 {
+			t.Fatalf("tie-break average non ha scelto il contributo deterministico maggiore: got=%v want=80", got)
+		}
+		if math.Abs(res.State.Value-60) > 1e-9 {
+			t.Fatalf("media dopo tie-break inattesa: got=%v want=60", res.State.Value)
 		}
 	})
 
@@ -728,7 +737,7 @@ func TestMergeMaxMonotonoGestisceStatoVuotoELegacy(t *testing.T) {
 	}
 }
 
-func TestMergeMaxConflittoStessaVersionePreservaMassimoCommutativoEIdempotente(t *testing.T) {
+func TestMergeMaxConcorrenzaStessaVersionePreservaMassimoCommutativoEIdempotente(t *testing.T) {
 	base := time.Date(2026, 3, 16, 19, 30, 0, 0, time.UTC)
 	nodeA := shared.GossipState{
 		NodeID:          "node-a",
@@ -738,7 +747,8 @@ func TestMergeMaxConflittoStessaVersionePreservaMassimoCommutativoEIdempotente(t
 		VersionCounter:  5,
 		UpdatedAt:       base,
 		AggregationData: shared.AggregationState{Max: &shared.MaxState{
-			Versions: map[shared.NodeID]shared.StateVersionStamp{"node-a": {Counter: 5}},
+			Contributions: map[shared.NodeID]float64{"node-a": 80},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-a": {Counter: 5}},
 		}},
 	}
 	msgFromB := shared.GossipMessage{
@@ -755,14 +765,15 @@ func TestMergeMaxConflittoStessaVersionePreservaMassimoCommutativoEIdempotente(t
 			VersionCounter:  5,
 			UpdatedAt:       base.Add(2 * time.Minute),
 			AggregationData: shared.AggregationState{Max: &shared.MaxState{
-				Versions: map[shared.NodeID]shared.StateVersionStamp{"node-b": {Counter: 5}},
+				Contributions: map[shared.NodeID]float64{"node-b": 40},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-b": {Counter: 5}},
 			}},
 		},
 	}
 
 	ab := applyRemote(nodeA, msgFromB)
-	if ab.Status != MergeConflict || ab.Reason != "same_version_different_payload" {
-		t.Fatalf("merge max in conflitto non classificato correttamente: status=%s reason=%s", ab.Status, ab.Reason)
+	if ab.Status != MergeApplied || ab.Reason != "remote_contribution_merged" {
+		t.Fatalf("merge max concorrente non fuso per contributo: status=%s reason=%s", ab.Status, ab.Reason)
 	}
 	if ab.State.Value != 80 {
 		t.Fatalf("merge max ha regredito il massimo locale: got=%v want=80", ab.State.Value)
@@ -779,7 +790,8 @@ func TestMergeMaxConflittoStessaVersionePreservaMassimoCommutativoEIdempotente(t
 		VersionCounter:  5,
 		UpdatedAt:       base.Add(2 * time.Minute),
 		AggregationData: shared.AggregationState{Max: &shared.MaxState{
-			Versions: map[shared.NodeID]shared.StateVersionStamp{"node-b": {Counter: 5}},
+			Contributions: map[shared.NodeID]float64{"node-b": 40},
+			Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-b": {Counter: 5}},
 		}},
 	}
 	msgFromA := shared.GossipMessage{
@@ -796,7 +808,8 @@ func TestMergeMaxConflittoStessaVersionePreservaMassimoCommutativoEIdempotente(t
 			VersionCounter:  5,
 			UpdatedAt:       base,
 			AggregationData: shared.AggregationState{Max: &shared.MaxState{
-				Versions: map[shared.NodeID]shared.StateVersionStamp{"node-a": {Counter: 5}},
+				Contributions: map[shared.NodeID]float64{"node-a": 80},
+				Versions:      map[shared.NodeID]shared.StateVersionStamp{"node-a": {Counter: 5}},
 			}},
 		},
 	}

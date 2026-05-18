@@ -62,11 +62,30 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 
 	cmp := compareVersion(remoteVersion, localVersion)
 	samePayload := samePayload(local, msg.State)
+	if cmp == 0 && samePayload {
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
+		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
+		return buildMergeResult(local, MergeSkipped, "same_version_same_payload", estimateBefore, msg.State.Value, nil, false)
+	}
+	if cmp == 0 && samePayloadSemantically(local, msg.State) {
+		local.SeenMessageIDs[msg.MessageID] = struct{}{}
+		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
+		return buildMergeResult(local, MergeSkipped, "same_version_semantically_equivalent", estimateBefore, msg.State.Value, nil, false)
+	}
 
 	if usesPerNodeMerge(local.AggregationType, msg.State.AggregationType) {
 		local.SeenMessageIDs[msg.MessageID] = struct{}{}
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-		local, nodeDecisions := mergeAggregationState(local, msg.State)
+		local, nodeDecisions, changed := mergeAggregationState(local, msg.State)
+		if !changed {
+			reason := "remote_contribution_duplicate"
+			if cmp < 0 {
+				reason = "older_version"
+			} else if cmp == 0 {
+				reason = "same_version_semantically_equivalent"
+			}
+			return buildMergeResult(local, MergeSkipped, reason, estimateBefore, msg.State.Value, nodeDecisions, false)
+		}
 		local.UpdatedAt = time.Now().UTC()
 		local.Round = maxCounter(local.Round, msg.State.Round) + 1
 		local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
@@ -87,12 +106,12 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 		local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
 		maxPreserved := false
 		if aggregationType == "max" {
-			local = mergeMaxState(local, msg.State)
+			local, _, _ = mergeMaxState(local, msg.State)
 			// In caso di conflitto a parità versione preserviamo il massimo osservato.
 			local.Value = math.Max(estimateBefore, msg.State.Value)
 			maxPreserved = true
 		} else if aggregationType == "min" {
-			local = mergeMinState(local, msg.State)
+			local, _, _ = mergeMinState(local, msg.State)
 			// In caso di conflitto a parità versione preserviamo il minimo osservato.
 			local.Value = math.Min(estimateBefore, msg.State.Value)
 		} else if decision.AdoptRemote {
@@ -103,7 +122,7 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 
 	local.SeenMessageIDs[msg.MessageID] = struct{}{}
 	local.LastSeenVersionByNode[msg.OriginNode] = maxVersion(local.LastSeenVersionByNode[msg.OriginNode], remoteVersion)
-	local, nodeDecisions := mergeAggregationState(local, msg.State)
+	local, nodeDecisions, _ := mergeAggregationState(local, msg.State)
 	local.UpdatedAt = time.Now().UTC()
 	local.Round = maxCounter(local.Round, msg.State.Round) + 1
 	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
@@ -147,30 +166,31 @@ func usesPerNodeMerge(localAggregationType, remoteAggregationType string) bool {
 		aggregationType = remoteAggregationType
 	}
 	switch aggregationType {
-	case "sum":
+	case "sum", "average", "min", "max":
 		return true
 	default:
 		return false
 	}
 }
 
-func mergeAggregationState(local, remote shared.GossipState) (shared.GossipState, map[shared.NodeID]string) {
+func mergeAggregationState(local, remote shared.GossipState) (shared.GossipState, map[shared.NodeID]string, bool) {
 	aggregationType := local.AggregationType
 	if aggregationType == "" {
 		aggregationType = remote.AggregationType
 	}
 	switch aggregationType {
 	case "sum":
-		return mergeSumState(local, remote)
+		merged, decisions := mergeSumState(local, remote)
+		return merged, decisions, sumNodeDecisionsChanged(decisions)
 	case "average":
-		return mergeAverageState(local, remote), nil
+		return mergeAverageState(local, remote)
 	case "min":
-		return mergeMinState(local, remote), nil
+		return mergeMinState(local, remote)
 	case "max":
-		return mergeMaxState(local, remote), nil
+		return mergeMaxState(local, remote)
 	default:
 		local.Value = mergeAggregationValue(local, remote)
-		return local, nil
+		return local, nil, true
 	}
 }
 
@@ -224,6 +244,17 @@ func mergeSumState(local, remote shared.GossipState) (shared.GossipState, map[sh
 	}
 	local.Value, local.AggregationData.Sum.Overflowed = sumWithSaturation(local.AggregationData.Sum.Contributions, local.AggregationData.Sum.Overflowed)
 	return local, nodeDecisions
+}
+
+// sumNodeDecisionsChanged distingue replay/duplicati da merge che hanno realmente
+// modificato almeno un contributo della somma.
+func sumNodeDecisionsChanged(nodeDecisions map[shared.NodeID]string) bool {
+	for _, decision := range nodeDecisions {
+		if decision == "newer_version" || decision == "tie_break" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildMergeResult(state shared.GossipState, status MergeStatus, reason string, estimateBefore float64, remoteEstimate float64, nodeDecisions map[shared.NodeID]string, maxPreserved bool) MergeResult {
@@ -311,21 +342,50 @@ func ensureIncomingSumMetadata(state *shared.GossipState) {
 }
 
 // mergeAverageState implementa merge convergente per media via contributi per nodo (sum/count).
-func mergeAverageState(local, remote shared.GossipState) shared.GossipState {
+func mergeAverageState(local, remote shared.GossipState) (shared.GossipState, map[shared.NodeID]string, bool) {
 	local.EnsureAverageMetadata()
 	ensureIncomingAverageMetadata(&remote)
 
+	changed := false
 	for nodeID, remoteVersion := range remote.AggregationData.Average.Versions {
+		remoteContribution := remote.AggregationData.Average.Contributions[nodeID]
 		localVersion, exists := local.AggregationData.Average.Versions[nodeID]
-		if exists && compareVersion(remoteVersion, localVersion) <= 0 {
+		if exists && compareVersion(remoteVersion, localVersion) < 0 {
 			continue
 		}
+		if exists && compareVersion(remoteVersion, localVersion) == 0 {
+			localContribution := local.AggregationData.Average.Contributions[nodeID]
+			if compareAverageContribution(remoteContribution, localContribution) <= 0 {
+				continue
+			}
+		}
 		local.AggregationData.Average.Versions[nodeID] = remoteVersion
-		local.AggregationData.Average.Contributions[nodeID] = remote.AggregationData.Average.Contributions[nodeID]
+		local.AggregationData.Average.Contributions[nodeID] = remoteContribution
+		changed = true
 	}
 
 	local.Value = averageFromContributions(local.AggregationData.Average.Contributions)
-	return local
+	return local, nil, changed
+}
+
+// compareAverageContribution applica il tie-break deterministico per casi anomali
+// in cui due contributi dello stesso nodo hanno identica versione ma payload diverso.
+// Un nodo corretto incrementa la versione a ogni modifica locale; questa regola serve
+// quindi solo a mantenere convergenza/idempotenza davanti a payload legacy o corrotti.
+func compareAverageContribution(a, b shared.AverageContribution) int {
+	if math.Abs(a.Sum-b.Sum) > 1e-9 {
+		if a.Sum > b.Sum {
+			return 1
+		}
+		return -1
+	}
+	if a.Count > b.Count {
+		return 1
+	}
+	if a.Count < b.Count {
+		return -1
+	}
+	return 0
 }
 
 // ensureIncomingAverageMetadata rende compatibili i messaggi legacy senza metadati average.
@@ -355,7 +415,7 @@ func ensureIncomingAverageMetadata(state *shared.GossipState) {
 }
 
 // mergeMinState implementa merge monotono robusto per minimo con gestione stati legacy/vuoti.
-func mergeMinState(local, remote shared.GossipState) shared.GossipState {
+func mergeMinState(local, remote shared.GossipState) (shared.GossipState, map[shared.NodeID]string, bool) {
 	// Materializziamo lo stato locale solo se espone gia' metadati o un valore
 	// non-zero: uno stato legacy completamente vuoto resta privo di contributo self
 	// e adotta quindi il primo contributo remoto, come nella semantica precedente.
@@ -366,6 +426,7 @@ func mergeMinState(local, remote shared.GossipState) shared.GossipState {
 	}
 	ensureIncomingMinMetadata(&remote)
 
+	changed := false
 	for nodeID, remoteContribution := range remote.AggregationData.Min.Contributions {
 		remoteVersion := remote.AggregationData.Min.Versions[nodeID]
 		localVersion, exists := local.AggregationData.Min.Versions[nodeID]
@@ -381,10 +442,11 @@ func mergeMinState(local, remote shared.GossipState) shared.GossipState {
 		}
 		local.AggregationData.Min.Versions[nodeID] = remoteVersion
 		local.AggregationData.Min.Contributions[nodeID] = remoteContribution
+		changed = true
 	}
 
 	local.Value = minFromContributions(local.AggregationData.Min.Contributions)
-	return local
+	return local, nil, changed
 }
 
 // shouldMaterializeLocalMinContribution decide se un valore locale legacy rappresenta
@@ -422,7 +484,7 @@ func ensureIncomingMinMetadata(state *shared.GossipState) {
 }
 
 // mergeMaxState implementa merge monotono robusto per massimo con gestione stati legacy/vuoti.
-func mergeMaxState(local, remote shared.GossipState) shared.GossipState {
+func mergeMaxState(local, remote shared.GossipState) (shared.GossipState, map[shared.NodeID]string, bool) {
 	// Materializziamo lo stato locale solo se espone gia' metadati o un valore
 	// non-zero: uno stato legacy completamente vuoto resta privo di contributo self
 	// e adotta quindi il primo contributo remoto, come nella semantica precedente.
@@ -433,6 +495,7 @@ func mergeMaxState(local, remote shared.GossipState) shared.GossipState {
 	}
 	ensureIncomingMaxMetadata(&remote)
 
+	changed := false
 	for nodeID, remoteContribution := range remote.AggregationData.Max.Contributions {
 		remoteVersion := remote.AggregationData.Max.Versions[nodeID]
 		localVersion, exists := local.AggregationData.Max.Versions[nodeID]
@@ -448,10 +511,11 @@ func mergeMaxState(local, remote shared.GossipState) shared.GossipState {
 		}
 		local.AggregationData.Max.Versions[nodeID] = remoteVersion
 		local.AggregationData.Max.Contributions[nodeID] = remoteContribution
+		changed = true
 	}
 
 	local.Value = maxFromContributions(local.AggregationData.Max.Contributions)
-	return local
+	return local, nil, changed
 }
 
 // shouldMaterializeLocalMaxContribution decide se un valore locale legacy rappresenta
