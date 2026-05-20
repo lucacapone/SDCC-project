@@ -903,7 +903,7 @@ func TestRemoteMergeSkippedConRicalcoloRuntimeDiventaPartialMerge(t *testing.T) 
 	}
 }
 
-func TestRemoteMergeSelfOriginRestaNoOpESenzaRumoreInfo(t *testing.T) {
+func TestRemoteMergeSelfOriginRestaNoOpELoggaComeMergeSignificativoSkipped(t *testing.T) {
 	tr := &spyTransportEngine{}
 	var logBuffer bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -958,8 +958,14 @@ func TestRemoteMergeSelfOriginRestaNoOpESenzaRumoreInfo(t *testing.T) {
 	}
 
 	logged := logBuffer.String()
-	if strings.Contains(logged, "event=remote_merge") {
-		t.Fatalf("auto-merge non deve generare remote_merge a livello INFO: %s", logged)
+	for _, expected := range []string{
+		"event=remote_merge",
+		"merge_status=skipped",
+		"merge_significant=true",
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("auto-merge deve emettere log skipped significativo con campo %q: %s", expected, logged)
+		}
 	}
 }
 

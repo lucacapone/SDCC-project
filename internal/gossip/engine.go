@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"sort"
 	"strings"
@@ -40,6 +41,8 @@ type Engine struct {
 	Logger       *slog.Logger
 	Collector    *observability.Collector
 	RoundTicker  *time.Ticker
+	RemoteMergeMode string
+	LogEstimateDeltaThreshold float64
 	fanoutCursor int
 	mu           sync.Mutex
 }
@@ -69,8 +72,25 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 		Logger:       logger,
 		Collector:    collector,
 		RoundTicker:  time.NewTicker(roundEvery),
+		RemoteMergeMode: "full",
+		LogEstimateDeltaThreshold: 0,
 		fanoutCursor: 0,
 	}
+}
+
+func (e *Engine) SetRemoteMergeLoggingPolicy(mode string, estimateDeltaThreshold float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	switch strings.TrimSpace(mode) {
+	case "off", "significant", "full":
+		e.RemoteMergeMode = strings.TrimSpace(mode)
+	default:
+		e.RemoteMergeMode = "full"
+	}
+	if estimateDeltaThreshold < 0 {
+		estimateDeltaThreshold = 0
+	}
+	e.LogEstimateDeltaThreshold = estimateDeltaThreshold
 }
 
 // Start avvia il transport e il loop gossip.
@@ -123,14 +143,19 @@ func (e *Engine) Start(ctx context.Context) error {
 			nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision := summarizeMergeNodeDecisions(merge.NodeDecisions, msg.OriginNode)
 			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge, msg.OriginNode, averageDetails)
 			diagnosticAttrs := remoteMergeDiagnosticAttrs(merge, uint64(incomingRound), incomingEstimate, membershipEntries, nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision)
+			mergeSignificant := isRemoteMergeSignificant(merge, e.LogEstimateDeltaThreshold)
 
-			if remoteMergeNeedsInfoDetails(merge) {
-				e.Logger.LogAttrs(ctx, slog.LevelInfo, "merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs)...)
-			} else if merge.Status == MergeApplied {
-				e.Logger.LogAttrs(ctx, slog.LevelInfo, "merge remoto gossip", baseAttrs...)
-				e.Logger.LogAttrs(ctx, slog.LevelDebug, "diagnostica merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs)...)
+			if e.RemoteMergeMode == "off" {
+				// Nessuna emissione.
+			} else if e.RemoteMergeMode == "significant" && !mergeSignificant {
+				e.Logger.LogAttrs(ctx, slog.LevelDebug, "merge remoto gossip non significativo soppresso", appendAttrs(baseAttrs, diagnosticAttrs, []slog.Attr{slog.Bool("merge_significant", false)})...)
+			} else if remoteMergeNeedsInfoDetails(merge) {
+				e.Logger.LogAttrs(ctx, slog.LevelInfo, "merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs, []slog.Attr{slog.Bool("merge_significant", mergeSignificant)})...)
+			} else if e.RemoteMergeMode == "full" || mergeSignificant {
+				e.Logger.LogAttrs(ctx, slog.LevelInfo, "merge remoto gossip", appendAttrs(baseAttrs, []slog.Attr{slog.Bool("merge_significant", mergeSignificant)})...)
+				e.Logger.LogAttrs(ctx, slog.LevelDebug, "diagnostica merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs, []slog.Attr{slog.Bool("merge_significant", mergeSignificant)})...)
 			} else {
-				e.Logger.LogAttrs(ctx, slog.LevelDebug, "diagnostica merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs)...)
+				e.Logger.LogAttrs(ctx, slog.LevelInfo, "merge remoto gossip", appendAttrs(baseAttrs, diagnosticAttrs)...)
 			}
 		}
 		return nil
@@ -141,6 +166,16 @@ func (e *Engine) Start(ctx context.Context) error {
 
 	go e.loop(ctx)
 	return nil
+}
+
+func isRemoteMergeSignificant(merge MergeResult, threshold float64) bool {
+	if merge.Status != MergeApplied {
+		return true
+	}
+	if merge.AggregationChanged || merge.MembershipRecalculationChanged || merge.MembershipEligibilityChanged {
+		return true
+	}
+	return math.Abs(merge.EstimateAfter-merge.EstimateBefore) >= threshold
 }
 
 // classifyRuntimeSideEffects distingue gli skip puri dai casi in cui il payload

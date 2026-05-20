@@ -129,6 +129,7 @@ func main() {
 		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,
 		cfg.Fanout,
 	)
+	eng.SetRemoteMergeLoggingPolicy(cfg.RemoteMergeMode, cfg.LogEstimateDeltaThreshold)
 	// Conserviamo il valore locale originario in uno stato runtime dedicato per evitare
 	// che l'algoritmo average sovrascriva il contributo del nodo con la media corrente.
 	eng.State.LocalValue = cfg.InitialValue
