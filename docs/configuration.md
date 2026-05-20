@@ -370,6 +370,8 @@ go run ./cmd/node --config configs/example.yaml
 ENABLED_AGGREGATIONS=sum,average,min,max \
 AGGREGATION=average \
 LOG_LEVEL=info \
+LOGGING_REMOTE_MERGE_MODE=significant \
+LOGGING_LOG_ESTIMATE_DELTA_THRESHOLD=0.5 \
 go run ./cmd/node --config configs/example.yaml
 ```
 
@@ -389,3 +391,6 @@ Per riferimento rapido, i nomi esatti supportati dal runtime sono:
 - `ENABLED_AGGREGATIONS`
 - `AGGREGATION`
 - `LOG_LEVEL`
+
+- `LOGGING_REMOTE_MERGE_MODE` (valori: `full|significant|off`, default consigliato `significant`)
+- `LOGGING_LOG_ESTIMATE_DELTA_THRESHOLD` (soglia `abs(estimate_after-estimate_before)` per classificare un merge `applied` come significativo; default `0`)

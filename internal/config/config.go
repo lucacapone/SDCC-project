@@ -31,6 +31,8 @@ type Config struct {
 	Aggregation         string   `json:"aggregation"`
 	InitialValue        float64  `json:"initial_value"`
 	LogLevel            string   `json:"log_level"`
+	RemoteMergeMode     string   `json:"logging.remote_merge_mode"`
+	LogEstimateDeltaThreshold float64 `json:"logging.log_estimate_delta_threshold"`
 }
 
 func Default() Config {
@@ -49,6 +51,8 @@ func Default() Config {
 		Aggregation:         "sum",
 		InitialValue:        0,
 		LogLevel:            "info",
+		RemoteMergeMode:     "significant",
+		LogEstimateDeltaThreshold: 0,
 	}
 }
 
@@ -183,6 +187,14 @@ func parseSimpleYAML(raw []byte, cfg *Config) error {
 			cfg.InitialValue = parsed
 		case "log_level":
 			cfg.LogLevel = value
+		case "logging.remote_merge_mode":
+			cfg.RemoteMergeMode = value
+		case "logging.log_estimate_delta_threshold":
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return fmt.Errorf("campo logging.log_estimate_delta_threshold non valido alla riga %d: atteso numero, ottenuto %q", lineNumber, value)
+			}
+			cfg.LogEstimateDeltaThreshold = parsed
 		case "seed_peers":
 			parsed, err := parseInlineList(value)
 			if err != nil {
@@ -280,6 +292,10 @@ func overrideFromEnv(cfg *Config) error {
 		return err
 	}
 	overrideString("LOG_LEVEL", &cfg.LogLevel)
+	overrideString("LOGGING_REMOTE_MERGE_MODE", &cfg.RemoteMergeMode)
+	if err := overrideFloat("LOGGING_LOG_ESTIMATE_DELTA_THRESHOLD", &cfg.LogEstimateDeltaThreshold); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -478,6 +494,18 @@ func Validate(cfg Config) error {
 	}
 	if !contains(cfg.EnabledAggregations, cfg.Aggregation) {
 		return fmt.Errorf("aggregation %q non presente in enabled_aggregations", cfg.Aggregation)
+	}
+	remoteMergeMode := strings.TrimSpace(cfg.RemoteMergeMode)
+	if remoteMergeMode == "" {
+		return errors.New("logging.remote_merge_mode obbligatorio")
+	}
+	switch remoteMergeMode {
+	case "full", "significant", "off":
+	default:
+		return fmt.Errorf("logging.remote_merge_mode %q non supportata; valori ammessi: full, significant, off", cfg.RemoteMergeMode)
+	}
+	if cfg.LogEstimateDeltaThreshold < 0 {
+		return errors.New("logging.log_estimate_delta_threshold deve essere >= 0")
 	}
 	return nil
 }

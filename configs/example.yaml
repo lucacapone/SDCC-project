@@ -20,3 +20,6 @@ enabled_aggregations:
 aggregation: sum
 initial_value: 0
 log_level: info
+
+logging.remote_merge_mode: significant
+logging.log_estimate_delta_threshold: 0
