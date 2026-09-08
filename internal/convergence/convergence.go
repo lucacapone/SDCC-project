@@ -218,12 +218,47 @@ func Series(samples []Sample) map[string][]Sample {
 	return out
 }
 
-// ConvergenceTime trova il primo stato globale dopo il quale tutti i nodi osservati
-// sono e restano nella tolleranza assoluta fino alla fine della run.
-func ConvergenceTime(samples []Sample, expected, tolerance float64) (float64, bool) {
+// NodeSetComparison descrive le differenze fra configurazione e osservazioni.
+type NodeSetComparison struct {
+	Missing    []string
+	Unexpected []string
+}
+
+// Complete segnala che i campioni appartengono esattamente ai nodi configurati.
+func (comparison NodeSetComparison) Complete() bool {
+	return len(comparison.Missing) == 0 && len(comparison.Unexpected) == 0
+}
+
+// CompareNodes confronta i node_id attesi con quelli presenti nei campioni.
+// Le liste risultanti sono ordinate per produrre report deterministici.
+func CompareNodes(samples []Sample, expectedNodes []string) NodeSetComparison {
+	expected := make(map[string]struct{}, len(expectedNodes))
+	for _, nodeID := range expectedNodes {
+		expected[nodeID] = struct{}{}
+	}
+	observed := Series(samples)
+	comparison := NodeSetComparison{}
+	for nodeID := range expected {
+		if _, ok := observed[nodeID]; !ok {
+			comparison.Missing = append(comparison.Missing, nodeID)
+		}
+	}
+	for nodeID := range observed {
+		if _, ok := expected[nodeID]; !ok {
+			comparison.Unexpected = append(comparison.Unexpected, nodeID)
+		}
+	}
+	sort.Strings(comparison.Missing)
+	sort.Strings(comparison.Unexpected)
+	return comparison
+}
+
+// ConvergenceTime trova il primo stato globale dopo il quale tutti e soli i nodi
+// attesi sono e restano nella tolleranza assoluta fino alla fine della run.
+func ConvergenceTime(samples []Sample, expectedNodes []string, expected, tolerance float64) (float64, bool) {
 	ordered := Normalize(samples)
 	nodes := Series(ordered)
-	if len(nodes) == 0 {
+	if len(nodes) == 0 || !CompareNodes(ordered, expectedNodes).Complete() {
 		return 0, false
 	}
 	latest := map[string]float64{}
@@ -252,8 +287,9 @@ func ConvergenceTime(samples []Sample, expected, tolerance float64) (float64, bo
 	return answer, answer >= 0
 }
 
-// SVG produce un grafico autosufficiente con serie a gradini, legenda e riferimento.
-func SVG(samples []Sample, expected, tolerance float64) (string, error) {
+// SVG produce un grafico autosufficiente con serie a gradini, legenda,
+// riferimento e diagnostica sulla completezza dei nodi configurati.
+func SVG(samples []Sample, expectedNodes []string, expected, tolerance float64) (string, error) {
 	series := Series(samples)
 	if len(series) == 0 {
 		return "", fmt.Errorf("nessun campione")
@@ -337,13 +373,28 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 		}
 		fmt.Fprintf(&b, "<line x1=\"75\" y1=\"%d\" x2=\"95\" y2=\"%d\" stroke=\"%s\" stroke-width=\"3\"/><text x=\"100\" y=\"%d\" font-size=\"11\">%s</text>", legendY-4, legendY-4, c, legendY, html.EscapeString(n))
 	}
-	conv, ok := ConvergenceTime(ordered, expected, tolerance)
+	comparison := CompareNodes(ordered, expectedNodes)
+	conv, ok := ConvergenceTime(ordered, expectedNodes, expected, tolerance)
 	label := "Convergenza non osservata"
-	if ok {
+	if !comparison.Complete() {
+		label += ": " + formatNodeDifferences(comparison)
+	} else if ok {
 		label = fmt.Sprintf("Convergenza stabile da %.3f s", conv)
 	}
 	fmt.Fprintf(&b, "<text x=\"450\" y=\"%d\" text-anchor=\"middle\">tempo trascorso (s)</text><text x=\"450\" y=\"%d\" text-anchor=\"middle\">%s</text><text transform=\"translate(18 260) rotate(-90)\" text-anchor=\"middle\">stima</text></svg>", xAxisTitleY, annotationY, xmlEscape(label))
 	return b.String(), nil
+}
+
+// formatNodeDifferences rende esplicite entrambe le classi di errore di insieme.
+func formatNodeDifferences(comparison NodeSetComparison) string {
+	parts := make([]string, 0, 2)
+	if len(comparison.Missing) > 0 {
+		parts = append(parts, "nodi mancanti: "+strings.Join(comparison.Missing, ", "))
+	}
+	if len(comparison.Unexpected) > 0 {
+		parts = append(parts, "nodi non configurati: "+strings.Join(comparison.Unexpected, ", "))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // markerRadiusFor riduce la dimensione dei marker quando una serie è densa.

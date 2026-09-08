@@ -600,7 +600,7 @@ go test ./tests/aggregation/sum -run TestSumConvergence -count=1
 
 ## Pipeline di convergenza osservata
 
-I test di `internal/convergence` coprono parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. Un caso a sei nodi verifica inoltre che ogni serie, inclusa `node-6`, compaia nella legenda e che le coordinate delle etichette restino entro il `viewBox`, la cui altezza cresce con il numero di serie. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
+I test di `internal/convergence` coprono parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. Una regressione configura sei nodi ma fornisce campioni in banda per cinque soltanto e verifica che `node-6` impedisca la convergenza; copre inoltre il rifiuto di un nodo osservato estraneo. Il test del comando controlla che riepilogo e SVG rendano visibile la stessa diagnostica. Un ulteriore caso a sei nodi verifica che ogni serie, inclusa `node-6`, compaia nella legenda e che le coordinate delle etichette restino entro il `viewBox`, la cui altezza cresce con il numero di serie. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
 
 ```bash
 go test ./internal/convergence ./tests/gossip -count=1
@@ -639,4 +639,4 @@ serie viene mostrato un marker per campione; oltre tale soglia i marker sono
 ridotti e campionati uniformemente, includendo sempre primo e ultimo punto. I
 test verificano sia la generazione ordinaria sia il limite per serie dense.
 
-Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `convergence=non osservata` quando nessun suffisso della serie soddisfa il criterio.
+Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `nodes_expected`, `nodes_observed`, `missing_nodes` e `unexpected_nodes`; dichiara `convergence=non osservata` sia quando nessun suffisso soddisfa il criterio sia quando l'insieme osservato non coincide esattamente con i `node_id` delle configurazioni selezionate. L'annotazione SVG elenca a sua volta i nodi mancanti e quelli non configurati.
