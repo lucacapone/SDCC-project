@@ -632,5 +632,11 @@ L'etichetta del riferimento `atteso ... ± ...` è ancorata verso sinistra al
 margine destro interno del plot e la sua coordinata verticale viene confinata
 tra i bordi superiore e inferiore, così valori lunghi o estremi non vengono
 tagliati. Una regressione dedicata verifica `x`, `text-anchor` e i due limiti Y.
+Le serie mantengono un path a gradini basato sui comandi SVG `H` e `V`: i
+segmenti semitrasparenti prolungano l'ultima stima nota, mentre marker circolari
+ad alto contrasto identificano i campioni osservati. Fino a 100 campioni per
+serie viene mostrato un marker per campione; oltre tale soglia i marker sono
+ridotti e campionati uniformemente, includendo sempre primo e ultimo punto. I
+test verificano sia la generazione ordinaria sia il limite per serie dense.
 
 Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `convergence=non osservata` quando nessun suffisso della serie soddisfa il criterio.

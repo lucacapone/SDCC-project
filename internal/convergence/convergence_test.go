@@ -83,6 +83,49 @@ func TestSVGEssentialValidity(t *testing.T) {
 	}
 }
 
+// TestSVGGeneratesSampleMarkers verifica che ogni campione di una serie non
+// densa produca un marker con lo stesso colore del relativo path a gradini.
+func TestSVGGeneratesSampleMarkers(t *testing.T) {
+	samples := []Sample{sample(1, "node-a", 10), sample(2, "node-a", 20), sample(3, "node-a", 30)}
+	svg, err := SVG(samples, 30, .05)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Count(svg, "class=\"sample-marker\"") != len(samples) {
+		t.Fatalf("numero di marker inatteso: SVG=%s", svg)
+	}
+	for _, needle := range []string{
+		`d="M 70.00 430.00 H 450.00 V 260.42 H 830.00 V 90.85"`,
+		`stroke="#2563eb" stroke-width="2" stroke-opacity="0.65"`,
+		`fill="#2563eb" stroke="white"`,
+		`I punti rappresentano campioni osservati; il tratto mantiene l'ultima stima nota.`,
+	} {
+		if !strings.Contains(svg, needle) {
+			t.Errorf("SVG privo di %q", needle)
+		}
+	}
+}
+
+// TestSVGMarkerLimitForDenseSeries congela il limite visuale e il raggio
+// ridotto usati per non saturare il grafico quando i campioni sono numerosi.
+func TestSVGMarkerLimitForDenseSeries(t *testing.T) {
+	samples := make([]Sample, 0, 150)
+	for i := 0; i < cap(samples); i++ {
+		samples = append(samples, sample(i+1, "node-a", float64(i)))
+	}
+	svg, err := SVG(samples, 75, .05)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(svg, "class=\"sample-marker\""); got != 100 {
+		t.Fatalf("marker della serie densa: got=%d want=100", got)
+	}
+	if !strings.Contains(svg, `r="2.00"`) {
+		t.Fatal("marker della serie densa privo del raggio ridotto")
+	}
+}
+
 func TestSVGGridIncludesExtremeAndIntermediateLabels(t *testing.T) {
 	svg, err := SVG([]Sample{sample(1, "node-a", 10), sample(11, "node-a", 50)}, 30, .05)
 	if err != nil {
