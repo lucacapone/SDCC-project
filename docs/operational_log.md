@@ -993,3 +993,17 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione di progetto, dell'architettura, dei report di milestone, delle configurazioni, della guida ai test, delle note operative e dello storico, ho mantenuto la semantica a gradini esistente e reso i segmenti semitrasparenti. Ogni campione delle serie ordinarie riceve un marker nello stesso colore, con bordo bianco per maggiore contrasto; oltre 100 campioni per serie i marker vengono ridotti e selezionati uniformemente conservando gli estremi. Una nota interna all'SVG spiega la distinzione. Le regressioni verificano marker, colore, path `H`/`V`, nota esplicativa e limite delle serie dense. I test mirati, la suite Go completa, `go vet ./...` e il controllo whitespace risultano positivi.
+
+## 2026-09-08 16:39:11 UTC — Validazione dei nodi attesi nel report di convergenza
+
+- **Descrizione task**: Rafforzata la pipeline offline affinché confronti i `node_id` caricati da `-configs` con quelli osservati prima di dichiarare la convergenza, segnalando nodi mancanti e non configurati nel riepilogo e nell'SVG.
+- **File modificati**:
+  - `cmd/convergence-chart/main.go`
+  - `cmd/convergence-chart/main_test.go`
+  - `internal/convergence/convergence.go`
+  - `internal/convergence/convergence_test.go`
+  - `README.md`
+  - `docs/architecture.md`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione di progetto, dell'architettura, delle configurazioni, del testing, delle note operative, dei task report e dello storico, ho esteso il caricamento delle configurazioni per raccogliere sia `initial_value` sia `node_id`, rifiutando anche configurazioni duplicate. `ConvergenceTime` riceve ora esplicitamente l'insieme atteso e restituisce esito negativo se le serie osservate non coincidono esattamente; una struttura di confronto ordinata alimenta la diagnostica condivisa con SVG e riepilogo. Le regressioni coprono un cluster configurato a sei nodi con campioni in banda per soli cinque, oltre alla presenza di un nodo estraneo. La suite Go completa, `go vet ./...` e il controllo whitespace sono stati eseguiti con esito positivo.

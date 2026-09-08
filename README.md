@@ -489,7 +489,7 @@ Nota vincolante Learner Lab (sintesi):
 
 ## Grafico offline della convergenza
 
-Il comando `scripts/cluster_convergence_report.sh` osserva passivamente una run Compose e salva in `artifacts/cluster/<timestamp>/` il log Compose sorgente, `convergence.csv`, `convergence.svg` e `summary.txt`. Il riferimento non viene inviato ai nodi: `cmd/convergence-chart` lo calcola offline dagli `initial_value` delle configurazioni associate alla run.
+Il comando `scripts/cluster_convergence_report.sh` osserva passivamente una run Compose e salva in `artifacts/cluster/<timestamp>/` il log Compose sorgente, `convergence.csv`, `convergence.svg` e `summary.txt`. Il riferimento non viene inviato ai nodi: `cmd/convergence-chart` lo calcola offline dagli `initial_value` delle configurazioni associate alla run e usa i relativi `node_id` come insieme atteso.
 
 ```bash
 OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh
@@ -498,4 +498,4 @@ SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml SDCC_PROJECT_NAME=sdcc-scale \
   scripts/cluster_convergence_report.sh
 ```
 
-La prima topologia usa `average(10,30,50)=30`; la seconda usa `average(10,30,50,70,90,110)=60`. La tolleranza assoluta predefinita è `0.05` ed è modificabile con `TOLERANCE`. Il grafico contiene una serie a gradini per ogni nodo osservato, riferimento, banda e primo istante da cui tutti i nodi rimangono nella banda; se ciò non avviene, lo dichiara esplicitamente.
+La prima topologia usa `average(10,30,50)=30`; la seconda usa `average(10,30,50,70,90,110)=60`. La tolleranza assoluta predefinita è `0.05` ed è modificabile con `TOLERANCE`. Il grafico contiene una serie a gradini per ogni nodo osservato, riferimento, banda e primo istante da cui tutti i nodi configurati rimangono nella banda. La convergenza non può essere dichiarata se manca anche un solo nodo configurato o compare un `node_id` estraneo; riepilogo e SVG elencano esplicitamente entrambe le anomalie.

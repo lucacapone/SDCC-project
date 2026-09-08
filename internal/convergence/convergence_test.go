@@ -50,25 +50,62 @@ func TestDynamicSeriesToleranceAndConvergence(t *testing.T) {
 	if len(series) != 2 || len(series["a"]) != 3 {
 		t.Fatalf("serie dinamiche: %+v", series)
 	}
-	when, ok := ConvergenceTime(s, 30, .05)
+	when, ok := ConvergenceTime(s, []string{"a", "b"}, 30, .05)
 	if !ok || when != 2 {
 		t.Fatalf("convergenza got=%v,%v", when, ok)
 	}
 }
 func TestNoConvergence(t *testing.T) {
-	if _, ok := ConvergenceTime([]Sample{sample(1, "a", 10), sample(2, "b", 50)}, 30, .05); ok {
+	if _, ok := ConvergenceTime([]Sample{sample(1, "a", 10), sample(2, "b", 50)}, []string{"a", "b"}, 30, .05); ok {
 		t.Fatal("convergenza inattesa")
 	}
 }
 func TestConvergenceMustRemainInBand(t *testing.T) {
 	s := []Sample{sample(1, "a", 30), sample(1, "b", 30), sample(2, "a", 31), sample(3, "a", 30)}
-	when, ok := ConvergenceTime(s, 30, .05)
+	when, ok := ConvergenceTime(s, []string{"a", "b"}, 30, .05)
 	if !ok || when != 2 {
 		t.Fatalf("deve scegliere il rientro stabile: %v %v", when, ok)
 	}
 }
+
+// TestConvergenceRejectsIncompleteOrForeignNodeSets impedisce che una serie
+// parziale o contaminata venga dichiarata convergente anche se è nella banda.
+func TestConvergenceRejectsIncompleteOrForeignNodeSets(t *testing.T) {
+	expectedNodes := []string{"node-1", "node-2", "node-3", "node-4", "node-5", "node-6"}
+	samples := make([]Sample, 0, 6)
+	for node := 1; node <= 5; node++ {
+		samples = append(samples, sample(node, fmt.Sprintf("node-%d", node), 60))
+	}
+
+	comparison := CompareNodes(samples, expectedNodes)
+	if strings.Join(comparison.Missing, ",") != "node-6" || len(comparison.Unexpected) != 0 {
+		t.Fatalf("confronto cluster incompleto inatteso: %+v", comparison)
+	}
+	if _, ok := ConvergenceTime(samples, expectedNodes, 60, .05); ok {
+		t.Fatal("cluster a cinque campioni su sei dichiarato convergente")
+	}
+
+	samples = append(samples, sample(6, "node-estraneo", 60))
+	comparison = CompareNodes(samples, expectedNodes)
+	if strings.Join(comparison.Missing, ",") != "node-6" || strings.Join(comparison.Unexpected, ",") != "node-estraneo" {
+		t.Fatalf("confronto cluster contaminato inatteso: %+v", comparison)
+	}
+	if _, ok := ConvergenceTime(samples, expectedNodes, 60, .05); ok {
+		t.Fatal("cluster con nodo non configurato dichiarato convergente")
+	}
+	svg, err := SVG(samples, expectedNodes, 60, .05)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, diagnostic := range []string{"nodi mancanti: node-6", "nodi non configurati: node-estraneo"} {
+		if !strings.Contains(svg, diagnostic) {
+			t.Errorf("SVG privo della diagnostica %q", diagnostic)
+		}
+	}
+}
+
 func TestSVGEssentialValidity(t *testing.T) {
-	svg, err := SVG([]Sample{sample(1, "node-a", 10), sample(2, "node-a", 30), sample(1, "node-b", 50), sample(2, "node-b", 30)}, 30, .05)
+	svg, err := SVG([]Sample{sample(1, "node-a", 10), sample(2, "node-a", 30), sample(1, "node-b", 50), sample(2, "node-b", 30)}, []string{"node-a", "node-b"}, 30, .05)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +124,7 @@ func TestSVGEssentialValidity(t *testing.T) {
 // densa produca un marker con lo stesso colore del relativo path a gradini.
 func TestSVGGeneratesSampleMarkers(t *testing.T) {
 	samples := []Sample{sample(1, "node-a", 10), sample(2, "node-a", 20), sample(3, "node-a", 30)}
-	svg, err := SVG(samples, 30, .05)
+	svg, err := SVG(samples, []string{"node-a"}, 30, .05)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +151,7 @@ func TestSVGMarkerLimitForDenseSeries(t *testing.T) {
 	for i := 0; i < cap(samples); i++ {
 		samples = append(samples, sample(i+1, "node-a", float64(i)))
 	}
-	svg, err := SVG(samples, 75, .05)
+	svg, err := SVG(samples, []string{"node-a"}, 75, .05)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +164,7 @@ func TestSVGMarkerLimitForDenseSeries(t *testing.T) {
 }
 
 func TestSVGGridIncludesExtremeAndIntermediateLabels(t *testing.T) {
-	svg, err := SVG([]Sample{sample(1, "node-a", 10), sample(11, "node-a", 50)}, 30, .05)
+	svg, err := SVG([]Sample{sample(1, "node-a", 10), sample(11, "node-a", 50)}, []string{"node-a"}, 30, .05)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +190,7 @@ func TestSVGExpectedLabelStaysInsidePlot(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			svg, err := SVG(test.samples, test.expected, 0)
+			svg, err := SVG(test.samples, []string{"node-a"}, test.expected, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -210,7 +247,7 @@ func TestSVGLegendCoordinatesFitDynamicViewBox(t *testing.T) {
 	for node := 1; node <= 6; node++ {
 		samples = append(samples, sample(node, fmt.Sprintf("node-%d", node), float64(node*10)))
 	}
-	svg, err := SVG(samples, 35, .05)
+	svg, err := SVG(samples, []string{"node-1", "node-2", "node-3", "node-4", "node-5", "node-6"}, 35, .05)
 	if err != nil {
 		t.Fatal(err)
 	}
