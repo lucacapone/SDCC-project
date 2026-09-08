@@ -963,3 +963,13 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione, dell'architettura, delle configurazioni, del testing, dei task report e dello storico operativo, ho mantenuto invariati scala e numero delle linee della griglia e ho derivato ogni valore direttamente dagli intervalli `0..maxX` e `minY..maxY`. La formattazione determina i decimali dalla distanza fra tacche, li limita a sei e rimuove gli zeri finali, preservando leggibilità sia per valori interi sia per intervalli piccoli. I test verificano le etichette estreme e una tacca intermedia su entrambi gli assi; la suite completa, `go vet` e il controllo whitespace risultano positivi.
+
+## 2026-09-08 16:04:42 UTC — Layout dinamico della legenda SVG
+
+- **Descrizione task**: Rimossa l'altezza fissa del grafico di convergenza e resa dinamica la disposizione verticale della legenda, garantendo visibilità a tutte le serie osservate senza sovrapposizioni con titolo dell'asse X e annotazione della convergenza.
+- **File modificati**:
+  - `internal/convergence/convergence.go`
+  - `internal/convergence/convergence_test.go`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione, dell'architettura, delle configurazioni, del testing e dello storico operativo, ho separato asse X, legenda e annotazione in fasce verticali distinte. L'altezza e il `viewBox` dell'SVG vengono ora derivati dal numero di serie e dall'ultima riga della legenda. Una regressione con sei nodi controlla la presenza di ogni etichetta, inclusa `node-6`, l'appartenenza delle coordinate verticali al `viewBox` e l'ordine non sovrapposto dei tre blocchi. La suite Go completa, `go vet ./...` e il controllo whitespace risultano positivi.

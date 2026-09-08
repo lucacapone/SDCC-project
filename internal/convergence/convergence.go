@@ -275,8 +275,20 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 	x := func(v float64) float64 { return 70 + v/maxX*760 }
 	y := func(v float64) float64 { return 430 - (v-minY)/(maxY-minY)*340 }
 	colors := []string{"#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2", "#4f46e5", "#be123c"}
+	// La legenda cresce verticalmente sotto il titolo dell'asse X; il viewBox
+	// segue il numero di serie e conserva spazio separato per l'annotazione.
+	const (
+		xAxisTitleY       = 470
+		legendFirstY      = 495
+		legendRowHeight   = 18
+		annotationSpacing = 30
+		bottomPadding     = 20
+	)
+	legendLastY := legendFirstY + (len(series)-1)*legendRowHeight
+	annotationY := legendLastY + annotationSpacing
+	svgHeight := annotationY + bottomPadding
 	var b strings.Builder
-	fmt.Fprintf(&b, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"900\" height=\"520\" viewBox=\"0 0 900 520\"><title>Convergenza %s</title><rect width=\"100%%\" height=\"100%%\" fill=\"white\"/><text x=\"450\" y=\"28\" text-anchor=\"middle\" font-size=\"20\">Convergenza aggregazione %s</text>", html.EscapeString(agg), html.EscapeString(agg))
+	fmt.Fprintf(&b, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"900\" height=\"%d\" viewBox=\"0 0 900 %d\"><title>Convergenza %s</title><rect width=\"100%%\" height=\"100%%\" fill=\"white\"/><text x=\"450\" y=\"28\" text-anchor=\"middle\" font-size=\"20\">Convergenza aggregazione %s</text>", svgHeight, svgHeight, html.EscapeString(agg), html.EscapeString(agg))
 	fmt.Fprintf(&b, "<rect x=\"70\" y=\"%.2f\" width=\"760\" height=\"%.2f\" fill=\"#dcfce7\"/><g stroke=\"#d1d5db\">", y(expected+tolerance), y(expected-tolerance)-y(expected+tolerance))
 	for i := 0; i <= 5; i++ {
 		xx := 70 + float64(i)*152
@@ -303,14 +315,15 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 			}
 		}
 		c := colors[i%len(colors)]
-		fmt.Fprintf(&b, "<path d=\"%s\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\"/><line x1=\"75\" y1=\"%d\" x2=\"95\" y2=\"%d\" stroke=\"%s\" stroke-width=\"3\"/><text x=\"100\" y=\"%d\" font-size=\"11\">%s</text>", path.String(), c, 455+i*14, 455+i*14, c, 459+i*14, html.EscapeString(n))
+		legendY := legendFirstY + i*legendRowHeight
+		fmt.Fprintf(&b, "<path d=\"%s\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\"/><line x1=\"75\" y1=\"%d\" x2=\"95\" y2=\"%d\" stroke=\"%s\" stroke-width=\"3\"/><text x=\"100\" y=\"%d\" font-size=\"11\">%s</text>", path.String(), c, legendY-4, legendY-4, c, legendY, html.EscapeString(n))
 	}
 	conv, ok := ConvergenceTime(ordered, expected, tolerance)
 	label := "Convergenza non osservata"
 	if ok {
 		label = fmt.Sprintf("Convergenza stabile da %.3f s", conv)
 	}
-	fmt.Fprintf(&b, "<text x=\"450\" y=\"505\" text-anchor=\"middle\">tempo trascorso (s) — %s</text><text transform=\"translate(18 260) rotate(-90)\" text-anchor=\"middle\">stima</text></svg>", xmlEscape(label))
+	fmt.Fprintf(&b, "<text x=\"450\" y=\"%d\" text-anchor=\"middle\">tempo trascorso (s)</text><text x=\"450\" y=\"%d\" text-anchor=\"middle\">%s</text><text transform=\"translate(18 260) rotate(-90)\" text-anchor=\"middle\">stima</text></svg>", xAxisTitleY, annotationY, xmlEscape(label))
 	return b.String(), nil
 }
 
