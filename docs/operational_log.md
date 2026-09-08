@@ -973,3 +973,13 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione, dell'architettura, delle configurazioni, del testing e dello storico operativo, ho separato asse X, legenda e annotazione in fasce verticali distinte. L'altezza e il `viewBox` dell'SVG vengono ora derivati dal numero di serie e dall'ultima riga della legenda. Una regressione con sei nodi controlla la presenza di ogni etichetta, inclusa `node-6`, l'appartenenza delle coordinate verticali al `viewBox` e l'ordine non sovrapposto dei tre blocchi. La suite Go completa, `go vet ./...` e il controllo whitespace risultano positivi.
+
+## 2026-09-08 16:19:50 UTC — Etichetta del riferimento SVG confinata nel plot
+
+- **Descrizione task**: Riposizionata l'etichetta `atteso ... ± ...` del grafico SVG entro l'area visibile, con ancoraggio al margine destro e protezione dai tagli verticali in prossimità degli estremi Y.
+- **File modificati**:
+  - `internal/convergence/convergence.go`
+  - `internal/convergence/convergence_test.go`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione, dell'architettura, delle configurazioni, del testing, delle note operative, dei task report e dello storico operativo, ho mantenuto invariati dimensioni e scala del plot. L'etichetta termina ora cinque pixel prima del bordo destro tramite `text-anchor="end"`; la baseline è confinata tra margini interni superiore e inferiore coerenti con il font. Le regressioni usano riferimenti numerici lunghi collocati ai due estremi dell'asse e verificano gli attributi `x`, `text-anchor` e l'intervallo della coordinata `y` tramite parsing XML.

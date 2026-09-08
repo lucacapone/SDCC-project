@@ -97,6 +97,69 @@ func TestSVGGridIncludesExtremeAndIntermediateLabels(t *testing.T) {
 	}
 }
 
+// TestSVGExpectedLabelStaysInsidePlot verifica sia l'ancoraggio orizzontale
+// di riferimenti lunghi sia il confinamento verticale ai due estremi dell'asse.
+func TestSVGExpectedLabelStaysInsidePlot(t *testing.T) {
+	tests := []struct {
+		name     string
+		samples  []Sample
+		expected float64
+	}{
+		{name: "limite inferiore", samples: []Sample{sample(1, "node-a", 987654321), sample(2, "node-a", 987654322)}, expected: 123456789},
+		{name: "limite superiore", samples: []Sample{sample(1, "node-a", -987654322), sample(2, "node-a", -987654321)}, expected: -123456789},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svg, err := SVG(test.samples, test.expected, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attributes := svgTextAttributes(t, svg, "atteso ")
+			if attributes["x"] != "825" || attributes["text-anchor"] != "end" {
+				t.Fatalf("posizionamento orizzontale inatteso: x=%q text-anchor=%q", attributes["x"], attributes["text-anchor"])
+			}
+			y := parseCoordinate(t, attributes["y"])
+			if y < 102 || y > 426 {
+				t.Fatalf("etichetta del riferimento fuori dal plot: y=%v", y)
+			}
+		})
+	}
+}
+
+// svgTextAttributes restituisce gli attributi del primo testo con il prefisso
+// richiesto, mantenendo la verifica indipendente dall'ordine degli attributi XML.
+func svgTextAttributes(t *testing.T, document, prefix string) map[string]string {
+	t.Helper()
+	decoder := xml.NewDecoder(strings.NewReader(document))
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			t.Fatal(err)
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local != "text" {
+			continue
+		}
+		var label string
+		if err := decoder.DecodeElement(&label, &start); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(label, prefix) {
+			continue
+		}
+		attributes := make(map[string]string, len(start.Attr))
+		for _, attribute := range start.Attr {
+			attributes[attribute.Name.Local] = attribute.Value
+		}
+		return attributes
+	}
+	t.Fatalf("testo SVG con prefisso %q assente", prefix)
+	return nil
+}
+
 // TestSVGLegendCoordinatesFitDynamicViewBox verifica la topologia scale
 // canonica e impedisce che l'ultima voce della legenda venga tagliata.
 func TestSVGLegendCoordinatesFitDynamicViewBox(t *testing.T) {
