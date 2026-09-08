@@ -628,5 +628,9 @@ adattiva alla distanza tra le tacche, così valori interi restano compatti e
 intervalli piccoli conservano i decimali necessari. Sotto il grafico, titolo
 dell'asse X, legenda e annotazione della convergenza occupano fasce distinte;
 l'altezza dell'SVG viene calcolata dal numero di righe della legenda.
+L'etichetta del riferimento `atteso ... ± ...` è ancorata verso sinistra al
+margine destro interno del plot e la sua coordinata verticale viene confinata
+tra i bordi superiore e inferiore, così valori lunghi o estremi non vengono
+tagliati. Una regressione dedicata verifica `x`, `text-anchor` e i due limiti Y.
 
 Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `convergence=non osservata` quando nessun suffisso della serie soddisfa il criterio.

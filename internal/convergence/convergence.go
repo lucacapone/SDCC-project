@@ -278,11 +278,17 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 	// La legenda cresce verticalmente sotto il titolo dell'asse X; il viewBox
 	// segue il numero di serie e conserva spazio separato per l'annotazione.
 	const (
+		plotTop           = 90
+		plotBottom        = 430
+		plotRight         = 830
 		xAxisTitleY       = 470
 		legendFirstY      = 495
 		legendRowHeight   = 18
 		annotationSpacing = 30
 		bottomPadding     = 20
+		referenceLabelX   = plotRight - 5
+		referenceLabelTop = plotTop + 12
+		referenceLabelBot = plotBottom - 4
 	)
 	legendLastY := legendFirstY + (len(series)-1)*legendRowHeight
 	annotationY := legendLastY + annotationSpacing
@@ -298,7 +304,10 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 		fmt.Fprintf(&b, "<line x1=\"%.1f\" y1=\"90\" x2=\"%.1f\" y2=\"430\"/><text x=\"%.1f\" y=\"447\" text-anchor=\"middle\" font-size=\"11\" stroke=\"none\">%s s</text><line x1=\"70\" y1=\"%.1f\" x2=\"830\" y2=\"%.1f\"/><text x=\"64\" y=\"%.1f\" text-anchor=\"end\" dominant-baseline=\"middle\" font-size=\"11\" stroke=\"none\">%s</text>", xx, xx, xx, formatAxisValue(timeValue, maxX/5), yy, yy, yy, formatAxisValue(estimateValue, (maxY-minY)/5))
 	}
 	b.WriteString("</g>")
-	fmt.Fprintf(&b, "<line x1=\"70\" y1=\"%.2f\" x2=\"830\" y2=\"%.2f\" stroke=\"#111827\" stroke-dasharray=\"7 4\"/><text x=\"835\" y=\"%.2f\" font-size=\"11\">atteso %.4g ± %.4g</text>", y(expected), y(expected), y(expected)-4, expected, tolerance)
+	// L'etichetta termina prima del bordo destro e la sua baseline viene
+	// confinata nel plot, così riferimenti lunghi e valori Y estremi restano visibili.
+	referenceY := math.Max(referenceLabelTop, math.Min(referenceLabelBot, y(expected)-4))
+	fmt.Fprintf(&b, "<line x1=\"70\" y1=\"%.2f\" x2=\"830\" y2=\"%.2f\" stroke=\"#111827\" stroke-dasharray=\"7 4\"/><text x=\"%d\" y=\"%.2f\" text-anchor=\"end\" font-size=\"11\">atteso %.4g ± %.4g</text>", y(expected), y(expected), referenceLabelX, referenceY, expected, tolerance)
 	names := make([]string, 0, len(series))
 	for n := range series {
 		names = append(names, n)
