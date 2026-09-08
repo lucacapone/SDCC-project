@@ -155,3 +155,9 @@ Criteri di successo osservabili:
 ---
 
 Per contestualizzare la demo rispetto ai target di test e ai criteri di successo, fare sempre riferimento anche a [README.md](../README.md) e [docs/testing.md](testing.md).
+
+## Demo del grafico di convergenza
+
+Avviare la raccolta a tre nodi con `OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh`; per la topologia a sei nodi usare `SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml SDCC_PROJECT_NAME=sdcc-scale SDCC_SERVICES='node1 node2 node3 node4 node5 node6' OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh`. Aprire l'SVG nella directory timestamp stampata dallo script e mostrare: asse X in secondi dal primo campione globale, asse Y come stima locale, gradino distinto per ogni `node_id`, banda `atteso ± tolleranza` e annotazione della convergenza stabile (oppure della sua mancata osservazione).
+
+Il riferimento è calcolato sull'host dagli `initial_value` associati alla run (`30` per tre nodi, `60` per sei) e non è conoscenza dei nodi. `compose.log` consente di ricostruire il CSV senza affidarsi a volumi scrivibili o a un collector nel Compose.

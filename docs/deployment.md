@@ -359,3 +359,9 @@ docker compose down
 - `configs/node2.yaml`
 - `configs/node3.yaml`
 - `docs/configuration.md`
+
+## Artefatti di convergenza per topologie Compose
+
+La raccolta non aggiunge servizi e non modifica i mount read-only delle configurazioni. Lo script host `scripts/cluster_convergence_report.sh` riusa `cluster_common.sh` e scrive esclusivamente in `artifacts/cluster/<timestamp>/`, ignorata da Git. Per il Compose standard usare il comando senza override; per `deploy/docker-compose.scale.yml` impostare `SDCC_PROJECT_NAME=sdcc-scale` e i sei servizi come documentato in testing/demo. Ogni directory contiene `compose.log`, `convergence.csv`, `convergence.svg` e `summary.txt`.
+
+Il valore atteso è un prodotto offline delle configurazioni della run e supporta le sole aggregazioni implementate (`sum`, `average`, `min`, `max`); resta rigorosamente separato dal piano dati gossip.
