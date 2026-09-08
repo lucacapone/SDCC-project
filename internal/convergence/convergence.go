@@ -289,12 +289,13 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 		referenceLabelX   = plotRight - 5
 		referenceLabelTop = plotTop + 12
 		referenceLabelBot = plotBottom - 4
+		maxSeriesMarkers  = 100
 	)
 	legendLastY := legendFirstY + (len(series)-1)*legendRowHeight
 	annotationY := legendLastY + annotationSpacing
 	svgHeight := annotationY + bottomPadding
 	var b strings.Builder
-	fmt.Fprintf(&b, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"900\" height=\"%d\" viewBox=\"0 0 900 %d\"><title>Convergenza %s</title><rect width=\"100%%\" height=\"100%%\" fill=\"white\"/><text x=\"450\" y=\"28\" text-anchor=\"middle\" font-size=\"20\">Convergenza aggregazione %s</text>", svgHeight, svgHeight, html.EscapeString(agg), html.EscapeString(agg))
+	fmt.Fprintf(&b, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"900\" height=\"%d\" viewBox=\"0 0 900 %d\"><title>Convergenza %s</title><rect width=\"100%%\" height=\"100%%\" fill=\"white\"/><text x=\"450\" y=\"28\" text-anchor=\"middle\" font-size=\"20\">Convergenza aggregazione %s</text><text x=\"450\" y=\"52\" text-anchor=\"middle\" font-size=\"11\" fill=\"#374151\">I punti rappresentano campioni osservati; il tratto mantiene l'ultima stima nota.</text>", svgHeight, svgHeight, html.EscapeString(agg), html.EscapeString(agg))
 	fmt.Fprintf(&b, "<rect x=\"70\" y=\"%.2f\" width=\"760\" height=\"%.2f\" fill=\"#dcfce7\"/><g stroke=\"#d1d5db\">", y(expected+tolerance), y(expected-tolerance)-y(expected+tolerance))
 	for i := 0; i <= 5; i++ {
 		xx := 70 + float64(i)*152
@@ -325,7 +326,16 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 		}
 		c := colors[i%len(colors)]
 		legendY := legendFirstY + i*legendRowHeight
-		fmt.Fprintf(&b, "<path d=\"%s\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\"/><line x1=\"75\" y1=\"%d\" x2=\"95\" y2=\"%d\" stroke=\"%s\" stroke-width=\"3\"/><text x=\"100\" y=\"%d\" font-size=\"11\">%s</text>", path.String(), c, legendY-4, legendY-4, c, legendY, html.EscapeString(n))
+		fmt.Fprintf(&b, "<path d=\"%s\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\" stroke-opacity=\"0.65\"/>", path.String(), c)
+		// I marker restano più contrastati del tratto. Per serie dense il raggio
+		// diminuisce e un campionamento uniforme limita il rumore visivo,
+		// conservando sempre il primo e l'ultimo campione osservato.
+		markerRadius := markerRadiusFor(len(points))
+		for _, markerIndex := range markerIndexes(len(points), maxSeriesMarkers) {
+			point := points[markerIndex]
+			fmt.Fprintf(&b, "<circle class=\"sample-marker\" cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" fill=\"%s\" stroke=\"white\" stroke-width=\"0.75\"/>", x(point.ElapsedSeconds), y(point.Estimate), markerRadius, c)
+		}
+		fmt.Fprintf(&b, "<line x1=\"75\" y1=\"%d\" x2=\"95\" y2=\"%d\" stroke=\"%s\" stroke-width=\"3\"/><text x=\"100\" y=\"%d\" font-size=\"11\">%s</text>", legendY-4, legendY-4, c, legendY, html.EscapeString(n))
 	}
 	conv, ok := ConvergenceTime(ordered, expected, tolerance)
 	label := "Convergenza non osservata"
@@ -334,6 +344,35 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 	}
 	fmt.Fprintf(&b, "<text x=\"450\" y=\"%d\" text-anchor=\"middle\">tempo trascorso (s)</text><text x=\"450\" y=\"%d\" text-anchor=\"middle\">%s</text><text transform=\"translate(18 260) rotate(-90)\" text-anchor=\"middle\">stima</text></svg>", xAxisTitleY, annotationY, xmlEscape(label))
 	return b.String(), nil
+}
+
+// markerRadiusFor riduce la dimensione dei marker quando una serie è densa.
+func markerRadiusFor(sampleCount int) float64 {
+	if sampleCount > 40 {
+		return 2
+	}
+	return 3
+}
+
+// markerIndexes seleziona al massimo limit indici distribuiti uniformemente.
+// L'arrotondamento su un intervallo limit-1 include entrambi gli estremi senza
+// duplicati, dato che sampleCount è strettamente maggiore di limit nel ramo fitto.
+func markerIndexes(sampleCount, limit int) []int {
+	if sampleCount <= 0 || limit <= 0 {
+		return nil
+	}
+	if sampleCount <= limit {
+		indexes := make([]int, sampleCount)
+		for i := range indexes {
+			indexes[i] = i
+		}
+		return indexes
+	}
+	indexes := make([]int, limit)
+	for i := range indexes {
+		indexes[i] = int(math.Round(float64(i) * float64(sampleCount-1) / float64(limit-1)))
+	}
+	return indexes
 }
 
 // formatAxisValue sceglie un numero di decimali proporzionato alla distanza

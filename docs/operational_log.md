@@ -983,3 +983,13 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione, dell'architettura, delle configurazioni, del testing, delle note operative, dei task report e dello storico operativo, ho mantenuto invariati dimensioni e scala del plot. L'etichetta termina ora cinque pixel prima del bordo destro tramite `text-anchor="end"`; la baseline è confinata tra margini interni superiore e inferiore coerenti con il font. Le regressioni usano riferimenti numerici lunghi collocati ai due estremi dell'asse e verificano gli attributi `x`, `text-anchor` e l'intervallo della coordinata `y` tramite parsing XML.
+
+## 2026-09-08 16:29:40 UTC — Marcatori dei campioni nel grafico SVG
+
+- **Descrizione task**: Aggiunti marker circolari ai campioni osservati del grafico di convergenza, preservando i path a gradini SVG con comandi `H` e `V`, distinguendo visivamente punti e segmenti e limitando l'affollamento nelle serie dense.
+- **File modificati**:
+  - `internal/convergence/convergence.go`
+  - `internal/convergence/convergence_test.go`
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione di progetto, dell'architettura, dei report di milestone, delle configurazioni, della guida ai test, delle note operative e dello storico, ho mantenuto la semantica a gradini esistente e reso i segmenti semitrasparenti. Ogni campione delle serie ordinarie riceve un marker nello stesso colore, con bordo bianco per maggiore contrasto; oltre 100 campioni per serie i marker vengono ridotti e selezionati uniformemente conservando gli estremi. Una nota interna all'SVG spiega la distinzione. Le regressioni verificano marker, colore, path `H`/`V`, nota esplicativa e limite delle serie dense. I test mirati, la suite Go completa, `go vet ./...` e il controllo whitespace risultano positivi.
