@@ -600,10 +600,10 @@ go test ./tests/aggregation/sum -run TestSumConvergence -count=1
 
 ## Pipeline di convergenza osservata
 
-I test di `internal/convergence` coprono parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. Una regressione configura sei nodi ma fornisce campioni in banda per cinque soltanto e verifica che `node-6` impedisca la convergenza; copre inoltre il rifiuto di un nodo osservato estraneo. Il test del comando controlla che riepilogo e SVG rendano visibile la stessa diagnostica. Un ulteriore caso a sei nodi verifica che ogni serie, inclusa `node-6`, compaia nella legenda e che le coordinate delle etichette restino entro il `viewBox`, la cui altezza cresce con il numero di serie. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
+La suite esterna `tests/convergence`, nel package `convergence_test`, importa esclusivamente l’API esportata di `internal/convergence` e copre parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. Una regressione configura sei nodi ma fornisce campioni in banda per cinque soltanto e verifica che `node-6` impedisca la convergenza; copre inoltre il rifiuto di un nodo osservato estraneo. La suite `tests/convergence-chart` esercita il package importabile `internal/convergencechart`, al quale il comando `cmd/convergence-chart` delega la pipeline, e controlla che riepilogo e SVG rendano visibile la stessa diagnostica. Un ulteriore caso a sei nodi verifica che ogni serie, inclusa `node-6`, compaia nella legenda e che le coordinate delle etichette restino entro il `viewBox`, la cui altezza cresce con il numero di serie. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
 
 ```bash
-go test ./internal/convergence ./tests/gossip -count=1
+go test ./tests/convergence ./tests/convergence-chart ./tests/gossip -count=1
 go test ./... -count=1
 ```
 
