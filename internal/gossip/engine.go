@@ -32,19 +32,19 @@ func CurrentMessageVersion() shared.MessageVersion {
 
 // Engine coordina il ciclo gossip locale.
 type Engine struct {
-	NodeID       shared.NodeID
-	State        shared.GossipState
-	SelfAddr     string
-	Fanout       int
-	Membership   *membership.Set
-	Transport    transport.Transport
-	Logger       *slog.Logger
-	Collector    *observability.Collector
-	RoundTicker  *time.Ticker
-	RemoteMergeMode string
+	NodeID                    shared.NodeID
+	State                     shared.GossipState
+	SelfAddr                  string
+	Fanout                    int
+	Membership                *membership.Set
+	Transport                 transport.Transport
+	Logger                    *slog.Logger
+	Collector                 *observability.Collector
+	RoundTicker               *time.Ticker
+	RemoteMergeMode           string
 	LogEstimateDeltaThreshold float64
-	fanoutCursor int
-	mu           sync.Mutex
+	fanoutCursor              int
+	mu                        sync.Mutex
 }
 
 // NewEngine costruisce un engine con dipendenze minime.
@@ -65,16 +65,16 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 			AggregationType: aggregationType,
 			UpdatedAt:       time.Now().UTC(),
 		},
-		SelfAddr:     resolveSelfAdvertiseAddr(m, nodeID),
-		Fanout:       fanout,
-		Membership:   m,
-		Transport:    t,
-		Logger:       logger,
-		Collector:    collector,
-		RoundTicker:  time.NewTicker(roundEvery),
-		RemoteMergeMode: "full",
+		SelfAddr:                  resolveSelfAdvertiseAddr(m, nodeID),
+		Fanout:                    fanout,
+		Membership:                m,
+		Transport:                 t,
+		Logger:                    logger,
+		Collector:                 collector,
+		RoundTicker:               time.NewTicker(roundEvery),
+		RemoteMergeMode:           "full",
 		LogEstimateDeltaThreshold: 0,
-		fanoutCursor: 0,
+		fanoutCursor:              0,
 	}
 }
 
@@ -101,6 +101,12 @@ func (e *Engine) Start(ctx context.Context) error {
 	if e.Membership == nil {
 		return fmt.Errorf("membership nil")
 	}
+	// Il campione precede l'apertura del transport: ogni serie inizia quindi dal
+	// valore configurato, prima che un merge remoto possa modificarlo.
+	e.mu.Lock()
+	initialRound, initialEstimate := e.State.Round, e.State.Value
+	e.mu.Unlock()
+	e.logConvergenceSample(ctx, time.Now().UTC(), uint64(initialRound), initialEstimate, "initial")
 
 	err := e.Transport.Start(ctx, func(_ context.Context, raw []byte) error {
 		var msg shared.GossipMessage
@@ -139,6 +145,9 @@ func (e *Engine) Start(ctx context.Context) error {
 
 		localPeers := len(membershipSnapshot)
 		e.updateObservabilityFromRuntime(localEstimate, localPeers, string(merge.Status))
+		if estimateChanged(merge.EstimateBefore, localEstimate) && math.Abs(localEstimate-merge.EstimateBefore) > e.LogEstimateDeltaThreshold {
+			e.logConvergenceSample(ctx, time.Now().UTC(), uint64(localRound), localEstimate, "remote_merge")
+		}
 		if e.Logger != nil {
 			nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision := summarizeMergeNodeDecisions(merge.NodeDecisions, msg.OriginNode)
 			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge, msg.OriginNode, averageDetails)
@@ -415,6 +424,7 @@ func (e *Engine) round(ctx context.Context) {
 	}
 
 	e.updateObservabilityAfterRound(localEstimate, len(membershipSnapshot))
+	e.logConvergenceSample(ctx, sentAt, uint64(msg.State.Round), msg.State.Value, "local_round")
 	if e.Logger != nil {
 		e.Logger.Debug("round gossip eseguito",
 			"event", "gossip_round",
@@ -426,6 +436,26 @@ func (e *Engine) round(ctx context.Context) {
 			"membership_entries", len(msg.Membership),
 		)
 	}
+}
+
+// logConvergenceSample emette un punto passivo della serie temporale: non modifica
+// stato, membership, selezione peer o payload scambiati tra nodi.
+func (e *Engine) logConvergenceSample(ctx context.Context, timestamp time.Time, round uint64, estimate float64, sampleType string) {
+	if e.Logger == nil {
+		return
+	}
+	e.mu.Lock()
+	aggregationType := e.State.AggregationType
+	e.mu.Unlock()
+	e.Logger.LogAttrs(ctx, slog.LevelInfo, "campione passivo di convergenza",
+		slog.String("event", "convergence_sample"),
+		slog.String("timestamp", timestamp.UTC().Format(time.RFC3339Nano)),
+		slog.String("node_id", string(e.NodeID)),
+		slog.String("aggregation", aggregationType),
+		slog.Uint64("round", round),
+		slog.Float64("estimate", estimate),
+		slog.String("sample_type", sampleType),
+	)
 }
 
 // AnnounceLeave pubblica un annuncio best-effort di uscita volontaria del nodo locale.

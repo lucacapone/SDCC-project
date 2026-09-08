@@ -1267,3 +1267,22 @@ func TestRoundMaxFiltraContributiNonEleggibiliSenzaCancellarli(t *testing.T) {
 		t.Fatalf("contributo dead non deve essere cancellato: got=%v", got)
 	}
 }
+
+func TestConvergenceSampleEventSchema(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	eng := NewEngine("node-schema", "average", transport.NoopTransport{}, membership.NewSet(), logger, nil, time.Hour, 1)
+	eng.State.Value = 42
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := eng.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Stop()
+	line := logs.String()
+	for _, field := range []string{"event=convergence_sample", "timestamp=", "node_id=node-schema", "aggregation=average", "round=0", "estimate=42", "sample_type=initial"} {
+		if !strings.Contains(line, field) {
+			t.Errorf("evento privo del campo %q: %s", field, line)
+		}
+	}
+}

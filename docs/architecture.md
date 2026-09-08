@@ -278,3 +278,9 @@ Architettura e implementazione correnti non introducono componenti di coordiname
 - scambio stato peer-to-peer.
 
 L'unico riferimento a sistemi centralizzati resta opzionale e **solo osservabile** (es. log centralizzati in deploy), non coinvolto nelle decisioni di protocollo.
+
+## Osservazione passiva della convergenza
+
+L'engine emette `event=convergence_sample` su stdout all'avvio, dopo ogni round locale e dopo un merge che varia la stima oltre la soglia configurata. Lo schema comprende `timestamp`, `node_id`, `aggregation`, `round`, `estimate` e `sample_type` (`initial`, `local_round`, `remote_merge`). L'emissione è un effetto osservativo: non altera stato aggregativo, membership, fanout, peer selection né messaggi gossip.
+
+La pipeline host raccoglie i log Compose e opera completamente offline. Il valore atteso deriva soltanto dagli `initial_value` delle configurazioni realmente selezionate per la run; non entra nel processo nodo e non attraversa il protocollo. Il raggruppamento per `node_id` è dinamico e non codifica la cardinalità del cluster.

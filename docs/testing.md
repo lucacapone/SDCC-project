@@ -597,3 +597,28 @@ Comando operativo dedicato:
 ```bash
 go test ./tests/aggregation/sum -run TestSumConvergence -count=1
 ```
+
+## Pipeline di convergenza osservata
+
+I test di `internal/convergence` coprono parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
+
+```bash
+go test ./internal/convergence ./tests/gossip -count=1
+go test ./... -count=1
+```
+
+Validazione Compose a tre nodi (valori iniziali `10,30,50`, riferimento average `30`):
+
+```bash
+OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh
+```
+
+Validazione scale a sei nodi con project name obbligatorio `sdcc-scale` (valori `10,30,50,70,90,110`, riferimento average `60`):
+
+```bash
+SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml SDCC_PROJECT_NAME=sdcc-scale \
+SDCC_SERVICES='node1 node2 node3 node4 node5 node6' OBSERVE_SECONDS=20 \
+scripts/cluster_convergence_report.sh
+```
+
+Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `convergence=non osservata` quando nessun suffisso della serie soddisfa il criterio.

@@ -193,3 +193,15 @@ Per una diagnosi locale rapida:
 - **health/readiness separate**: `/health` segnala vita del processo, `/ready` segnala la disponibilità funzionale minima del nodo;
 - **command-centric verification**: la prova canonica resta il comando `go test ./tests/observability -run TestMetricsExposure`, così da avere una verifica ripetibile e non ambigua;
 - **documentazione coerente con implementazione reale**: il documento descrive solo ciò che il repository espone oggi, senza introdurre claim su stack observability non presenti.
+
+## Evento `convergence_sample` e dataset CSV
+
+L'evento passivo ha i campi stabili `event=convergence_sample`, `timestamp` RFC3339Nano UTC, `node_id`, `aggregation`, `round`, `estimate` e `sample_type`. I tipi di punto sono `initial`, `local_round` e `remote_merge`; quest'ultimo viene emesso solo quando il valore locale cambia oltre `logging.log_estimate_delta_threshold`. Il log Compose originale viene conservato accanto ai derivati.
+
+Il CSV usa esattamente l'header:
+
+```text
+timestamp,elapsed_seconds,node_id,round,aggregation,estimate,event_type
+```
+
+`elapsed_seconds` è il tempo dal primo campione valido globale, non dal bootstrap di ciascun nodo. Le righe sono ordinate per timestamp, quindi `elapsed_seconds=0` identifica l'origine comune della run.
