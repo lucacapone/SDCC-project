@@ -79,3 +79,17 @@ func TestSVGEssentialValidity(t *testing.T) {
 		}
 	}
 }
+
+func TestSVGGridIncludesExtremeAndIntermediateLabels(t *testing.T) {
+	svg, err := SVG([]Sample{sample(1, "node-a", 10), sample(11, "node-a", 50)}, 30, .05)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Le verifiche coprono entrambi gli estremi e una tacca interna per asse.
+	for _, label := range []string{">0 s</text>", ">2 s</text>", ">10 s</text>", ">10</text>", ">42</text>", ">50</text>"} {
+		if !strings.Contains(svg, label) {
+			t.Errorf("SVG privo dell'etichetta di griglia %q", label)
+		}
+	}
+}

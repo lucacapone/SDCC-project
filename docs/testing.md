@@ -621,4 +621,10 @@ SDCC_SERVICES='node1 node2 node3 node4 node5 node6' OBSERVE_SECONDS=20 \
 scripts/cluster_convergence_report.sh
 ```
 
+Il grafico SVG associa a ciascuna linea verticale una tacca temporale in secondi
+tra `0` e la durata osservata e a ciascuna linea orizzontale la stima compresa
+tra il minimo e il massimo del grafico. Le etichette usano una precisione
+adattiva alla distanza tra le tacche, così valori interi restano compatti e
+intervalli piccoli conservano i decimali necessari.
+
 Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `convergence=non osservata` quando nessun suffisso della serie soddisfa il criterio.

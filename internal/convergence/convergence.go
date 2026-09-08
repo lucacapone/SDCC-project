@@ -281,7 +281,9 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 	for i := 0; i <= 5; i++ {
 		xx := 70 + float64(i)*152
 		yy := 90 + float64(i)*68
-		fmt.Fprintf(&b, "<line x1=\"%.1f\" y1=\"90\" x2=\"%.1f\" y2=\"430\"/><line x1=\"70\" y1=\"%.1f\" x2=\"830\" y2=\"%.1f\"/>", xx, xx, yy, yy)
+		timeValue := maxX * float64(i) / 5
+		estimateValue := maxY - (maxY-minY)*float64(i)/5
+		fmt.Fprintf(&b, "<line x1=\"%.1f\" y1=\"90\" x2=\"%.1f\" y2=\"430\"/><text x=\"%.1f\" y=\"447\" text-anchor=\"middle\" font-size=\"11\" stroke=\"none\">%s s</text><line x1=\"70\" y1=\"%.1f\" x2=\"830\" y2=\"%.1f\"/><text x=\"64\" y=\"%.1f\" text-anchor=\"end\" dominant-baseline=\"middle\" font-size=\"11\" stroke=\"none\">%s</text>", xx, xx, xx, formatAxisValue(timeValue, maxX/5), yy, yy, yy, formatAxisValue(estimateValue, (maxY-minY)/5))
 	}
 	b.WriteString("</g>")
 	fmt.Fprintf(&b, "<line x1=\"70\" y1=\"%.2f\" x2=\"830\" y2=\"%.2f\" stroke=\"#111827\" stroke-dasharray=\"7 4\"/><text x=\"835\" y=\"%.2f\" font-size=\"11\">atteso %.4g ± %.4g</text>", y(expected), y(expected), y(expected)-4, expected, tolerance)
@@ -311,4 +313,25 @@ func SVG(samples []Sample, expected, tolerance float64) (string, error) {
 	fmt.Fprintf(&b, "<text x=\"450\" y=\"505\" text-anchor=\"middle\">tempo trascorso (s) — %s</text><text transform=\"translate(18 260) rotate(-90)\" text-anchor=\"middle\">stima</text></svg>", xmlEscape(label))
 	return b.String(), nil
 }
+
+// formatAxisValue sceglie un numero di decimali proporzionato alla distanza
+// tra le tacche, limitandolo per mantenere leggibili anche intervalli piccoli.
+func formatAxisValue(value, step float64) string {
+	decimals := 0
+	if step != 0 {
+		decimals = 2 - int(math.Floor(math.Log10(math.Abs(step))))
+	}
+	if decimals < 0 {
+		decimals = 0
+	}
+	if decimals > 6 {
+		decimals = 6
+	}
+	formatted := strconv.FormatFloat(value, 'f', decimals, 64)
+	if decimals == 0 {
+		return formatted
+	}
+	return strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+}
+
 func xmlEscape(s string) string { return html.EscapeString(s) }
