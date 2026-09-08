@@ -2,6 +2,9 @@ package convergence
 
 import (
 	"encoding/xml"
+	"fmt"
+	"io"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -92,4 +95,105 @@ func TestSVGGridIncludesExtremeAndIntermediateLabels(t *testing.T) {
 			t.Errorf("SVG privo dell'etichetta di griglia %q", label)
 		}
 	}
+}
+
+// TestSVGLegendCoordinatesFitDynamicViewBox verifica la topologia scale
+// canonica e impedisce che l'ultima voce della legenda venga tagliata.
+func TestSVGLegendCoordinatesFitDynamicViewBox(t *testing.T) {
+	samples := make([]Sample, 0, 6)
+	for node := 1; node <= 6; node++ {
+		samples = append(samples, sample(node, fmt.Sprintf("node-%d", node), float64(node*10)))
+	}
+	svg, err := SVG(samples, 35, .05)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	viewBoxHeight, labelY := svgViewBoxHeightAndTextCoordinates(t, svg)
+	for node := 1; node <= 6; node++ {
+		label := fmt.Sprintf("node-%d", node)
+		y, found := labelY[label]
+		if !found {
+			t.Errorf("SVG privo della voce di legenda %q", label)
+			continue
+		}
+		if y < 0 || y > viewBoxHeight {
+			t.Errorf("coordinata legenda %q fuori dal viewBox: y=%v altezza=%v", label, y, viewBoxHeight)
+		}
+	}
+
+	// I tre blocchi verticali devono mantenere ordine e spazio distinti.
+	xAxisY := labelY["tempo trascorso (s)"]
+	annotationY := labelY["Convergenza non osservata"]
+	if !(xAxisY < labelY["node-1"] && labelY["node-6"] < annotationY && annotationY <= viewBoxHeight) {
+		t.Fatalf("layout verticale sovrapposto: asse=%v legenda=[%v,%v] annotazione=%v viewBox=%v", xAxisY, labelY["node-1"], labelY["node-6"], annotationY, viewBoxHeight)
+	}
+}
+
+// svgViewBoxHeightAndTextCoordinates estrae dal documento generato l'altezza
+// dichiarata e le coordinate delle etichette senza dipendere da regex HTML.
+func svgViewBoxHeightAndTextCoordinates(t *testing.T, document string) (float64, map[string]float64) {
+	t.Helper()
+	decoder := xml.NewDecoder(strings.NewReader(document))
+	labels := make(map[string]float64)
+	var viewBoxHeight float64
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			t.Fatal(err)
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if start.Name.Local == "svg" {
+			viewBoxHeight = parseViewBoxHeight(t, start.Attr)
+		}
+		if start.Name.Local != "text" {
+			continue
+		}
+		var label string
+		if err := decoder.DecodeElement(&label, &start); err != nil {
+			t.Fatal(err)
+		}
+		for _, attribute := range start.Attr {
+			if attribute.Name.Local == "y" {
+				labels[label] = parseCoordinate(t, attribute.Value)
+			}
+		}
+	}
+	if viewBoxHeight <= 0 {
+		t.Fatal("viewBox SVG assente o non valido")
+	}
+	return viewBoxHeight, labels
+}
+
+// parseViewBoxHeight valida il formato numerico del viewBox prodotto da SVG.
+func parseViewBoxHeight(t *testing.T, attributes []xml.Attr) float64 {
+	t.Helper()
+	for _, attribute := range attributes {
+		if attribute.Name.Local != "viewBox" {
+			continue
+		}
+		parts := strings.Fields(attribute.Value)
+		if len(parts) != 4 {
+			t.Fatalf("viewBox non valido: %q", attribute.Value)
+		}
+		return parseCoordinate(t, parts[3])
+	}
+	t.Fatal("attributo viewBox assente")
+	return 0
+}
+
+// parseCoordinate converte una coordinata SVG e rende gli errori espliciti.
+func parseCoordinate(t *testing.T, value string) float64 {
+	t.Helper()
+	coordinate, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		t.Fatalf("coordinata SVG non valida %q: %v", value, err)
+	}
+	return coordinate
 }

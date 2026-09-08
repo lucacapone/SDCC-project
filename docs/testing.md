@@ -600,7 +600,7 @@ go test ./tests/aggregation/sum -run TestSumConvergence -count=1
 
 ## Pipeline di convergenza osservata
 
-I test di `internal/convergence` coprono parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
+I test di `internal/convergence` coprono parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. Un caso a sei nodi verifica inoltre che ogni serie, inclusa `node-6`, compaia nella legenda e che le coordinate delle etichette restino entro il `viewBox`, la cui altezza cresce con il numero di serie. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
 
 ```bash
 go test ./internal/convergence ./tests/gossip -count=1
@@ -625,6 +625,8 @@ Il grafico SVG associa a ciascuna linea verticale una tacca temporale in secondi
 tra `0` e la durata osservata e a ciascuna linea orizzontale la stima compresa
 tra il minimo e il massimo del grafico. Le etichette usano una precisione
 adattiva alla distanza tra le tacche, così valori interi restano compatti e
-intervalli piccoli conservano i decimali necessari.
+intervalli piccoli conservano i decimali necessari. Sotto il grafico, titolo
+dell'asse X, legenda e annotazione della convergenza occupano fasce distinte;
+l'altezza dell'SVG viene calcolata dal numero di righe della legenda.
 
 Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `convergence=non osservata` quando nessun suffisso della serie soddisfa il criterio.
