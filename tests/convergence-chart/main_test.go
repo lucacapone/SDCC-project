@@ -1,4 +1,4 @@
-package main
+package convergencechart_test
 
 import (
 	"os"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"sdcc-project/internal/convergence"
+	"sdcc-project/internal/convergencechart"
 )
 
 // TestRunReportsMissingSixthConfiguredNode riproduce una run scale nella quale
@@ -45,7 +46,7 @@ func TestRunReportsMissingSixthConfiguredNode(t *testing.T) {
 	for node := 1; node <= 6; node++ {
 		configPaths = append(configPaths, filepath.Join("..", "..", "configs", "node"+strconv.Itoa(node)+".yaml"))
 	}
-	if err := run("", csvPath, svgPath, summaryPath, strings.Join(configPaths, ","), .05); err != nil {
+	if err := convergencechart.Run("", csvPath, svgPath, summaryPath, strings.Join(configPaths, ","), .05); err != nil {
 		t.Fatal(err)
 	}
 

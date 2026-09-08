@@ -1007,3 +1007,15 @@
   - `docs/testing.md`
   - `docs/operational_log.md`
 - **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione di progetto, dell'architettura, delle configurazioni, del testing, delle note operative, dei task report e dello storico, ho esteso il caricamento delle configurazioni per raccogliere sia `initial_value` sia `node_id`, rifiutando anche configurazioni duplicate. `ConvergenceTime` riceve ora esplicitamente l'insieme atteso e restituisce esito negativo se le serie osservate non coincidono esattamente; una struttura di confronto ordinata alimenta la diagnostica condivisa con SVG e riepilogo. Le regressioni coprono un cluster configurato a sei nodi con campioni in banda per soli cinque, oltre alla presenza di un nodo estraneo. La suite Go completa, `go vet ./...` e il controllo whitespace sono stati eseguiti con esito positivo.
+
+## 2026-09-08 17:19:15 UTC — Spostamento delle suite di convergenza nei test esterni
+
+- **Obiettivo**: spostare i test di `internal/convergence` e `cmd/convergence-chart` sotto `tests/`, rendendoli test esterni basati soltanto su package importabili e identificatori esportati, senza perdere la copertura della pipeline del comando.
+- **File modificati**:
+  - `cmd/convergence-chart/main.go`
+  - `cmd/convergence-chart/main_test.go` (spostato in `tests/convergence-chart/main_test.go`)
+  - `internal/convergence/convergence_test.go` (spostato in `tests/convergence/convergence_test.go`)
+  - `internal/convergencechart/chart.go` (creato)
+  - `docs/testing.md`
+  - `docs/operational_log.md`
+- **Reasoning summary**: Dopo la rilettura obbligatoria della documentazione di progetto, dell’architettura, delle configurazioni, della guida di testing, delle note operative, dei report di milestone e dello storico operativo, ho convertito la suite di convergenza nel package esterno `convergence_test`, qualificando ogni uso tramite l’API esportata di `internal/convergence`. Poiché il package `main` non costituisce una libreria importabile, ho estratto l’orchestrazione di lettura, validazione e scrittura degli artefatti nel package interno `internal/convergencechart`: la CLI conserva esclusivamente parsing dei flag e gestione dell’errore, mentre la suite spostata importa e verifica `convergencechart.Run`. La documentazione indica ora percorsi, confini e comandi mirati aggiornati.
