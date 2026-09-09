@@ -378,3 +378,5 @@ SDCC_COMPOSE_FILE=deploy/docker-compose.tc.yml SDCC_PROJECT_NAME=sdcc-tc \
 ```
 
 Il root qdisc NetEm opera sull'egress dell'interfaccia determinata dalla route e ritarda concretamente i datagrammi UDP gossip. `Dockerfile`, `docker-compose.yml` e il comando canonico `docker compose up --build` restano estranei all'esperimento.
+
+Durante il confronto, `validate_run_evidence <run_dir> baseline|delayed` centralizza la validazione: richiede summary completo e i cinque artefatti della run, campioni CSV `local_round` con round positivo e `remote_merge` per tutti i sei nodi e nessuna transizione `suspect`/`dead`. Il marker log `event=gossip_round` è diagnostico opzionale. L'asserzione del qdisc resta demandata a `scripts/experiments/traffic_control.sh assert-off|assert-on`; i tempi non sono usati come prova dell'attivazione di NetEm.

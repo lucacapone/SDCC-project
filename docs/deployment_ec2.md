@@ -242,7 +242,7 @@ Prerequisiti: EC2 Linux, Docker Engine e plugin Compose, Bash, Go 1.22 e spazio 
 sudo TC_DELAY=500ms RUNS=3 OBSERVE_SECONDS=30 ./scripts/experiments/compare_convergence_tc.sh
 ```
 
-Lo script valida gli input prima di creare container, costruisce una volta l'immagine, ricrea un cluster pulito per run, verifica qdisc off/on, raccoglie log/CSV/SVG/summary ed esegue cleanup tramite trap. Gli artefatti restano in `artifacts/traffic_control/<timestamp>/baseline/`, `delayed-<delay>/` e `comparison.txt`.
+Lo script valida gli input prima di creare container, costruisce una volta l'immagine, ricrea un cluster pulito per run, verifica qdisc off/on tramite `scripts/experiments/traffic_control.sh`, raccoglie log/CSV/SVG/summary ed esegue cleanup tramite trap. `validate_run_evidence` rifiuta artefatti mancanti, summary incompleto, assenza per uno dei sei nodi di un CSV `local_round` positivo o `remote_merge` e transizioni `suspect`/`dead`; `event=gossip_round` rimane diagnostico opzionale. Gli artefatti restano in `artifacts/traffic_control/<timestamp>/baseline/`, `delayed-<delay>/` e `comparison.txt`. Lo stato NetEm non viene dedotto dalla differenza dei tempi.
 
 ```bash
 sudo SDCC_COMPOSE_FILE=deploy/docker-compose.tc.yml SDCC_PROJECT_NAME=sdcc-tc \
