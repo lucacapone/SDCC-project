@@ -644,8 +644,8 @@ Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti
 ## Esperimento traffic control (suite separata Linux-only)
 
 - **Test A — baseline**: sei nodi, `TC_ENABLED=false`, `assert-off`, convergenza di tutti e soli `node-1` … `node-6` a `60`;
-- **Test B — TC**: cluster pulito, qdisc `netem` verificata su tutti i servizi, round/merge gossip presenti e convergenza a `60`;
-- **Test C — sei nodi**: summary con sei nodi attesi/osservati, nessun nodo mancante/inatteso e CSV/SVG prodotti da `cmd/convergence-chart`;
+- **Test B — TC**: cluster pulito, qdisc `netem` verificata su tutti i servizi tramite `scripts/experiments/traffic_control.sh` e convergenza a `60`;
+- **Test C — sei nodi**: `validate_run_evidence` richiede tutti gli artefatti, summary con sei nodi attesi/osservati, nessun nodo mancante/inatteso e, per ogni nodo, almeno un record CSV `local_round` con round positivo e un `remote_merge`;
 - **Test D — disattivazione**: nuova baseline e assenza concreta di NetEm, inclusa la rimozione idempotente.
 
 ```bash
@@ -655,4 +655,4 @@ bash -n deploy/traffic-control/entrypoint.sh scripts/experiments/*.sh
 make test-traffic-control-integration
 ```
 
-Il PASS richiede risultato completo e invariato, NetEm verificato ovunque, nessuna transizione membership inattesa e mediana TC strettamente maggiore. La suite non altera `gossip_interval_ms`, `fanout`, `membership_timeout_ms` o l'algoritmo.
+Il PASS richiede il contratto completo per ogni run, NetEm verificato ovunque, nessuna transizione membership `suspect`/`dead` e mediana TC strettamente maggiore. `event=gossip_round` è soltanto diagnostico e non è un requisito di successo. Le fixture unitarie coprono singolarmente artefatti assenti, summary incompleto, `local_round` mancante o non positivo, `remote_merge` mancante, transizioni membership, modo non valido e fallimento della verifica qdisc. La suite non altera `gossip_interval_ms`, `fanout`, `membership_timeout_ms` o l'algoritmo.

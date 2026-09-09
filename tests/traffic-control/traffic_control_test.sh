@@ -38,6 +38,66 @@ summary_is_complete "${TMP}/complete.txt"
 sed 's/nodes_observed=6/nodes_observed=5/; s/missing_nodes=nessuno/missing_nodes=node-6/' "${TMP}/complete.txt" >"${TMP}/incomplete.txt"
 assert_failure summary_is_complete "${TMP}/incomplete.txt"
 
+# create_complete_run costruisce una fixture minima conforme al contratto unico delle evidenze.
+create_complete_run() {
+  local run_dir="$1" node
+  mkdir -p "${run_dir}"
+  cp "${TMP}/complete.txt" "${run_dir}/summary.txt"
+  : >"${run_dir}/compose.log"
+  : >"${run_dir}/convergence.svg"
+  : >"${run_dir}/qdisc.txt"
+  printf '%s\n' 'timestamp,elapsed_seconds,node_id,round,aggregation,estimate,event_type' >"${run_dir}/convergence.csv"
+  for node in node-1 node-2 node-3 node-4 node-5 node-6; do
+    printf '2026-01-01T00:00:01Z,1,%s,1,average,60,local_round\n' "${node}" >>"${run_dir}/convergence.csv"
+    printf '2026-01-01T00:00:02Z,2,%s,1,average,60,remote_merge\n' "${node}" >>"${run_dir}/convergence.csv"
+  done
+}
+
+# Il fake conserva la verifica off/on demandata allo script traffic_control senza richiedere Docker.
+cat >"${TMP}/traffic-control" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"${TC_CALLS}"
+test "${TC_FORCE_FAILURE:-false}" != true
+EOF
+chmod +x "${TMP}/traffic-control"
+export TRAFFIC_CONTROL_SCRIPT="${TMP}/traffic-control" TC_CALLS="${TMP}/tc-calls"
+
+create_complete_run "${TMP}/valid"
+validate_run_evidence "${TMP}/valid" baseline
+tail -1 "${TC_CALLS}" | grep -qx 'assert-off'
+# L'assenza del marker diagnostico gossip_round non rende incompleta la fixture valida.
+validate_run_evidence "${TMP}/valid" delayed
+tail -1 "${TC_CALLS}" | grep -qx 'assert-on 500ms'
+
+# Ogni artefatto obbligatorio mancante deve invalidare la run.
+for missing in summary.txt compose.log convergence.csv convergence.svg qdisc.txt; do
+  cp -R "${TMP}/valid" "${TMP}/missing-${missing}"
+  rm "${TMP}/missing-${missing}/${missing}"
+  assert_failure validate_run_evidence "${TMP}/missing-${missing}" baseline
+done
+
+cp -R "${TMP}/valid" "${TMP}/bad-summary"
+sed -i 's/nodes_observed=6/nodes_observed=5/' "${TMP}/bad-summary/summary.txt"
+assert_failure validate_run_evidence "${TMP}/bad-summary" baseline
+
+cp -R "${TMP}/valid" "${TMP}/missing-local-round"
+sed -i '/node-6,1,average,60,local_round/d' "${TMP}/missing-local-round/convergence.csv"
+assert_failure validate_run_evidence "${TMP}/missing-local-round" baseline
+
+cp -R "${TMP}/valid" "${TMP}/zero-local-round"
+sed -i 's/node-6,1,average,60,local_round/node-6,0,average,60,local_round/' "${TMP}/zero-local-round/convergence.csv"
+assert_failure validate_run_evidence "${TMP}/zero-local-round" baseline
+
+cp -R "${TMP}/valid" "${TMP}/missing-remote-merge"
+sed -i '/node-6,1,average,60,remote_merge/d' "${TMP}/missing-remote-merge/convergence.csv"
+assert_failure validate_run_evidence "${TMP}/missing-remote-merge" delayed
+
+cp -R "${TMP}/valid" "${TMP}/membership-transition"
+printf '%s\n' 'event=membership_transition node_id=node-2 status=suspect' >"${TMP}/membership-transition/compose.log"
+assert_failure validate_run_evidence "${TMP}/membership-transition" baseline
+assert_failure validate_run_evidence "${TMP}/valid" invalid
+(export TC_FORCE_FAILURE=true; assert_failure validate_run_evidence "${TMP}/valid" baseline)
+
 # I fake simulano route, qdisc apply/clear e privilege drop senza NET_ADMIN reale.
 cat >"${TMP}/ip" <<'EOF'
 #!/bin/sh
