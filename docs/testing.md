@@ -640,3 +640,19 @@ ridotti e campionati uniformemente, includendo sempre primo e ultimo punto. I
 test verificano sia la generazione ordinaria sia il limite per serie dense.
 
 Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `nodes_expected`, `nodes_observed`, `missing_nodes` e `unexpected_nodes`; dichiara `convergence=non osservata` sia quando nessun suffisso soddisfa il criterio sia quando l'insieme osservato non coincide esattamente con i `node_id` delle configurazioni selezionate. L'annotazione SVG elenca a sua volta i nodi mancanti e quelli non configurati.
+
+## Esperimento traffic control (suite separata Linux-only)
+
+- **Test A — baseline**: sei nodi, `TC_ENABLED=false`, `assert-off`, convergenza di tutti e soli `node-1` … `node-6` a `60`;
+- **Test B — TC**: cluster pulito, qdisc `netem` verificata su tutti i servizi, round/merge gossip presenti e convergenza a `60`;
+- **Test C — sei nodi**: summary con sei nodi attesi/osservati, nessun nodo mancante/inatteso e CSV/SVG prodotti da `cmd/convergence-chart`;
+- **Test D — disattivazione**: nuova baseline e assenza concreta di NetEm, inclusa la rimozione idempotente.
+
+```bash
+make test-traffic-control
+bash -n deploy/traffic-control/entrypoint.sh scripts/experiments/*.sh
+# lenta, Linux/Docker/NET_ADMIN:
+make test-traffic-control-integration
+```
+
+Il PASS richiede risultato completo e invariato, NetEm verificato ovunque, nessuna transizione membership inattesa e mediana TC strettamente maggiore. La suite non altera `gossip_interval_ms`, `fanout`, `membership_timeout_ms` o l'algoritmo.

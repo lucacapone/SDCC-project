@@ -233,3 +233,21 @@ Cleanup è obbligatorio per evitare consumo budget involontario.
 5. **Rischio risorse dimenticate**: istanze/dischi lasciati attivi consumano budget anche fuori dalla demo.
 
 Per SDCC in Learner Lab, la scelta robusta resta: **Opzione A (1 EC2 + Docker Compose)** come percorso standard; **multi-host solo per esigenze specifiche**.
+
+## Esperimento di convergenza con NetEm
+
+Prerequisiti: EC2 Linux, Docker Engine e plugin Compose, Bash, Go 1.22 e spazio per gli artefatti. Quando il socket Docker richiede privilegi, eseguire:
+
+```bash
+sudo TC_DELAY=500ms RUNS=3 OBSERVE_SECONDS=30 ./scripts/experiments/compare_convergence_tc.sh
+```
+
+Lo script valida gli input prima di creare container, costruisce una volta l'immagine, ricrea un cluster pulito per run, verifica qdisc off/on, raccoglie log/CSV/SVG/summary ed esegue cleanup tramite trap. Gli artefatti restano in `artifacts/traffic_control/<timestamp>/baseline/`, `delayed-<delay>/` e `comparison.txt`.
+
+```bash
+sudo SDCC_COMPOSE_FILE=deploy/docker-compose.tc.yml SDCC_PROJECT_NAME=sdcc-tc \
+  SDCC_SERVICES='node1 node2 node3 node4 node5 node6' scripts/experiments/traffic_control.sh show
+sudo docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down --remove-orphans
+```
+
+Una run ritardata con transizioni `suspect` o `dead` è non valida. Non aumentare automaticamente `membership_timeout_ms`: se `500ms` produce tali transizioni sulla EC2, conservare gli artefatti e chiedere una decisione umana. A fine prova fermare l'istanza per limitare i costi.
