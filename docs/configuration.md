@@ -394,3 +394,18 @@ Per riferimento rapido, i nomi esatti supportati dal runtime sono:
 
 - `LOGGING_REMOTE_MERGE_MODE` (valori: `full|significant|off`, default consigliato `significant`)
 - `LOGGING_LOG_ESTIMATE_DELTA_THRESHOLD` (soglia `abs(estimate_after-estimate_before)` per classificare un merge `applied` come significativo; default `0`)
+
+## Variabili esterne dell'harness traffic control
+
+`TC_ENABLED`, `TC_DELAY`, `RUNS`, `OBSERVE_SECONDS`, `TOLERANCE`, `SDCC_COMPOSE_FILE`, `SDCC_PROJECT_NAME`, `SDCC_SERVICES` e `SDCC_RUN_DIR` appartengono agli script sperimentali/Compose, non alla configurazione dell'algoritmo Go.
+
+| Variabile | Default | Scopo |
+|---|---:|---|
+| `TC_ENABLED` | `false` | applica/rimuove NetEm |
+| `TC_DELAY` | `500ms` | delay positivo accettato da `tc` |
+| `RUNS` | `3` | campioni per modalità |
+| `OBSERVE_SECONDS` | `30` | durata della run |
+| `TOLERANCE` | `0.05` | tolleranza del report canonico |
+| `SDCC_SERVICES` | sei nel comando principale | topologia esterna dell'harness |
+
+L'entrypoint accetta `TC_ENABLED` solo come `true`/`false`, individua una sola interfaccia dalla route senza assumere `eth0` e fallisce prima del nodo se apply/verifica non riescono.

@@ -205,3 +205,9 @@ timestamp,elapsed_seconds,node_id,round,aggregation,estimate,event_type
 ```
 
 `elapsed_seconds` è il tempo dal primo campione valido globale, non dal bootstrap di ciascun nodo. Le righe sono ordinate per timestamp, quindi `elapsed_seconds=0` identifica l'origine comune della run.
+
+### Correlazione con l'esperimento NetEm
+
+Ogni run conserva `compose.log`; `cmd/convergence-chart` estrae `convergence_sample`, genera CSV/SVG e applica direttamente `internal/convergence.ConvergenceTime`. Il confronto legge dal summary il tempo prodotto: non implementa una seconda definizione. La convergenza resta il primo istante dal quale tutti e soli i nodi configurati sono entro tolleranza e vi rimangono fino alla fine.
+
+`qdisc.txt` prova separatamente NetEm. Essendo un qdisc egress, il delay riguarda i datagrammi UDP gossip inviati; log `gossip_round`/`remote_merge` e metriche permettono di verificare la progressione.

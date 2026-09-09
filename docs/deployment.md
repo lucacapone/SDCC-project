@@ -365,3 +365,16 @@ docker compose down
 La raccolta non aggiunge servizi e non modifica i mount read-only delle configurazioni. Lo script host `scripts/cluster_convergence_report.sh` riusa `cluster_common.sh` e scrive esclusivamente in `artifacts/cluster/<timestamp>/`, ignorata da Git. Per il Compose standard usare il comando senza override; per `deploy/docker-compose.scale.yml` impostare `SDCC_PROJECT_NAME=sdcc-scale` e i sei servizi come documentato in testing/demo. Ogni directory contiene `compose.log`, `convergence.csv`, `convergence.svg` e `summary.txt`.
 
 Il valore atteso è un prodotto offline delle configurazioni della run e supporta le sole aggregazioni implementate (`sum`, `average`, `min`, `max`); resta rigorosamente separato dal piano dati gossip.
+
+## Override sperimentale traffic control
+
+`deploy/docker-compose.tc.yml` riproduce i sei servizi, i mount `configs/node1.yaml` … `configs/node6.yaml` e la rete `sdcc-net` della variante scale. A differenza del Compose canonico usa `deploy/traffic-control/Dockerfile`, una shell con `iproute2`/`su-exec` e aggiunge **soltanto** `NET_ADMIN`; non usa `privileged: true`. L'entrypoint applica o rimuove NetEm e avvia lo stesso `/usr/local/bin/sdcc-node` come UID/GID `65532`.
+
+```bash
+TC_ENABLED=false docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc up -d --build
+TC_ENABLED=true TC_DELAY=500ms docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc up -d --force-recreate
+SDCC_COMPOSE_FILE=deploy/docker-compose.tc.yml SDCC_PROJECT_NAME=sdcc-tc \
+  SDCC_SERVICES='node1 node2 node3 node4 node5 node6' scripts/experiments/traffic_control.sh show
+```
+
+Il root qdisc NetEm opera sull'egress dell'interfaccia determinata dalla route e ritarda concretamente i datagrammi UDP gossip. `Dockerfile`, `docker-compose.yml` e il comando canonico `docker compose up --build` restano estranei all'esperimento.

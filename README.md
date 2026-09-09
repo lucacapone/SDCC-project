@@ -499,3 +499,13 @@ SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml SDCC_PROJECT_NAME=sdcc-scale \
 ```
 
 La prima topologia usa `average(10,30,50)=30`; la seconda usa `average(10,30,50,70,90,110)=60`. La tolleranza assoluta predefinita è `0.05` ed è modificabile con `TOLERANCE`. Il grafico contiene una serie a gradini per ogni nodo osservato, riferimento, banda e primo istante da cui tutti i nodi configurati rimangono nella banda. La convergenza non può essere dichiarata se manca anche un solo nodo configurato o compare un `node_id` estraneo; riepilogo e SVG elencano esplicitamente entrambe le anomalie.
+
+## Esperimento rapido NetEm a sei nodi
+
+Il deployment canonico resta invariato, distroless e non-root. Su EC2 Linux, l'harness sperimentale costruisce una sola volta l'immagine con `tc`, esegue baseline e scenario ritardato e conserva ogni run sotto `artifacts/traffic_control/`:
+
+```bash
+sudo TC_DELAY=500ms RUNS=3 OBSERVE_SECONDS=30 ./scripts/experiments/compare_convergence_tc.sh
+```
+
+NetEm agisce sull'egress di ogni container e ritarda i datagrammi UDP gossip inviati, senza modificare intervallo, fanout, timeout membership o algoritmo Go. Dettagli in `docs/deployment_ec2.md` e `docs/testing.md`.
