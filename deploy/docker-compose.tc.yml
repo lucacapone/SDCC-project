@@ -16,22 +16,22 @@ x-node-base: &node-base
 services:
   node1:
     <<: *node-base
-    volumes: ["../configs/node1.yaml:/config/config.yaml:ro"]
+    volumes: ["../configs/traffic-control/node1.yaml:/config/config.yaml:ro"]
   node2:
     <<: *node-base
-    volumes: ["../configs/node2.yaml:/config/config.yaml:ro"]
+    volumes: ["../configs/traffic-control/node2.yaml:/config/config.yaml:ro"]
   node3:
     <<: *node-base
-    volumes: ["../configs/node3.yaml:/config/config.yaml:ro"]
+    volumes: ["../configs/traffic-control/node3.yaml:/config/config.yaml:ro"]
   node4:
     <<: *node-base
-    volumes: ["../configs/node4.yaml:/config/config.yaml:ro"]
+    volumes: ["../configs/traffic-control/node4.yaml:/config/config.yaml:ro"]
   node5:
     <<: *node-base
-    volumes: ["../configs/node5.yaml:/config/config.yaml:ro"]
+    volumes: ["../configs/traffic-control/node5.yaml:/config/config.yaml:ro"]
   node6:
     <<: *node-base
-    volumes: ["../configs/node6.yaml:/config/config.yaml:ro"]
+    volumes: ["../configs/traffic-control/node6.yaml:/config/config.yaml:ro"]
 
 networks:
   sdcc-net:

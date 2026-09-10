@@ -508,4 +508,4 @@ Il deployment canonico resta invariato, distroless e non-root. Su EC2 Linux, l'h
 sudo TC_DELAY=500ms RUNS=3 OBSERVE_SECONDS=30 ./scripts/experiments/compare_convergence_tc.sh
 ```
 
-NetEm agisce sull'egress di ogni container e ritarda i datagrammi UDP gossip inviati, senza modificare intervallo, fanout, timeout membership o algoritmo Go. Dettagli in `docs/deployment_ec2.md` e `docs/testing.md`.
+Baseline e scenario ritardato usano lo stesso Compose e le configurazioni dedicate `configs/traffic-control/node1.yaml` … `node6.yaml`; cambia soltanto `TC_ENABLED`. Le configurazioni copiano senza variazioni tutti i parametri runtime canonici (incluso `membership_timeout_ms: 10000`) e rendono completa e simmetrica solo la lista dei seed. NetEm agisce sull'egress di ogni container senza modificare intervallo, fanout, timeout membership o algoritmo Go. Il report conserva inoltre i campioni `average_eligible_node_ids`, il primo insieme canonico completo e le eventuali regressioni successive. Dettagli in `docs/deployment_ec2.md` e `docs/testing.md`.

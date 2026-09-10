@@ -15,6 +15,31 @@ assert_equal() { [[ "$1" == "$2" ]] || { echo "atteso '$2', ottenuto '$1'" >&2; 
 # shellcheck source=../../scripts/experiments/compare_convergence_tc.sh
 source "${ROOT}/scripts/experiments/compare_convergence_tc.sh"
 
+# Le configurazioni TC devono differire dalle canoniche esclusivamente nel blocco seed_peers.
+strip_seed_peers() {
+  awk '/^seed_peers:$/ { skipping=1; next } skipping && /^  - / { next } { skipping=0; print }' "$1"
+}
+for node in 1 2 3 4 5 6; do
+  diff -u <(strip_seed_peers "${ROOT}/configs/node${node}.yaml") \
+    <(strip_seed_peers "${ROOT}/configs/traffic-control/node${node}.yaml")
+  grep -Fqx "    volumes: [\"../configs/traffic-control/node${node}.yaml:/config/config.yaml:ro\"]" \
+    "${ROOT}/deploy/docker-compose.tc.yml"
+done
+expected_seeds() {
+  case "$1" in
+    1) printf '%s\n' node2:7002 node3:7003 node4:7004 node5:7005 node6:7006 ;;
+    2) printf '%s\n' node1:7001 node3:7003 node4:7004 node5:7005 node6:7006 ;;
+    3) printf '%s\n' node1:7001 node2:7002 node4:7004 node5:7005 node6:7006 ;;
+    4) printf '%s\n' node1:7001 node2:7002 node3:7003 node5:7005 node6:7006 ;;
+    5) printf '%s\n' node1:7001 node2:7002 node3:7003 node4:7004 node6:7006 ;;
+    6) printf '%s\n' node1:7001 node2:7002 node3:7003 node4:7004 node5:7005 ;;
+  esac
+}
+for node in 1 2 3 4 5 6; do
+  diff -u <(expected_seeds "${node}") \
+    <(sed -n '/^seed_peers:$/,/^[^ ]/{/^  - /s/^  - //p}' "${ROOT}/configs/traffic-control/node${node}.yaml")
+done
+
 TC_DELAY=500ms RUNS=3 OBSERVE_SECONDS=30 TOLERANCE=0.05 SERVICES_RAW='node1 node2 node3 node4 node5 node6' validate_inputs
 TC_DELAY=invalid; assert_failure validate_inputs
 TC_DELAY=500ms RUNS=0; assert_failure validate_inputs
@@ -43,7 +68,11 @@ create_complete_run() {
   local run_dir="$1" node
   mkdir -p "${run_dir}"
   cp "${TMP}/complete.txt" "${run_dir}/summary.txt"
-  : >"${run_dir}/compose.log"
+  cat >"${run_dir}/compose.log" <<'EOF'
+2026-01-01T00:00:01Z event=remote_merge node_id=node-1 average_eligible_node_ids="[node-1 node-2 node-3]"
+2026-01-01T00:00:02Z event=remote_merge node_id=node-1 average_eligible_node_ids="[node-1 node-2 node-3 node-4 node-5 node-6]"
+2026-01-01T00:00:03Z event=remote_merge node_id=node-2 average_eligible_node_ids="[node-1 node-2 node-3 node-4 node-5 node-6]"
+EOF
   : >"${run_dir}/convergence.svg"
   : >"${run_dir}/qdisc.txt"
   printf '%s\n' 'timestamp,elapsed_seconds,node_id,round,aggregation,estimate,event_type' >"${run_dir}/convergence.csv"
@@ -65,6 +94,8 @@ export TRAFFIC_CONTROL_SCRIPT="${TMP}/traffic-control" TC_CALLS="${TMP}/tc-calls
 create_complete_run "${TMP}/valid"
 validate_run_evidence "${TMP}/valid" baseline
 tail -1 "${TC_CALLS}" | grep -qx 'assert-off'
+grep -qx 'first_complete_sample=2 line=2' "${TMP}/valid/average-eligibility.txt"
+grep -qx 'regressions=0' "${TMP}/valid/average-eligibility.txt"
 # L'assenza del marker diagnostico gossip_round non rende incompleta la fixture valida.
 validate_run_evidence "${TMP}/valid" delayed
 tail -1 "${TC_CALLS}" | grep -qx 'assert-on 500ms'
@@ -93,8 +124,20 @@ sed -i '/node-6,1,average,60,remote_merge/d' "${TMP}/missing-remote-merge/conver
 assert_failure validate_run_evidence "${TMP}/missing-remote-merge" delayed
 
 cp -R "${TMP}/valid" "${TMP}/membership-transition"
-printf '%s\n' 'event=membership_transition node_id=node-2 status=suspect' >"${TMP}/membership-transition/compose.log"
+printf '%s\n' 'event=membership_transition node_id=node-2 status=suspect' >>"${TMP}/membership-transition/compose.log"
 assert_failure validate_run_evidence "${TMP}/membership-transition" baseline
+
+# Una perdita di eleggibilita' dopo il primo insieme completo deve lasciare evidenza
+# diagnostica e fermare la validazione quando non esistono transizioni suspect/dead.
+cp -R "${TMP}/valid" "${TMP}/eligibility-regression"
+printf '%s\n' '2026-01-01T00:00:04Z event=remote_merge node_id=node-1 average_eligible_node_ids="[node-1 node-2 node-3 node-4 node-5]"' >>"${TMP}/eligibility-regression/compose.log"
+assert_failure validate_run_evidence "${TMP}/eligibility-regression" baseline
+grep -qx 'regressions=1' "${TMP}/eligibility-regression/average-eligibility.txt"
+grep -q '^regression=1 .* source_node=node-1 eligible=5 ' "${TMP}/eligibility-regression/average-eligibility.txt"
+
+cp -R "${TMP}/valid" "${TMP}/eligibility-incomplete"
+sed -i '/node-6]/d' "${TMP}/eligibility-incomplete/compose.log"
+assert_failure validate_run_evidence "${TMP}/eligibility-incomplete" delayed
 assert_failure validate_run_evidence "${TMP}/valid" invalid
 (export TC_FORCE_FAILURE=true; assert_failure validate_run_evidence "${TMP}/valid" baseline)
 
