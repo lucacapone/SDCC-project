@@ -16,9 +16,11 @@ source "${ROOT}/scripts/experiments/compare_convergence_tc.sh"
 mapfile -t RUN_DIRS < <(find "${LATEST}" -mindepth 2 -maxdepth 2 -type d -name 'run-*' | sort)
 [[ "${#RUN_DIRS[@]}" -eq "$((RUN_COUNT * 2))" ]]
 for run_dir in "${RUN_DIRS[@]}"; do
-  for artifact in summary.txt compose.log convergence.csv convergence.svg qdisc.txt; do test -f "${run_dir}/${artifact}"; done
+  for artifact in summary.txt compose.log convergence.csv convergence.svg qdisc.txt average-eligibility.txt; do test -f "${run_dir}/${artifact}"; done
   summary_is_complete "${run_dir}/summary.txt"
   csv_has_run_evidence "${run_dir}/convergence.csv"
+  grep -Eq '^first_complete_sample=[0-9]+ line=[0-9]+$' "${run_dir}/average-eligibility.txt"
+  grep -qx 'regressions=0' "${run_dir}/average-eligibility.txt"
   ! grep -Eq 'event=membership_transition.*(status=suspect|status=dead)' "${run_dir}/compose.log"
 done
 

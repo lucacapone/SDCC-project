@@ -399,6 +399,8 @@ Per riferimento rapido, i nomi esatti supportati dal runtime sono:
 
 `TC_ENABLED`, `TC_DELAY`, `RUNS`, `OBSERVE_SECONDS`, `TOLERANCE`, `SDCC_COMPOSE_FILE`, `SDCC_PROJECT_NAME`, `SDCC_SERVICES` e `SDCC_RUN_DIR` appartengono agli script sperimentali/Compose, non alla configurazione dell'algoritmo Go.
 
+La variante usa `configs/traffic-control/node1.yaml` … `node6.yaml`. Ogni file replica identita', bind/advertise address, porta, aggregazioni abilitate, aggregazione `average`, valore iniziale, log level, `gossip_interval_ms: 1000`, `fanout: 5` e `membership_timeout_ms: 10000` della corrispondente configurazione canonica. L'unica differenza e' `seed_peers`, che elenca tutti gli altri cinque nodi. Baseline e delayed montano gli stessi file: nessun parametro runtime cambia fra le condizioni.
+
 | Variabile | Default | Scopo |
 |---|---:|---|
 | `TC_ENABLED` | `false` | applica/rimuove NetEm |
