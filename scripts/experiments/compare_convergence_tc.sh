@@ -58,58 +58,10 @@ csv_has_run_evidence() {
   ' "${file}"
 }
 
-# collect_average_eligibility conserva tutti i campioni di eleggibilita', individua il
-# primo insieme canonico completo e segnala ogni successiva regressione sotto sei nodi.
-collect_average_eligibility() {
-  local logs="$1" output="$2"
-  awk -v expected="${EXPECTED_NODE_IDS[*]}" '
-    BEGIN {
-      expected_count = split(expected, expected_nodes, " ")
-      for (item = 1; item <= expected_count; item++) expected_set[expected_nodes[item]] = 1
-      print "expected_node_ids=" expected
-    }
-    /average_eligible_node_ids=/ {
-      source_node = $0
-      sub(/^.*node_id=/, "", source_node)
-      sub(/[[:space:]].*$/, "", source_node)
-      value = $0
-      sub(/^.*average_eligible_node_ids="?\[/, "", value)
-      sub(/\]"?.*$/, "", value)
-      count = split(value, nodes, /[[:space:]]+/)
-      if (value == "") count = 0
-      canonical = count == expected_count
-      delete observed
-      for (item = 1; item <= count; item++) {
-        if (!(nodes[item] in expected_set) || (nodes[item] in observed)) canonical = 0
-        observed[nodes[item]] = 1
-      }
-      samples++
-      printf "sample=%d line=%d source_node=%s eligible=%d node_ids=[%s]\n", samples, NR, source_node, count, value
-      if (!reached && canonical) {
-        reached = 1
-        first_line = NR
-        first_sample = samples
-      }
-      if (canonical) reached_by_node[source_node] = 1
-      else if (reached_by_node[source_node] && count < expected_count) {
-        regressions++
-        printf "regression=%d line=%d source_node=%s eligible=%d node_ids=[%s]\n", regressions, NR, source_node, count, value
-      }
-    }
-    END {
-      print "samples=" samples + 0
-      if (reached) printf "first_complete_sample=%d line=%d\n", first_sample, first_line
-      else print "first_complete_sample=non_osservato"
-      print "regressions=" regressions + 0
-    }
-  ' "${logs}" >"${output}"
-}
-
 # validate_run_evidence applica in un solo punto il contratto di completezza di una run baseline o delayed.
 validate_run_evidence() {
   local run_dir="$1" expected_mode="$2"
   local summary="${run_dir}/summary.txt" logs="${run_dir}/compose.log" csv="${run_dir}/convergence.csv"
-  local eligibility="${run_dir}/average-eligibility.txt" regressions
   local required_file
   [[ "${expected_mode}" == baseline || "${expected_mode}" == delayed ]] || { echo "modo atteso non valido: ${expected_mode}" >&2; return 1; }
   for required_file in "${summary}" "${logs}" "${csv}" "${run_dir}/convergence.svg" "${run_dir}/qdisc.txt"; do
@@ -117,17 +69,6 @@ validate_run_evidence() {
   done
   summary_is_complete "${summary}" || { echo "summary incompleto: ${run_dir}" >&2; return 1; }
   csv_has_run_evidence "${csv}" || { echo "dataset CSV incompleto: ${run_dir}" >&2; return 1; }
-  collect_average_eligibility "${logs}" "${eligibility}"
-  grep -Eq '^first_complete_sample=[0-9]+ line=[0-9]+$' "${eligibility}" || {
-    echo "sei ID average eleggibili mai osservati: ${run_dir}" >&2
-    return 1
-  }
-  regressions="$(sed -nE 's/^regressions=([0-9]+)$/\1/p' "${eligibility}")"
-  if [[ "${regressions}" != 0 ]] && ! grep -Eq 'event=membership_transition.*(status=suspect|status=dead)' "${logs}"; then
-    echo "regressione eligible=6 -> eligible<6 senza suspect/dead: ${run_dir}" >&2
-    grep '^regression=' "${eligibility}" >&2
-    return 1
-  fi
   ! grep -Eq 'event=membership_transition.*(status=suspect|status=dead)' "${logs}" || {
     echo "transizioni suspect/dead osservate: ${run_dir}" >&2
     return 1

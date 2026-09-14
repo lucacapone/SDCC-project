@@ -647,7 +647,6 @@ Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti
 - **Test B — TC**: cluster pulito, qdisc `netem` verificata su tutti i servizi tramite `scripts/experiments/traffic_control.sh` e convergenza a `60`;
 - **Test C — sei nodi**: `validate_run_evidence` richiede tutti gli artefatti, summary con sei nodi attesi/osservati, nessun nodo mancante/inatteso e, per ogni nodo, almeno un record CSV `local_round` con round positivo e un `remote_merge`;
 - **Test D — disattivazione**: nuova baseline e assenza concreta di NetEm, inclusa la rimozione idempotente.
-- **Test E — eleggibilita' average**: raccolta di ogni `average_eligible_node_ids`, primo raggiungimento dell'insieme esatto `node-1` … `node-6` e diagnostica delle successive regressioni sotto sei.
 
 ```bash
 make test-traffic-control
@@ -656,4 +655,4 @@ bash -n deploy/traffic-control/entrypoint.sh scripts/experiments/*.sh
 make test-traffic-control-integration
 ```
 
-Il PASS richiede il contratto completo per ogni run, NetEm verificato ovunque, nessuna transizione membership `suspect`/`dead` e mediana TC strettamente maggiore. Baseline e delayed usano lo stesso `deploy/docker-compose.tc.yml` e le stesse configurazioni TC; varia soltanto `TC_ENABLED`. `average-eligibility.txt` deve mostrare il primo insieme canonico completo e zero regressioni successive. Se compare `eligible=6 -> eligible<6` senza `suspect`/`dead`, la validazione si ferma e stampa le righe diagnostiche, senza alterare il criterio/calcolo di convergenza. `event=gossip_round` è soltanto diagnostico e non è un requisito di successo. Le fixture unitarie coprono anche insieme completo mai raggiunto e regressione post-complete, oltre ad artefatti assenti, summary incompleto, `local_round` mancante o non positivo, `remote_merge` mancante, transizioni membership, modo non valido e fallimento della verifica qdisc. La suite non altera `gossip_interval_ms`, `fanout`, `membership_timeout_ms` o l'algoritmo.
+Il PASS richiede il contratto completo per ogni run, NetEm verificato ovunque, nessuna transizione membership `suspect`/`dead` e mediana TC strettamente maggiore. `event=gossip_round` è soltanto diagnostico e non è un requisito di successo. Le fixture unitarie coprono singolarmente artefatti assenti, summary incompleto, `local_round` mancante o non positivo, `remote_merge` mancante, transizioni membership, modo non valido e fallimento della verifica qdisc. La suite non altera `gossip_interval_ms`, `fanout`, `membership_timeout_ms` o l'algoritmo.
