@@ -4,12 +4,10 @@ set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/cluster_common.sh"
 require_docker
 ensure_artifacts_dir
-TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-# SDCC_RUN_DIR consente all'harness di assegnare una directory univoca alla singola run.
-RUN_DIR="${SDCC_RUN_DIR:-${SDCC_ARTIFACTS_DIR:-${ARTIFACTS_DIR}}/${TIMESTAMP}}"
+TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_DIR="${ARTIFACTS_DIR}/${TIMESTAMP}"
 OBSERVE_SECONDS="${OBSERVE_SECONDS:-20}"
 TOLERANCE="${TOLERANCE:-0.05}"
-[[ ! -e "${RUN_DIR}" ]] || fail "directory run già esistente: ${RUN_DIR}"
 mkdir -p "${RUN_DIR}"
 LOG_FILE="${RUN_DIR}/compose.log"
 CSV_FILE="${RUN_DIR}/convergence.csv"
@@ -24,11 +22,7 @@ for service in "${SERVICES[@]}"; do
 done
 printf '==> osservazione di %ss del progetto %s\n' "${OBSERVE_SECONDS}" "${PROJECT_NAME}"
 # La ricreazione delimita la run ed evita che log di container precedenti entrino nel dataset.
-up_args=(up -d --force-recreate)
-if [[ "${SDCC_SKIP_BUILD:-false}" != true ]]; then
-  up_args+=(--build)
-fi
-run_compose "${up_args[@]}"
+run_compose up -d --build --force-recreate
 sleep "${OBSERVE_SECONDS}"
 # Il log sorgente resta immutato accanto ai prodotti derivati.
 run_compose logs --no-color --timestamps >"${LOG_FILE}"
