@@ -1,5 +1,21 @@
 # Testing canonico
 
+## Fotografia istantanea dello stato aggregativo
+
+Con il cluster di scala gestito da `deploy/docker-compose.scale.yml` e progetto
+Compose `sdcc-scale`, il comando seguente mostra una sola fotografia delle ultime
+stime `convergence_sample` pubblicate dai soli servizi attualmente `running`:
+
+```bash
+scripts/show_aggregation_status.sh
+```
+
+Lo script non effettua polling, non attende la convergenza e non ricalcola
+l'aggregazione: legge una volta stato e log Compose, mostra le stime disponibili e
+termina. Se un servizio running non espone un campione valido, la relativa riga usa
+`N/D` e il comando termina con stato non zero; aggregazioni discordanti sono
+segnalate come `INCOERENTE` e rendono visibile la colonna `AGGREGAZIONE`.
+
 Questo documento è il riferimento canonico per la distinzione tra test interni in-memory, test di integrazione/end-to-end M09, test canonico M10 per crash/restart e relativi comandi operativi di validazione del repository.
 
 Per la guida demo operativa del cluster (setup, osservazioni, criteri di successo e troubleshooting), vedere anche `docs/demo.md`.
