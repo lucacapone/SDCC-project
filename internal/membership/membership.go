@@ -171,10 +171,66 @@ func (s *Set) LeaveAt(nodeID string, now time.Time) {
 		s.peers[nodeID] = Peer{NodeID: nodeID, Addr: nodeID, Status: Left, Incarnation: 1, LastSeen: now}
 		return
 	}
+	// Il leave termina la generazione corrente senza crearne una nuova.
+	// Solo il boot successivo alloca una incarnation maggiore.
 	peer.Status = Left
-	peer.Incarnation++
 	peer.LastSeen = now
 	s.peers[nodeID] = peer
+}
+
+// ObserveHeartbeat aggiorna la liveness senza violare l'ordine delle incarnation.
+// La stessa generazione recupera Alive/Suspect, ma non resuscita Dead/Left.
+func (s *Set) ObserveHeartbeat(nodeID, addr string, incarnation uint64, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if nodeID == "" {
+		return
+	}
+	resolvedNodeID := nodeID
+	peer, ok := s.peers[nodeID]
+	if !ok && addr != "" {
+		if aliasNodeID := s.findNodeIDByAddrLocked(addr); aliasNodeID != "" {
+			resolvedNodeID = aliasNodeID
+			peer = s.peers[aliasNodeID]
+			ok = true
+		}
+	}
+	if !ok {
+		watermarkNodeID, watermark, found := s.findPrunedWatermarkLocked(Peer{NodeID: nodeID, Addr: addr})
+		if found && incarnation <= watermark.Incarnation {
+			return
+		}
+		if addr == "" {
+			return
+		}
+		s.peers[nodeID] = Peer{NodeID: nodeID, Addr: addr, Status: Alive, Incarnation: incarnation, LastSeen: now}
+		if found {
+			delete(s.prunedWatermarks, watermarkNodeID)
+		}
+		return
+	}
+	if incarnation < peer.Incarnation {
+		return
+	}
+	if incarnation == peer.Incarnation && (peer.Status == Dead || peer.Status == Left) {
+		return
+	}
+	if addr != "" {
+		peer.Addr = addr
+	}
+	peer.Incarnation = incarnation
+	peer.Status = Alive
+	if now.After(peer.LastSeen) {
+		peer.LastSeen = now
+	}
+	if resolvedNodeID != nodeID {
+		delete(s.peers, resolvedNodeID)
+	}
+	peer.NodeID = nodeID
+	s.peers[nodeID] = peer
+	if watermarkNodeID, _, found := s.findPrunedWatermarkLocked(peer); found {
+		delete(s.prunedWatermarks, watermarkNodeID)
+	}
 }
 
 // Touch aggiorna heartbeat di un peer gia' noto senza tentare riconciliazioni canoniche.
@@ -183,6 +239,9 @@ func (s *Set) Touch(nodeID string, now time.Time) {
 	defer s.mu.Unlock()
 	peer, ok := s.peers[nodeID]
 	if !ok {
+		return
+	}
+	if peer.Status == Dead || peer.Status == Left {
 		return
 	}
 	peer.LastSeen = now
@@ -219,6 +278,9 @@ func (s *Set) TouchOrUpsertCanonical(nodeID, addr string, now time.Time) {
 			Status:   Alive,
 			LastSeen: now,
 		}
+		return
+	}
+	if peer.Status == Dead || peer.Status == Left {
 		return
 	}
 

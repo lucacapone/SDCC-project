@@ -24,6 +24,8 @@ La strategia di test corrente è organizzata su tre livelli:
 - **test rapido in-memory M10** in `tests/integration`, utile per debugging locale rapido del flusso crash/restart;
 - **test lento/reale M10 Compose** in `tests/integration`, dedicato a crash, funzionamento del cluster residuo e rejoin del nodo riavviato su cluster locale reale.
 
+Le regressioni generation verificano che `(G,1300)` respinga `(G,1)`, accetti immediatamente `(G+1,1)` e respinga un successivo pacchetto ritardato `(G,1400)`. Lo scenario a sei nodi percorre `60 -> 50 -> 40 -> 50 -> 60` senza forzare `Membership.Touch` durante il rejoin; la nuova self incarnation viene appresa dal digest ordinario.
+
 ## Concurrency checks
 
 Per consolidare il comportamento concorrente del runtime gossip/membership sono disponibili test dedicati che stressano accessi simultanei su strutture condivise.

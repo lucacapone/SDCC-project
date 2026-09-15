@@ -209,8 +209,8 @@ func TestMinConvergence(t *testing.T) {
 			t.Fatalf("contributo node-2 rimosso invece di essere solo filtrato")
 		}
 
-		node.eng.Membership.Touch("node-3", time.Now().UTC())
-		node.eng.Membership.Touch("node-2", time.Now().UTC())
+		node.eng.Membership.Upsert(membership.Peer{NodeID: "node-3", Addr: "node-3:7000", Status: membership.Alive, Incarnation: 1, LastSeen: time.Now().UTC()})
+		node.eng.Membership.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2:7000", Status: membership.Alive, Incarnation: 1, LastSeen: time.Now().UTC()})
 		node.eng.RoundOnce(context.Background())
 		if got := node.eng.State.Value; math.Abs(got-10) > 1e-9 {
 			t.Fatalf("min dopo rejoin inatteso: got=%v want=10", got)

@@ -1,5 +1,9 @@
 # Deployment locale multi-nodo con Docker Compose
 
+## Volumi di identità
+
+Il runtime non-root scrive la generation in `/var/lib/sdcc`, montata su un named volume diverso per ogni servizio. Non associare mai lo stesso volume a due `NodeID`. Stop/start e recreate sono supportati finché il volume viene conservato; `docker compose down -v` elimina intenzionalmente anche l'identità durevole, senza recovery automatico delle vecchie epoch dai peer.
+
 ## Scopo e stato canonico
 Questo documento è il riferimento canonico per il deployment locale multi-nodo del progetto SDCC tramite Docker Compose.
 
