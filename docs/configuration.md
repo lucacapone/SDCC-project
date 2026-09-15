@@ -1,5 +1,11 @@
 # Configurazione runtime canonica
 
+## Storage della generation runtime
+
+Il nodo usa per default `/var/lib/sdcc/generation`, sovrascrivibile con `SDCC_GENERATION_FILE`. Il valore viene incrementato una sola volta per processo e persistito prima di bootstrap/transport; storage corrotto, non leggibile, non scrivibile o in overflow interrompe l'avvio. Ogni `NodeID` deve usare uno storage esclusivo. I Compose canonici montano volumi distinti e non condivisi per node1…node6.
+
+`docker compose stop/start` conserva il volume; anche la ricreazione del container conserva la generation se il named volume non viene rimosso. `docker compose down -v` cancella lo storage e rappresenta perdita dell'identità durevole, per la quale non è implementata negoziazione dai peer.
+
 Questo documento è il riferimento canonico per la configurazione del runtime del nodo.
 
 La fonte primaria è il comportamento reale implementato in:

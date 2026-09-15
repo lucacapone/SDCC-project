@@ -17,6 +17,7 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	m.Upsert(membership.Peer{NodeID: "node-2", Addr: "node-2", Status: membership.Suspect, Incarnation: 7, LastSeen: base})
 
 	eng := NewEngine("node-1", "average", tr, m, nil, nil, time.Second, 2)
+	eng.SetGeneration(10)
 	eng.RoundOnce(context.Background())
 
 	if len(tr.sent) == 0 {
@@ -24,6 +25,9 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	}
 
 	msg := decodeMessage(t, tr.sent[0])
+	if msg.StateVersion != (shared.StateVersionStamp{Epoch: 10, Counter: 1}) {
+		t.Fatalf("prima versione della generation inattesa: %+v", msg.StateVersion)
+	}
 	if len(msg.Membership) != 1 {
 		t.Fatalf("digest membership inatteso: got=%d want=1", len(msg.Membership))
 	}
@@ -33,7 +37,7 @@ func TestRoundSerializzaMembershipConIncarnation(t *testing.T) {
 	}
 }
 
-func TestRoundSerializzaMembershipEscludendoSelfNode(t *testing.T) {
+func TestRoundSerializzaMembershipIncludendoSelfNode(t *testing.T) {
 	tr := &captureTransport{}
 	m := membership.NewSet()
 	base := time.Now().UTC()
@@ -48,11 +52,18 @@ func TestRoundSerializzaMembershipEscludendoSelfNode(t *testing.T) {
 	}
 
 	msg := decodeMessage(t, tr.sent[0])
-	if len(msg.Membership) != 1 {
-		t.Fatalf("digest membership deve contenere solo peer remoti: got=%d want=1", len(msg.Membership))
+	if len(msg.Membership) != 2 {
+		t.Fatalf("digest membership deve contenere self e peer remoti: got=%d want=2", len(msg.Membership))
 	}
-	if msg.Membership[0].NodeID != "node-2" {
-		t.Fatalf("digest membership include entry inattesa: %+v", msg.Membership[0])
+	entries := map[shared.NodeID]shared.MembershipEntry{}
+	for _, entry := range msg.Membership {
+		entries[entry.NodeID] = entry
+	}
+	if entries["node-1"].Incarnation != 10 || entries["node-1"].Status != string(membership.Alive) {
+		t.Fatalf("self entry assente o incoerente: %+v", entries["node-1"])
+	}
+	if entries["node-2"].Incarnation != 3 {
+		t.Fatalf("peer remoto incoerente: %+v", entries["node-2"])
 	}
 }
 

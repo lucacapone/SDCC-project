@@ -269,7 +269,7 @@ func TestAverageConvergence(t *testing.T) {
 		}
 
 		for _, activeID := range []string{"node-2", "node-3", "node-4", "node-5", "node-6"} {
-			node.eng.Membership.Touch(activeID, time.Now().UTC())
+			node.eng.Membership.Upsert(membership.Peer{NodeID: activeID, Addr: activeID + ":7000", Status: membership.Alive, Incarnation: 1, LastSeen: time.Now().UTC()})
 		}
 		node.eng.RoundOnce(context.Background())
 		h.assertNodeValue(t, "node-1", 60)

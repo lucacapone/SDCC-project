@@ -826,3 +826,39 @@ func TestMergeMaxConcorrenzaStessaVersionePreservaMassimoCommutativoEIdempotente
 		t.Fatalf("merge max non idempotente su duplicato: got=%v want=%v", repeat.State.Value, ab.State.Value)
 	}
 }
+
+// TestVersionEpochDistingueRestart verifica il confine tra counter e generation.
+func TestVersionEpochDistingueRestart(t *testing.T) {
+	base := time.Date(2026, time.September, 15, 13, 0, 0, 0, time.UTC)
+	local := fixtureState("node-1", 40, 20, base)
+	local.VersionEpoch = 3
+	local.LastSeenVersionByNode = map[shared.NodeID]shared.StateVersionStamp{
+		"node-5": {Epoch: 7, Counter: 1300},
+	}
+
+	sameEpoch := fixtureMessage("node-5-old-boot", "node-5", 90, 1, base.Add(time.Second))
+	sameEpoch.StateVersion = shared.StateVersionStamp{Epoch: 7, Counter: 1}
+	sameEpoch.State.VersionEpoch = 7
+	if result := applyRemote(local, sameEpoch); result.Status != MergeSkipped || result.Reason != "out_of_order_stale" {
+		t.Fatalf("counter regressivo nella stessa epoch non stale: status=%s reason=%s", result.Status, result.Reason)
+	}
+
+	newEpoch := fixtureMessage("node-5-new-boot", "node-5", 90, 1, base.Add(2*time.Second))
+	newEpoch.StateVersion = shared.StateVersionStamp{Epoch: 8, Counter: 1}
+	newEpoch.State.VersionEpoch = 8
+	accepted := applyRemote(local, newEpoch)
+	if accepted.Status != MergeApplied {
+		t.Fatalf("nuova generation non accettata: status=%s reason=%s", accepted.Status, accepted.Reason)
+	}
+	if accepted.State.VersionEpoch != 3 {
+		t.Fatalf("il merge ha sostituito la generation locale: got=%d want=3", accepted.State.VersionEpoch)
+	}
+	accepted.State.LastSeenVersionByNode["node-5"] = shared.StateVersionStamp{Epoch: 8, Counter: 10}
+
+	delayed := fixtureMessage("node-5-delayed-old-boot", "node-5", 90, 1400, base.Add(3*time.Second))
+	delayed.StateVersion = shared.StateVersionStamp{Epoch: 7, Counter: 1400}
+	delayed.State.VersionEpoch = 7
+	if result := applyRemote(accepted.State, delayed); result.Status != MergeSkipped || result.Reason != "out_of_order_stale" {
+		t.Fatalf("vecchia generation ritardata non stale: status=%s reason=%s", result.Status, result.Reason)
+	}
+}

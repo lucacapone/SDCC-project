@@ -131,7 +131,7 @@ func TestClusterConvergenceInMemory(t *testing.T) {
 }
 
 // TestMembershipEntriesRestanoStabiliNelCluster3Nodi verifica che ogni nodo mantenga
-// tipicamente 2 entry remote (nodi totali - self) senza alias effimeri.
+// esattamente 3 entry canoniche (self incluso) senza alias effimeri.
 func TestMembershipEntriesRestanoStabiliNelCluster3Nodi(t *testing.T) {
 	network := newIntegrationNetwork()
 	nodes, cancel := bootstrapCluster(t, network, m09Aggregation, []float64{10, 30, 50}, m09InMemoryGossipInterval)
@@ -142,7 +142,7 @@ func TestMembershipEntriesRestanoStabiliNelCluster3Nodi(t *testing.T) {
 		return observeCluster(nodes, averageOf([]float64{10, 30, 50}))
 	}, func(clusterObservation) bool {
 		for _, node := range nodes {
-			if len(node.engine.Membership.Snapshot()) != 2 {
+			if len(node.engine.Membership.Snapshot()) != 3 {
 				return false
 			}
 		}

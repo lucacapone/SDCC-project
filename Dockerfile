@@ -15,12 +15,16 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags='-s -w' -o /out/sdcc-node ./cmd/node
 
+# Prepara la directory copiata nel runtime con ownership dell'utente non-root.
+RUN mkdir -p /out/state && touch /out/state/.keep && chown -R 65532:65532 /out/state
+
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 
 WORKDIR /
 
 # Copia il binario compilato nello stage runtime minimale.
 COPY --from=builder /out/sdcc-node /usr/local/bin/sdcc-node
+COPY --chown=65532:65532 --from=builder /out/state /var/lib/sdcc
 
 ENTRYPOINT ["/usr/local/bin/sdcc-node"]
 CMD ["--config", "/config/config.yaml"]

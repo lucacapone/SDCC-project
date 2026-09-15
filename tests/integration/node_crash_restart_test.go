@@ -180,17 +180,25 @@ func TestNodeCrashRestartSixNodesMembershipAwareAverage(t *testing.T) {
 		t.Fatalf("cluster iniziale non convergente alla media 60: %s", formatClusterObservation(initialObservation))
 	}
 	t.Logf("cluster iniziale convergente alla media attesa 60: %s", formatClusterObservation(initialObservation))
+	assertStableMembershipAwareStage(t, nodes, 60, 6)
+
+	if err := nodes[5].engine.Stop(); err != nil {
+		t.Fatalf("dead simulato node-6: %v", err)
+	}
+	nodes[5] = nil
+	markPeerStatusForAliveNodes(nodes[:5], "node-6", membership.Dead)
+	stage50, converged50 := waitForClusterConvergence(nodes[:5], crashRestartCrashTimeout, crashRestartPollInterval, 50, crashRestartResidualExpectedBand)
+	if !converged50 {
+		t.Fatalf("cluster non convergente a 50 dopo stop node-6: %s", formatClusterObservation(stage50))
+	}
+	t.Logf("cluster convergente a 50 dopo stop node-6: %s", formatClusterObservation(stage50))
+	assertStableMembershipAwareStage(t, nodes[:5], 50, 5)
 
 	if err := nodes[4].engine.Stop(); err != nil {
 		t.Fatalf("leave simulato node-5: %v", err)
 	}
-	if err := nodes[5].engine.Stop(); err != nil {
-		t.Fatalf("dead simulato node-6: %v", err)
-	}
 	nodes[4] = nil
-	nodes[5] = nil
 	markPeerStatusForAliveNodes(nodes[:4], "node-5", membership.Left)
-	markPeerStatusForAliveNodes(nodes[:4], "node-6", membership.Dead)
 
 	residualNodes := nodes[:4]
 	residualObservation, residualConverged := waitForClusterConvergence(residualNodes, crashRestartCrashTimeout, crashRestartPollInterval, residualReferenceValue, crashRestartResidualExpectedBand)
@@ -198,16 +206,45 @@ func TestNodeCrashRestartSixNodesMembershipAwareAverage(t *testing.T) {
 		t.Fatalf("cluster residuo non convergente alla media alive 40 dopo leave/dead: %s", formatClusterObservation(residualObservation))
 	}
 	t.Logf("cluster residuo convergente alla media alive 40: %s", formatClusterObservation(residualObservation))
+	assertStableMembershipAwareStage(t, residualNodes, 40, 4)
 
 	nodes[4] = restartClusterNode(t, network, "node-5", crashRestartAggregation, initialValues[4], allAddresses, crashRestartGossipInterval)
+	stage50Rejoin, rejoined50 := waitForClusterConvergence(nodes[:5], crashRestartRejoinTimeout, crashRestartPollInterval, 50, crashRestartResidualExpectedBand)
+	if !rejoined50 {
+		t.Fatalf("cluster non riconvergente a 50 dopo rejoin node-5: %s", formatClusterObservation(stage50Rejoin))
+	}
+	t.Logf("cluster riconvergente a 50 dopo rejoin node-5: %s", formatClusterObservation(stage50Rejoin))
+	assertStableMembershipAwareStage(t, nodes[:5], 50, 5)
 	nodes[5] = restartClusterNode(t, network, "node-6", crashRestartAggregation, initialValues[5], allAddresses, crashRestartGossipInterval)
-	markPeerAliveForAllNodes(nodes, "node-5")
-	markPeerAliveForAllNodes(nodes, "node-6")
 	finalObservation, rejoinedConverged := waitForClusterConvergence(nodes, crashRestartRejoinTimeout, crashRestartPollInterval, initialReferenceValue, crashRestartResidualExpectedBand)
 	if !rejoinedConverged || finalObservation.referenceMaxOffset > crashRestartResidualExpectedBand {
 		t.Fatalf("cluster non riconvergente alla media 60 dopo rejoin alive di node-5/node-6: %s", formatClusterObservation(finalObservation))
 	}
 	t.Logf("cluster riconvergente alla media 60 dopo rejoin: %s", formatClusterObservation(finalObservation))
+	assertStableMembershipAwareStage(t, nodes, 60, 6)
+}
+
+// assertStableMembershipAwareStage richiede tre snapshot consecutivi e verifica
+// insieme cardinalita' eligible e conservazione dei sei contributi storici.
+func assertStableMembershipAwareStage(t *testing.T, nodes []*clusterNode, expected float64, eligible int) {
+	t.Helper()
+	if _, stable := collectStableConvergenceSnapshots(nodes, crashRestartRejoinTimeout, crashRestartPollInterval, expected, crashRestartResidualExpectedBand, 3); !stable {
+		t.Fatalf("fase non stabile su tre osservazioni: expected=%v eligible=%d", expected, eligible)
+	}
+	for _, node := range nodes {
+		alive := 0
+		for _, peer := range node.engine.Membership.Snapshot() {
+			if peer.Status == membership.Alive {
+				alive++
+			}
+		}
+		if alive != eligible {
+			t.Fatalf("cardinalita' eligible inattesa su %s: got=%d want=%d", node.address, alive, eligible)
+		}
+		if state := node.engine.State.AggregationData.Average; state == nil || len(state.Contributions) != 6 {
+			t.Fatalf("contributi noti incoerenti su %s: %+v", node.address, state)
+		}
+	}
 }
 
 // markPeerStatusForAliveNodes forza uno stato membership non attivo nei nodi rimasti
@@ -218,11 +255,19 @@ func markPeerStatusForAliveNodes(nodes []*clusterNode, nodeID string, status mem
 		if node == nil || node.engine == nil {
 			continue
 		}
+		incarnation := uint64(0)
+		for _, peer := range node.engine.Membership.Snapshot() {
+			if peer.NodeID == nodeID {
+				incarnation = peer.Incarnation
+				break
+			}
+		}
 		node.engine.Membership.Upsert(membership.Peer{
-			NodeID:   nodeID,
-			Addr:     nodeID,
-			Status:   status,
-			LastSeen: now,
+			NodeID:      nodeID,
+			Addr:        nodeID,
+			Status:      status,
+			Incarnation: incarnation,
+			LastSeen:    now,
 		})
 		node.engine.RoundOnce(context.Background())
 	}

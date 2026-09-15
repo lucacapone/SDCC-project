@@ -169,6 +169,58 @@ func TestRejoinWithHigherIncarnationOverridesOldState(t *testing.T) {
 	}
 }
 
+// TestGenerationCoordinaLeaveHeartbeatERejoin congela la semantica di boot generation.
+func TestGenerationCoordinaLeaveHeartbeatERejoin(t *testing.T) {
+	base := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.UTC)
+	set := NewSetWithConfig(Config{SuspectTimeout: time.Second, DeadTimeout: 2 * time.Second, PruneRetention: 3 * time.Second})
+	set.Upsert(Peer{NodeID: "node-5", Addr: "node5:7005", Status: Alive, Incarnation: 8, LastSeen: base})
+
+	set.LeaveAt("node-5", base.Add(time.Second))
+	peer := byNodeID(set.Snapshot())["node-5"]
+	if peer.Status != Left || peer.Incarnation != 8 {
+		t.Fatalf("leave deve conservare la generation: %+v", peer)
+	}
+	set.ObserveHeartbeat("node-5", "node5:7005", 8, base.Add(2*time.Second))
+	if peer = byNodeID(set.Snapshot())["node-5"]; peer.Status != Left {
+		t.Fatalf("heartbeat della stessa generation ha resuscitato left: %+v", peer)
+	}
+	set.ObserveHeartbeat("node-5", "node5:7005", 9, base.Add(3*time.Second))
+	if peer = byNodeID(set.Snapshot())["node-5"]; peer.Status != Alive || peer.Incarnation != 9 {
+		t.Fatalf("rejoin della generation successiva non accettato: %+v", peer)
+	}
+
+	set.Upsert(Peer{NodeID: "node-6", Addr: "node6:7006", Status: Dead, Incarnation: 4, LastSeen: base})
+	set.ObserveHeartbeat("node-6", "node6:7006", 4, base.Add(time.Second))
+	if peer = byNodeID(set.Snapshot())["node-6"]; peer.Status != Dead {
+		t.Fatalf("heartbeat della stessa generation ha resuscitato dead: %+v", peer)
+	}
+	set.ObserveHeartbeat("node-6", "node6:7006", 5, base.Add(2*time.Second))
+	if peer = byNodeID(set.Snapshot())["node-6"]; peer.Status != Alive || peer.Incarnation != 5 {
+		t.Fatalf("rejoin post-dead non accettato: %+v", peer)
+	}
+}
+
+// TestGenerationSuperaTombstonePruned verifica che il watermark non blocchi G+1.
+func TestGenerationSuperaTombstonePruned(t *testing.T) {
+	base := time.Date(2026, time.September, 15, 12, 30, 0, 0, time.UTC)
+	set := NewSetWithConfig(Config{SuspectTimeout: time.Second, DeadTimeout: 2 * time.Second, PruneRetention: 3 * time.Second})
+	set.Upsert(Peer{NodeID: "node-5", Addr: "node5:7005", Status: Left, Incarnation: 12, LastSeen: base})
+	set.Prune(base.Add(3 * time.Second))
+	set.ObserveHeartbeat("node-5", "node5:7005", 12, base.Add(4*time.Second))
+	if len(set.Snapshot()) != 0 {
+		t.Fatalf("generation tombstonata reintrodotta: %+v", set.Snapshot())
+	}
+	set.ObserveHeartbeat("node-5", "node5:7005", 13, base.Add(5*time.Second))
+	peer := byNodeID(set.Snapshot())["node-5"]
+	if peer.Status != Alive || peer.Incarnation != 13 {
+		t.Fatalf("generation successiva bloccata dal tombstone: %+v", peer)
+	}
+	set.Upsert(Peer{NodeID: "node-5", Addr: "node5:7005", Status: Left, Incarnation: 12, LastSeen: base.Add(6 * time.Second)})
+	if peer = byNodeID(set.Snapshot())["node-5"]; peer.Status != Alive || peer.Incarnation != 13 {
+		t.Fatalf("digest vecchio ha degradato generation nuova: %+v", peer)
+	}
+}
+
 func TestGossipUpdateMitigatesFalsePositiveToAlive(t *testing.T) {
 	cfg := Config{SuspectTimeout: 2 * time.Second, DeadTimeout: 4 * time.Second, PruneRetention: 10 * time.Second}
 	set := NewSetWithConfig(cfg)

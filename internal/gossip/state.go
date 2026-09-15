@@ -98,7 +98,8 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 		}
 		local.UpdatedAt = time.Now().UTC()
 		local.Round = maxCounter(local.Round, msg.State.Round) + 1
-		local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
+		// L'epoch identifica il boot del nodo locale e non deve essere adottata
+		// da un'origine remota con una generation indipendente.
 		local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
 		local.LastMessageID = msg.MessageID
 		local.LastSenderNodeID = msg.OriginNode
@@ -135,7 +136,7 @@ func applyRemote(local shared.GossipState, msg shared.GossipMessage) MergeResult
 	local, nodeDecisions, _ := mergeAggregationState(local, msg.State)
 	local.UpdatedAt = time.Now().UTC()
 	local.Round = maxCounter(local.Round, msg.State.Round) + 1
-	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
+	// L'epoch locale resta quella allocata per questo boot.
 	local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter) + 1
 	local.LastMessageID = msg.MessageID
 	local.LastSenderNodeID = msg.OriginNode
@@ -658,7 +659,7 @@ func adoptRemote(local shared.GossipState, msg shared.GossipMessage) shared.Goss
 	local.Value = msg.State.Value
 	local.AggregationData = msg.State.AggregationData
 	local.Round = maxCounter(local.Round, msg.State.Round)
-	local.VersionEpoch = maxEpoch(local.VersionEpoch, msg.State.VersionEpoch)
+	// L'adozione del payload remoto non sostituisce l'identita' del boot locale.
 	local.VersionCounter = maxCounter(local.VersionCounter, msg.State.VersionCounter)
 	local.UpdatedAt = msg.State.UpdatedAt
 	local.LastMessageID = msg.MessageID

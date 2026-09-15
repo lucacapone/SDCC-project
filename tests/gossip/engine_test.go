@@ -865,6 +865,9 @@ func TestRemoteMergeSkippedConRicalcoloRuntimeDiventaPartialMerge(t *testing.T) 
 				},
 			}},
 		},
+		Membership: []shared.MembershipEntry{{
+			NodeID: "node-2", Addr: "node-2:7002", Status: string(membership.Alive), Incarnation: 1, LastSeen: now,
+		}},
 	}
 	payload, err := json.Marshal(incoming)
 	if err != nil {

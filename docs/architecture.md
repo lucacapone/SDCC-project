@@ -169,7 +169,7 @@ La versione logica è composta da **`version_epoch` + `version_counter`** (`inte
 ### Regole
 1. Ogni round locale completato incrementa `State.Round` e `State.VersionCounter` di 1.
 2. Ogni merge remoto applicato aggiorna `version_counter` con `max(local, remote)+1`.
-3. `version_epoch` è mantenuto per evoluzioni future (reset/riavvii logici) e partecipa al confronto versione.
+3. `version_epoch` è la generation locale durevole della `node_id`: viene incrementata atomicamente una volta per boot, prima dell'avvio del protocollo, e resta costante durante l'intera istanza.
 4. `round` resta presente per retrocompatibilità e osservabilità.
 
 ### Regole di confronto versione
@@ -231,8 +231,8 @@ Il versioning membership non usa contatori globali condivisi: l'ordinamento è l
 Flusso operativo del nodo locale nel runtime corrente:
 
 1. **Join/bootstrap**: all'avvio `cmd/node/main.go` registra il peer locale canonico (`node_id` + `advertise_addr`) e avvia il bootstrap (`join_endpoint` oppure fallback seed peer).
-2. **Round gossip ordinari**: il loop periodico propaga stato applicativo + digest membership, escludendo normalmente l'entry `self`.
-3. **Leave volontario orchestrato**: quando arriva `SIGTERM`/`SIGINT`, il nodo invoca `Engine.AnnounceLeave(...)` prima di chiudere il transport; l'API marca il peer locale in stato `leave`, incrementa l'`incarnation` e invia almeno un annuncio best-effort ai peer eleggibili includendo esplicitamente l'entry locale nel digest.
+2. **Round gossip ordinari**: il loop periodico propaga stato applicativo + digest membership includendo anche l'entry `self`, così `Alive(G)` e la relativa incarnation vengono annunciati ripetutamente.
+3. **Leave volontario orchestrato**: quando arriva `SIGTERM`/`SIGINT`, il nodo invoca `Engine.AnnounceLeave(...)` prima di chiudere il transport; l'API marca il peer locale `leave` mantenendo l'`incarnation G` della generation corrente e invia almeno un annuncio best-effort ai peer eleggibili.
 4. **Teardown transport**: solo dopo l'annuncio leave viene eseguito `Engine.Stop()` con chiusura ticker e transport.
 
 Limiti temporali attesi lato protocollo:
@@ -242,6 +242,12 @@ Limiti temporali attesi lato protocollo:
 - `last_seen` è un attributo ausiliario: non annulla la regola principale su `incarnation`, ma aggiorna la freschezza osservabile quando più recente.
 
 Questo schema evita dipendenze da ordering totale dei messaggi e mantiene convergenza eventuale con gossip best-effort.
+
+### Generation durevole e rejoin
+
+Il file `/var/lib/sdcc/generation` contiene l'ultima generation allocata per la `node_id`. L'allocazione usa lock, file temporaneo nella stessa directory, `fsync`, rename atomico e sincronizzazione della directory; errori di lettura, corruzione, overflow o scrittura causano fail-fast. Al boot `G`, `VersionEpoch=G`, `VersionCounter=0` e la membership self usa `Incarnation=G`. Il primo round produce `(G,1)`; dopo restart lo storage alloca `G+1`, che supera qualsiasi `(G,counter)` e rende stale gli eventuali pacchetti ritardati della vecchia istanza.
+
+Gli heartbeat della stessa incarnation possono aggiornare peer `alive` o recuperare `suspect`, ma non trasformano `dead/leave(G)` in `alive(G)`: il rejoin valido richiede `Alive(G+1)`. La perdita del volume non viene negoziata automaticamente con i peer ed è quindi una perdita dell'identità durevole.
 
 ## Timeout configurabili e trade-off failure detection
 La failure detection membership dipende da timeout configurabili a runtime. Nel wiring reale del repository la mappatura è stabile e documentata così:

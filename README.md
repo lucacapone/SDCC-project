@@ -43,7 +43,7 @@ Queste scelte sono definitive per il progetto corrente e sostituiscono la preced
 ## Protocollo gossip (M01)
 Sintesi operativa del protocollo M01:
 - `GossipMessage` include i campi principali `message_id`, `origin_node`, `state_version` (con `version_epoch` + `version_counter`), `payload`, `sent_at` e `membership` (digest serializzato con `status` + `incarnation` per peer).
-- Il versioning è composto da `version_epoch + version_counter`: l'epoch separa i cicli/logical reset, il counter ordina gli aggiornamenti nello stesso epoch e non incorpora `node_id`, timestamp, incarnation membership o `message_id`.
+- Il versioning è composto da `version_epoch + version_counter`: l'epoch è la generation durevole allocata una volta per boot della stessa `node_id`, mentre il counter ordina gli aggiornamenti nella singola generation. La stessa generation inizializza la membership `incarnation`, senza usare timestamp, `runtime_instance` o `message_id` nel confronto.
 - Regole principali di merge: `duplicate_message_id` (idempotenza), `out_of_order_stale`/`older_version` (scarto update vecchi quando non portano contributi CRDT-like utili), `partial_merge` (payload aggregativo saltato ma stima variata da ricalcolo runtime), merge per-contributo per `sum`/`average`/`min`/`max` anche quando due nodi concorrenti hanno la stessa versione globale, `same_version_different_payload` solo per conflitti non risolvibili con metadati per-nodo e `remote_newer_version` per applicazione di update più recenti non CRDT-like.
 - Comando mirato di verifica: `go test ./tests/gossip -run TestMergeRules -count=1`.
 
@@ -154,6 +154,8 @@ Parametri esterni principali:
 - `enabled_aggregations`
 
 Nota failure detection: `membership_timeout_ms` viene tradotto in `SuspectTimeout = max(1ms, membership_timeout_ms/2)` e `DeadTimeout = max(SuspectTimeout+1ms, membership_timeout_ms)`. La validazione rifiuta configurazioni in cui il timeout `suspect` non è strettamente maggiore del gap massimo atteso tra messaggi gossip dello stesso peer, stimato da `gossip_interval_ms`, `fanout` e numero di peer di discovery. La stima è coerente con la selezione fanout deterministica: con N peer eleggibili e fanout F, il cursore rotante visita periodicamente tutti i target entro `ceil(N/F)` round, salvo cambi di membership o perdite di rete.
+
+Ogni servizio Compose monta un volume distinto in `/var/lib/sdcc`: il file `generation` viene incrementato e sincronizzato atomicamente prima che il nodo partecipi al protocollo. `docker compose stop/start` e la ricreazione del container conservano l'identità se il volume resta disponibile. `docker compose down -v` elimina invece le generation insieme ai volumi e rappresenta perdita esplicita dell'identità durevole; in questa versione non esiste recupero automatico dai peer.
 
 Esecuzione locale con file config:
 ```bash

@@ -1,5 +1,9 @@
 # Deploy SDCC su EC2 (AWS Learner Lab)
 
+## Persistenza dell'identità durante restart/rejoin
+
+I named volume Compose sotto `/var/lib/sdcc` devono essere conservati per mantenere monotona la generation di ogni `NodeID`. `docker compose stop/start` e la ricreazione senza rimozione volumi sono supportati; evitare `docker compose down -v` durante prove di rejoin, perché cancella la generation e costituisce perdita dell'identità durevole. Il recovery automatico dai peer dopo perdita del volume non rientra nell'implementazione corrente.
+
 ## 1) Scopo del deploy EC2 per SDCC
 
 Questa guida descrive **solo** il deploy dimostrativo di SDCC su EC2 in contesto **AWS Academy Learner Lab**, allineato ai comandi e agli artefatti reali del repository.

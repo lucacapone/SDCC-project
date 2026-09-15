@@ -16,6 +16,7 @@ import (
 	"sdcc-project/internal/aggregation"
 	"sdcc-project/internal/config"
 	"sdcc-project/internal/gossip"
+	"sdcc-project/internal/identity"
 	"sdcc-project/internal/membership"
 	"sdcc-project/internal/observability"
 	"sdcc-project/internal/transport"
@@ -28,6 +29,10 @@ func main() {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatalf("errore caricamento configurazione: %v", err)
+	}
+	generation, err := identity.AllocateGeneration(generationPath())
+	if err != nil {
+		log.Fatalf("errore allocazione generation durevole: %v", err)
 	}
 
 	selfAdvertiseAddr := cfg.AdvertiseEndpoint()
@@ -57,7 +62,13 @@ func main() {
 	// prima dell'avvio dell'engine gossip, così i filtri self possono riconoscere sia
 	// node_id logico sia advertise_addr anche in fase di startup.
 	mset.SetSelfNodeID(cfg.NodeID)
-	mset.TouchOrUpsertCanonical(cfg.NodeID, selfAdvertiseAddr, time.Now().UTC())
+	mset.Upsert(membership.Peer{
+		NodeID:      cfg.NodeID,
+		Addr:        selfAdvertiseAddr,
+		Status:      membership.Alive,
+		Incarnation: generation,
+		LastSeen:    time.Now().UTC(),
+	})
 	joinClient := selectJoinClient(cfg)
 	bootstrapRes := membership.Bootstrap(
 		context.Background(),
@@ -80,6 +91,8 @@ func main() {
 		"used_join_endpoint", bootstrapRes.UsedJoinEndpoint,
 		"fallback_used", bootstrapRes.FallbackUsed,
 		"advertise_addr", selfAdvertiseAddr,
+		"version_epoch", generation,
+		"membership_incarnation", generation,
 	)
 
 	listenAddress := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(cfg.NodePort))
@@ -129,6 +142,7 @@ func main() {
 		time.Duration(cfg.GossipIntervalMS)*time.Millisecond,
 		cfg.Fanout,
 	)
+	eng.SetGeneration(generation)
 	eng.SetRemoteMergeLoggingPolicy(cfg.RemoteMergeMode, cfg.LogEstimateDeltaThreshold)
 	// Conserviamo il valore locale originario in uno stato runtime dedicato per evitare
 	// che l'algoritmo average sovrascriva il contributo del nodo con la media corrente.
@@ -174,10 +188,20 @@ func main() {
 		"estimate", eng.State.Value,
 		"aggregation", eng.State.AggregationType,
 		"last_message_id", eng.State.LastMessageID,
+		"version_epoch", eng.State.VersionEpoch,
+		"membership_incarnation", generation,
 	)
 
 	_ = eng.Stop()
 	_ = metricsServer.Shutdown(5 * time.Second)
+}
+
+// generationPath restituisce il file durevole allocato una volta per boot.
+func generationPath() string {
+	if configured := strings.TrimSpace(os.Getenv("SDCC_GENERATION_FILE")); configured != "" {
+		return configured
+	}
+	return "/var/lib/sdcc/generation"
 }
 
 // selectJoinClient usa il client HTTP reale quando join_endpoint è configurato,

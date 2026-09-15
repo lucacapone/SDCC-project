@@ -78,6 +78,16 @@ func NewEngine(nodeID, aggregationType string, t transport.Transport, m *members
 	}
 }
 
+// SetGeneration collega la generazione durevole all'epoch gossip e apre una
+// nuova sequenza di counter. Il runtime la invoca prima di Start.
+func (e *Engine) SetGeneration(generation uint64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.State.VersionEpoch = generation
+	e.State.VersionCounter = 0
+	e.State.Round = 0
+}
+
 func (e *Engine) SetRemoteMergeLoggingPolicy(mode string, estimateDeltaThreshold float64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -125,7 +135,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.State = merge.State
 		e.mu.Unlock()
 
-		markPeerAlive(ctx, e.Logger, e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), msg.SentAt)
+		markPeerAlive(ctx, e.Logger, e.Membership, e.NodeID, msg.OriginNode, resolveOriginAddr(ctx, msg), originIncarnation(e.Membership, msg), msg.SentAt)
 		mergeMembership(e.Membership, string(e.NodeID), collectSelfIdentityAliases(e.Membership, string(e.NodeID), e.SelfAddr), msg.Membership)
 		membershipSnapshot := e.Membership.Snapshot()
 
@@ -151,7 +161,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		if e.Logger != nil {
 			nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision := summarizeMergeNodeDecisions(merge.NodeDecisions, msg.OriginNode)
 			baseAttrs := remoteMergeBaseAttrs(e.NodeID, uint64(localRound), localPeers, localEstimate, merge, msg.OriginNode, averageDetails)
-			diagnosticAttrs := remoteMergeDiagnosticAttrs(merge, uint64(incomingRound), incomingEstimate, membershipEntries, nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision)
+			diagnosticAttrs := remoteMergeDiagnosticAttrs(merge, uint64(incomingRound), incomingEstimate, msg.StateVersion.Epoch, originIncarnation(e.Membership, msg), membershipEntries, nodeDecisionSummary, remoteNodeDecision, nodeConflictID, nodeConflictDecision)
 			mergeSignificant := isRemoteMergeSignificant(merge, e.LogEstimateDeltaThreshold)
 
 			if e.RemoteMergeMode == "off" {
@@ -221,6 +231,7 @@ func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimat
 		slog.Float64("estimate", estimate),
 		slog.String("merge_status", string(merge.Status)),
 		slog.String("remote_node_id", string(remoteNodeID)),
+		slog.Uint64("version_epoch", merge.State.VersionEpoch),
 		slog.Bool("aggregation_changed", merge.AggregationChanged),
 		slog.Bool("membership_recalculation_changed", merge.MembershipRecalculationChanged),
 		slog.Bool("membership_eligibility_changed", merge.MembershipEligibilityChanged),
@@ -239,12 +250,14 @@ func remoteMergeBaseAttrs(nodeID shared.NodeID, round uint64, peers int, estimat
 }
 
 // remoteMergeDiagnosticAttrs isola i dettagli ad alta verbosità, emessi a INFO solo per conflitti/anomalie.
-func remoteMergeDiagnosticAttrs(merge MergeResult, remoteRound uint64, remoteEstimate float64, membershipEntries int, nodeDecisionSummary mergeNodeDecisionSummary, remoteNodeDecision string, nodeConflictID string, nodeConflictDecision string) []slog.Attr {
+func remoteMergeDiagnosticAttrs(merge MergeResult, remoteRound uint64, remoteEstimate float64, remoteEpoch uint64, remoteIncarnation uint64, membershipEntries int, nodeDecisionSummary mergeNodeDecisionSummary, remoteNodeDecision string, nodeConflictID string, nodeConflictDecision string) []slog.Attr {
 	attrs := []slog.Attr{
 		slog.Float64("estimate_before", merge.EstimateBefore),
 		slog.Float64("estimate_after", merge.EstimateAfter),
 		slog.Uint64("remote_round", remoteRound),
 		slog.Float64("remote_estimate", remoteEstimate),
+		slog.Uint64("remote_version_epoch", remoteEpoch),
+		slog.Uint64("membership_incarnation", remoteIncarnation),
 		slog.Int("membership_entries", membershipEntries),
 		slog.Int("unique_nodes", merge.UniqueContributions),
 		slog.Int("node_decisions_newer_version", nodeDecisionSummary.newerVersion),
@@ -389,7 +402,7 @@ func (e *Engine) round(ctx context.Context) {
 	e.logMembershipTransitions(ctx, sentAt, transitions)
 	e.Membership.Prune(sentAt)
 	membershipSnapshot := e.Membership.Snapshot()
-	peers := selectGossipTargets(membershipSnapshot)
+	peers := excludeSelfGossipTarget(selectGossipTargets(membershipSnapshot), string(e.NodeID))
 	peers = e.pickFanoutTargets(peers)
 
 	e.mu.Lock()
@@ -412,8 +425,10 @@ func (e *Engine) round(ctx context.Context) {
 		Version:      currentMessageVersion,
 		StateVersion: stateVersion,
 		State:        stateSnapshot,
-		Membership:   serializeMembershipDigest(membershipSnapshot, string(e.NodeID)),
-		Metadata:     buildMessageMetadata(string(e.NodeID), membershipSnapshot),
+		// Il self viene propagato a ogni round affinche' i peer apprendano
+		// ripetutamente la generation/incarnation corrente dopo un rejoin.
+		Membership: serializeMembershipDigest(membershipSnapshot, ""),
+		Metadata:   buildMessageMetadata(string(e.NodeID), membershipSnapshot),
 	}
 	localEstimate := e.State.Value
 	e.mu.Unlock()
@@ -434,8 +449,20 @@ func (e *Engine) round(ctx context.Context) {
 			"estimate", msg.State.Value,
 			"message_id", msg.MessageID,
 			"membership_entries", len(msg.Membership),
+			"version_epoch", msg.State.VersionEpoch,
+			"membership_incarnation", selfMembershipIncarnation(membershipSnapshot, string(e.NodeID)),
 		)
 	}
+}
+
+// selfMembershipIncarnation rende osservabile la generation membership locale.
+func selfMembershipIncarnation(peers []membership.Peer, selfNodeID string) uint64 {
+	for _, peer := range peers {
+		if peer.NodeID == selfNodeID {
+			return peer.Incarnation
+		}
+	}
+	return 0
 }
 
 // logConvergenceSample emette un punto passivo della serie temporale: non modifica
@@ -472,7 +499,7 @@ func (e *Engine) AnnounceLeave(ctx context.Context) error {
 	sentAt := time.Now().UTC()
 	e.Membership.LeaveAt(string(e.NodeID), sentAt)
 	membershipSnapshot := e.Membership.Snapshot()
-	peers := selectGossipTargets(membershipSnapshot)
+	peers := excludeSelfGossipTarget(selectGossipTargets(membershipSnapshot), string(e.NodeID))
 
 	e.mu.Lock()
 	nextVersion := e.State.VersionCounter + 1
@@ -553,7 +580,7 @@ func resolveOriginAddr(ctx context.Context, msg shared.GossipMessage) string {
 }
 
 // markPeerAlive tratta un messaggio gossip valido come heartbeat implicito del nodo origine.
-func markPeerAlive(ctx context.Context, logger *slog.Logger, set *membership.Set, selfID, originID shared.NodeID, originAddr string, seenAt time.Time) {
+func markPeerAlive(ctx context.Context, logger *slog.Logger, set *membership.Set, selfID, originID shared.NodeID, originAddr string, incarnation uint64, seenAt time.Time) {
 	if set == nil || originID == "" || originID == selfID {
 		return
 	}
@@ -575,7 +602,7 @@ func markPeerAlive(ctx context.Context, logger *slog.Logger, set *membership.Set
 	// creare nuovi endpoint non validati. Se l'endpoint canonico è già noto localmente,
 	// riallineiamo in modo sicuro eventuali alias esistenti sullo stesso addr.
 	if originAddr == "" {
-		set.Touch(string(originID), seenAt)
+		set.ObserveHeartbeat(string(originID), "", incarnation, seenAt)
 		touchOrPromoteKnownAliasesForOrigin(set, string(originID), seenAt)
 		debugLogMarkPeerAlive("missing_origin_addr_touch_existing", string(originID))
 		return
@@ -584,12 +611,32 @@ func markPeerAlive(ctx context.Context, logger *slog.Logger, set *membership.Set
 	// Evitiamo upsert/canonicalizzazione con endpoint non validati: aggiorniamo il peer
 	// solo se il canonical addr coincide con quanto il nodo remoto ha dichiarato.
 	if isKnownCanonicalOrigin(set, string(originID), originAddr) {
-		set.TouchOrUpsertCanonical(string(originID), originAddr, seenAt)
+		set.ObserveHeartbeat(string(originID), originAddr, incarnation, seenAt)
 		debugLogMarkPeerAlive("known_canonical_origin_promote_or_touch", string(originID))
 		return
 	}
-	set.Touch(string(originID), seenAt)
+	set.ObserveHeartbeat(string(originID), "", incarnation, seenAt)
 	debugLogMarkPeerAlive("unknown_origin_addr_touch_existing_only", string(originID))
+}
+
+// originIncarnation estrae l'incarnation dichiarata dall'origine nel digest.
+// I messaggi legacy privi della self entry conservano incarnation zero.
+func originIncarnation(set *membership.Set, msg shared.GossipMessage) uint64 {
+	for _, entry := range msg.Membership {
+		if entry.NodeID == msg.OriginNode {
+			return entry.Incarnation
+		}
+	}
+	// Compatibilita' con messaggi legacy senza self entry: un peer gia' noto
+	// continua la propria incarnation, senza poter superare Dead/Left.
+	if set != nil {
+		for _, peer := range set.Snapshot() {
+			if peer.NodeID == string(msg.OriginNode) {
+				return peer.Incarnation
+			}
+		}
+	}
+	return 0
 }
 
 // touchOrPromoteKnownAliasesForOrigin riallinea alias già presenti in membership verso
@@ -724,6 +771,19 @@ func selectGossipTargets(peers []membership.Peer) []membership.Peer {
 			continue
 		}
 		out = append(out, p)
+	}
+	return out
+}
+
+// excludeSelfGossipTarget mantiene il self nel digest senza consumare una
+// posizione di fanout o inviare datagrammi al transport locale.
+func excludeSelfGossipTarget(peers []membership.Peer, selfNodeID string) []membership.Peer {
+	out := make([]membership.Peer, 0, len(peers))
+	for _, peer := range peers {
+		if peer.NodeID == selfNodeID {
+			continue
+		}
+		out = append(out, peer)
 	}
 	return out
 }
@@ -1367,7 +1427,16 @@ func (e *Engine) Stop() error {
 
 // MarkPeerAliveForTest espone il heartbeat implicito per le suite esterne del repository.
 func MarkPeerAliveForTest(set *membership.Set, selfID, originID shared.NodeID, originAddr string, seenAt time.Time) {
-	markPeerAlive(context.Background(), nil, set, selfID, originID, originAddr, seenAt)
+	incarnation := uint64(0)
+	if set != nil {
+		for _, peer := range set.Snapshot() {
+			if peer.NodeID == string(originID) {
+				incarnation = peer.Incarnation
+				break
+			}
+		}
+	}
+	markPeerAlive(context.Background(), nil, set, selfID, originID, originAddr, incarnation, seenAt)
 }
 
 // SerializeMembershipDigestForTest espone il filtro del digest membership per le suite esterne.

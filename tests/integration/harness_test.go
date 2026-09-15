@@ -23,17 +23,27 @@ const clusterBootstrapStrategy = "harness in-memory promosso"
 
 // integrationNetwork modella una rete in-memory deterministicamente controllabile per il cluster di test.
 type integrationNetwork struct {
-	mu         sync.RWMutex
-	transports map[string]*integrationTransport
-	deliveries map[string]uint64
+	mu          sync.RWMutex
+	transports  map[string]*integrationTransport
+	deliveries  map[string]uint64
+	generations map[string]uint64
 }
 
 // newIntegrationNetwork crea il registro condiviso degli endpoint di test.
 func newIntegrationNetwork() *integrationNetwork {
 	return &integrationNetwork{
-		transports: make(map[string]*integrationTransport),
-		deliveries: make(map[string]uint64),
+		transports:  make(map[string]*integrationTransport),
+		deliveries:  make(map[string]uint64),
+		generations: make(map[string]uint64),
 	}
+}
+
+// nextGeneration simula lo store durevole per NodeID nel harness in-memory.
+func (n *integrationNetwork) nextGeneration(nodeID string) uint64 {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.generations[nodeID]++
+	return n.generations[nodeID]
 }
 
 // newTransport costruisce un transport associato a un endpoint logico del cluster.
@@ -171,17 +181,21 @@ func bootstrapClusterWithMembershipConfig(t *testing.T, network *integrationNetw
 	nodes := make([]*clusterNode, 0, len(initialValues))
 	for index, value := range initialValues {
 		address := addresses[index]
+		generation := network.nextGeneration(address)
 		transport := network.newTransport(address)
+		membershipSet := fullMeshMembershipWithConfig(address, addresses, membershipCfg)
+		membershipSet.Upsert(membership.Peer{NodeID: address, Addr: address, Status: membership.Alive, Incarnation: generation, LastSeen: time.Now().UTC()})
 		engine := gossip.NewEngine(
 			address,
 			aggregation,
 			transport,
-			fullMeshMembershipWithConfig(address, addresses, membershipCfg),
+			membershipSet,
 			slog.Default(),
 			nil,
 			roundEvery,
 			2,
 		)
+		engine.SetGeneration(generation)
 		engine.State.Value = value
 		engine.State.LocalValue = value
 
@@ -202,16 +216,20 @@ func restartClusterNode(t *testing.T, network *integrationNetwork, address strin
 	t.Helper()
 
 	transport := network.newTransport(address)
+	generation := network.nextGeneration(address)
+	membershipSet := fullMeshMembership(address, peers)
+	membershipSet.Upsert(membership.Peer{NodeID: address, Addr: address, Status: membership.Alive, Incarnation: generation, LastSeen: time.Now().UTC()})
 	engine := gossip.NewEngine(
 		address,
 		aggregation,
 		transport,
-		fullMeshMembership(address, peers),
+		membershipSet,
 		slog.Default(),
 		nil,
 		roundEvery,
 		2,
 	)
+	engine.SetGeneration(generation)
 	engine.State.Value = initialValue
 	engine.State.LocalValue = initialValue
 	if err := engine.Start(context.Background()); err != nil {
