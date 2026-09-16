@@ -7,6 +7,12 @@ delay_ms="${TC_DELAY_MS:-}"
 jitter_ms="${TC_JITTER_MS:-}"
 peer_host="${TC_PEER_HOST:-}"
 
+# Docker DNS puo pubblicare i nomi dei servizi con un breve ritardo durante
+# l'avvio concorrente. Questi limiti rendono robusto soltanto il bootstrap:
+# il primo lookup e immediato, poi sono ammessi 40 retry ogni 250 ms (10 s).
+dns_retry_interval_seconds='0.25'
+dns_retry_limit=40
+
 fail() {
   printf 'ERRORE TC: %s\n' "$*" >&2
   exit 1
@@ -20,10 +26,28 @@ case "${jitter_ms}" in ''|*[!0-9]*) fail 'TC_JITTER_MS deve essere un intero non
 command -v ip >/dev/null 2>&1 || fail 'iproute2/ip non disponibile'
 command -v tc >/dev/null 2>&1 || fail 'tc non disponibile'
 
+# resolve_peer_ip mantiene bounded il workaround per la race di Docker DNS e
+# restituisce appena il primo indirizzo IPv4 del peer diventa disponibile.
+resolve_peer_ip() {
+  retries_remaining="${dns_retry_limit}"
+  while :; do
+    resolved_ip="$(getent ahostsv4 "${peer_host}" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+    if [ -n "${resolved_ip}" ]; then
+      printf '%s\n' "${resolved_ip}"
+      return 0
+    fi
+    if [ "${retries_remaining}" -eq 0 ]; then
+      return 1
+    fi
+    retries_remaining=$((retries_remaining - 1))
+    sleep "${dns_retry_interval_seconds}"
+  done
+}
+
 # La route verso un peer reale identifica l'interfaccia della rete Compose senza
 # assumere che il suo nome sia eth0.
-peer_ip="$(getent ahostsv4 "${peer_host}" 2>/dev/null | awk 'NR == 1 { print $1 }')"
-[ -n "${peer_ip}" ] || fail "impossibile risolvere il peer ${peer_host}"
+peer_ip="$(resolve_peer_ip)" \
+  || fail "impossibile risolvere il peer ${peer_host} entro 10 secondi"
 interface="$(ip -o route get "${peer_ip}" 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }')"
 [ -n "${interface}" ] || fail "interfaccia peer non individuabile dalla route verso ${peer_ip}"
 
