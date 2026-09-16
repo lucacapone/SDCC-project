@@ -10,10 +10,11 @@ TC_DOCKERFILE="${REPO_ROOT}/deploy/traffic-control/Dockerfile"
 TC_IMAGE="sdcc-node-tc:local"
 PROJECT_NAME="sdcc-tc"
 TIMEOUT_SECONDS=30
+OBSERVATION_SECONDS=8
 EPSILON=0.000001
 SERVICES=(node1 node2 node3 node4 node5 node6)
-DELAYS=(0 500 1000 1500 2000 2500)
-JITTERS=(0 100 200 300 400 500)
+DELAYS=(0 400 800 1200 1600 2000)
+JITTERS=(0 80 160 240 320 400)
 
 run_compose() {
   docker compose -f "${COMPOSE_FILE}" -p "${PROJECT_NAME}" "$@"
@@ -99,10 +100,32 @@ deadline_reached() {
   [ "$1" -ge "$2" ]
 }
 
+# observation_decision centralizza l'esito del monitor: il successo richiede
+# convergenza simultanea e almeno otto secondi completi di osservazione.
+observation_decision() {
+  local ok_count="$1" elapsed="$2"
+  if all_nodes_ok "${ok_count}" && deadline_reached "${elapsed}" "${OBSERVATION_SECONDS}"; then
+    return 0
+  fi
+  if deadline_reached "${elapsed}" "${TIMEOUT_SECONDS}"; then
+    return 3
+  fi
+  return 1
+}
+
+# report_false_suspicion conserva l'evidenza e restituisce un codice distinto,
+# senza adattare automaticamente profilo NetEm o timeout applicativi.
+report_false_suspicion() {
+  local evidence="$1"
+  printf '\nFALSE SUSPICION: cluster ancora attivo ma rilevata alive -> suspect.\n%s\n' "${evidence}" >&2
+  printf 'RUN NON VALIDA: il profilo TC deve essere rivalutato.\n' >&2
+  return 2
+}
+
 # self_test congela parser, oracle, epsilon e decisioni successo/timeout senza
 # richiedere Docker; viene richiamato anche dalla validazione statica.
 self_test() {
-  local sample known suspicion
+  local sample known suspicion status earliest_success=-1 elapsed ok_count
   [ "$(oracle_value average)" = 60 ] && [ "$(oracle_value sum)" = 360 ] \
     && [ "$(oracle_value min)" = 10 ] && [ "$(oracle_value max)" = 110 ] \
     || fail 'self-test oracle fallito'
@@ -119,6 +142,20 @@ self_test() {
     || fail 'self-test qdisc fallito'
   all_nodes_ok 6 && ! all_nodes_ok 5 || fail 'self-test successo fallito'
   deadline_reached 30 30 && ! deadline_reached 29 30 || fail 'self-test timeout fallito'
+  # Harness deterministico: una perdita di convergenza riporta il monitor in
+  # attesa e il primo successo possibile resta esattamente a otto secondi.
+  for elapsed in 2 3 4 5 6 7 8; do
+    ok_count=6
+    [ "${elapsed}" -eq 5 ] && ok_count=5
+    observation_decision "${ok_count}" "${elapsed}"
+    status=$?
+    if [ "${status}" -eq 0 ]; then earliest_success="${elapsed}"; break; fi
+    [ "${status}" -eq 1 ] || fail 'self-test harness osservazione fallito'
+  done
+  [ "${earliest_success}" -eq 8 ] || fail 'self-test successo anticipato rispetto a 8s'
+  report_false_suspicion "${suspicion}" >/dev/null 2>&1
+  status=$?
+  [ "${status}" -eq 2 ] || fail 'self-test exit false suspicion fallito'
   printf 'Self-test Traffic Control: OK\n'
 }
 
@@ -169,10 +206,10 @@ check_false_suspicion() {
     || fail 'impossibile leggere i log membership'
   if [ -n "${evidence}" ]; then
     all_containers_running || fail "transizione suspect osservata insieme a container non attivi: ${evidence}"
-    printf '\nFALSE SUSPICION: cluster ancora attivo ma rilevata alive -> suspect.\n%s\n' "${evidence}" >&2
-    printf 'RUN NON VALIDA: il profilo TC deve essere rivalutato.\n' >&2
-    exit 2
+    report_false_suspicion "${evidence}"
+    return $?
   fi
+  return 0
 }
 
 render_and_count_ok() {
@@ -206,16 +243,18 @@ render_and_count_ok() {
 }
 
 main() {
-  local aggregation="${1:-average}" expected started_epoch elapsed
+  local aggregation="${1:-average}" expected started_epoch elapsed monitor_status suspicion_status first_convergence_seen=0
   expected="$(oracle_value "${aggregation}")" || fail "aggregazione non supportata: ${aggregation} (usare average, sum, min o max)"
   command -v docker >/dev/null 2>&1 || fail 'Docker non disponibile'
   docker info >/dev/null 2>&1 || fail 'daemon Docker non disponibile'
   docker compose version >/dev/null 2>&1 || fail 'Docker Compose non disponibile'
   export TC_AGGREGATION="${aggregation}"
-  RUN_STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-  export RUN_STARTED_AT
   printf 'Build unica immagine TC %s...\n' "${TC_IMAGE}"
   build_tc_image || fail 'build immagine TC fallito'
+  # Il limite temporale nasce immediatamente prima della ricreazione forzata:
+  # Compose leggerà poi soltanto i log dei nuovi container della run corrente.
+  RUN_STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  export RUN_STARTED_AT
   printf 'Avvio progetto TC isolato %s...\n' "${PROJECT_NAME}"
   run_compose up -d --no-build --force-recreate || fail 'avvio TC fallito'
   all_containers_running || fail 'non tutti i 6 container TC risultano running'
@@ -225,16 +264,24 @@ main() {
     elapsed=$(( $(date +%s) - started_epoch ))
     all_containers_running || fail 'uno o piu container TC non sono piu attivi'
     check_false_suspicion
+    suspicion_status=$?
+    [ "${suspicion_status}" -eq 0 ] || return "${suspicion_status}"
     printf '\033[2J\033[H'
     printf '%s\n   DEMO - TRAFFIC CONTROL\n%s\n' '========================================================' '========================================================'
     printf 'Aggregazione: %s\nValore atteso: %s\nTempo trascorso: %ss / %ss\n\n' "${aggregation}" "${expected}" "${elapsed}" "${TIMEOUT_SECONDS}"
     render_and_count_ok "${aggregation}" "${expected}" "${elapsed}"
-    if all_nodes_ok "${RENDERED_OK_COUNT}"; then
+    if all_nodes_ok "${RENDERED_OK_COUNT}"; then first_convergence_seen=1; fi
+    if [ "${first_convergence_seen}" -eq 1 ] && ! deadline_reached "${elapsed}" "${OBSERVATION_SECONDS}"; then
+      printf '\nStabilita: osservazione in corso fino ad almeno %ss.\n' "${OBSERVATION_SECONDS}"
+    fi
+    observation_decision "${RENDERED_OK_COUNT}" "${elapsed}"
+    monitor_status=$?
+    if [ "${monitor_status}" -eq 0 ]; then
       printf '\n%s\nCONVERGENZA RAGGIUNTA\nTempo totale: %ss\n%s\n' \
         '========================================================' "${elapsed}" '========================================================'
       return 0
     fi
-    if deadline_reached "${elapsed}" "${TIMEOUT_SECONDS}"; then
+    if [ "${monitor_status}" -eq 3 ]; then
       printf '\n%s\nCONVERGENZA NON RAGGIUNTA ENTRO 30s\n%s\n' \
         '========================================================' '========================================================' >&2
       return 3
