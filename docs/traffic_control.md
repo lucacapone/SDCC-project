@@ -8,6 +8,9 @@ container. Non modifica né riusa le risorse della modalità normale: immagine,
 entrypoint, Compose, rete (`sdcc-tc-net`), project name (`sdcc-tc`) e sei volumi
 `*-tc-state` sono dedicati. Il binario resta quello costruito da `cmd/node` e le
 configurazioni montate restano `configs/node1.yaml` … `configs/node6.yaml`.
+Lo script costruisce una sola volta `sdcc-node-tc:local` dal Dockerfile TC e poi
+avvia Compose con `--no-build`: tutti i sei servizi riusano quindi la stessa
+immagine locale, senza build o export concorrenti sul medesimo tag.
 
 ## Avvio e profili
 
@@ -19,6 +22,9 @@ scripts/demo_tc_latency.sh sum
 scripts/demo_tc_latency.sh min
 scripts/demo_tc_latency.sh max
 ```
+
+Il comando resta responsabile dell'intera sequenza `build unica -> avvio dei sei
+servizi`; non è necessario costruire manualmente l'immagine.
 
 Lo script usa oracle statici, senza ricalcolare il risultato dei nodi:
 `average=60`, `sum=360`, `min=10`, `max=110`. Compose passa la scelta tramite
