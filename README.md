@@ -469,6 +469,16 @@ I test introdotti in repository usano i seguenti criteri quantitativi:
    - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, peer `host:porta` malformati, `node_port` fuori range, duplicati o valori vuoti nelle liste).
 
 ## Demo
+
+Per l'esperimento opzionale e completamente isolato con latenza Linux
+`tc/netem`, sei nodi, oracle statici e timeout di 30 secondi, vedere
+[`docs/traffic_control.md`](docs/traffic_control.md). Avvio rapido:
+
+```bash
+scripts/demo_tc_latency.sh average
+```
+
+La modalità normale e i relativi file Compose rimangono invariati.
 Guida operativa completa:
 - [`docs/demo.md`](docs/demo.md)
 

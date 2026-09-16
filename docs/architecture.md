@@ -1,5 +1,14 @@
 # Architettura Gossip SDCC
 
+## Deployment sperimentale Traffic Control
+
+La modalità TC è un adattatore esclusivamente infrastrutturale e separato,
+documentato in `docs/traffic_control.md`: costruisce lo stesso `cmd/node`, monta
+gli stessi YAML e applica una qdisc NetEm all'egress del container prima di
+eseguire il nodo. Non introduce delay nel codice Go e non cambia gossip,
+aggregazione, membership o failure detection. Il Compose dedicato usa project,
+bridge, volumi e capability `NET_ADMIN` separati dalla modalità normale.
+
 ## Obiettivo
 Questo documento definisce il comportamento architetturale del sottosistema gossip per la propagazione dello stato aggregato tra nodi **peer-to-peer**, senza coordinatore centrale.
 
