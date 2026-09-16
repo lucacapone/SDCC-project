@@ -1,5 +1,18 @@
 # Testing canonico
 
+## Verifiche della modalità Traffic Control
+
+La modalità sperimentale isolata dispone di self-test shell per oracle statici,
+epsilon, parsing `convergence_sample`, parsing `sdcc_node_known_peers`, false
+suspicion, qdisc e decisioni successo/timeout:
+
+```bash
+scripts/demo_tc_latency.sh --self-test
+```
+
+La validazione reale di Docker, `NET_ADMIN`, NetEm, contatori qdisc e convergenza
+richiede un host Linux compatibile ed è descritta in `docs/traffic_control.md`.
+
 ## Fotografia istantanea dello stato aggregativo
 
 Con il cluster di scala gestito da `deploy/docker-compose.scale.yml` e progetto

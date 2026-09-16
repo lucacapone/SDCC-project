@@ -1,0 +1,63 @@
+# Modalita sperimentale isolata: usare sempre il project name sdcc-tc.
+x-node-tc-base: &node-tc-base
+  build:
+    context: ..
+    dockerfile: deploy/traffic-control/Dockerfile
+  image: sdcc-node-tc:local
+  command: ["--config", "/config/config.yaml"]
+  cap_add:
+    - NET_ADMIN
+  networks:
+    - sdcc-tc-net
+  restart: "no"
+
+services:
+  node1:
+    <<: *node-tc-base
+    environment: {TC_DELAY_MS: "0", TC_JITTER_MS: "0", TC_PEER_HOST: "node2", AGGREGATION: "${TC_AGGREGATION:-average}"}
+    volumes:
+      - ../configs/node1.yaml:/config/config.yaml:ro
+      - node1-tc-state:/var/lib/sdcc
+  node2:
+    <<: *node-tc-base
+    environment: {TC_DELAY_MS: "500", TC_JITTER_MS: "100", TC_PEER_HOST: "node1", AGGREGATION: "${TC_AGGREGATION:-average}"}
+    volumes:
+      - ../configs/node2.yaml:/config/config.yaml:ro
+      - node2-tc-state:/var/lib/sdcc
+  node3:
+    <<: *node-tc-base
+    environment: {TC_DELAY_MS: "1000", TC_JITTER_MS: "200", TC_PEER_HOST: "node1", AGGREGATION: "${TC_AGGREGATION:-average}"}
+    volumes:
+      - ../configs/node3.yaml:/config/config.yaml:ro
+      - node3-tc-state:/var/lib/sdcc
+  node4:
+    <<: *node-tc-base
+    environment: {TC_DELAY_MS: "1500", TC_JITTER_MS: "300", TC_PEER_HOST: "node1", AGGREGATION: "${TC_AGGREGATION:-average}"}
+    volumes:
+      - ../configs/node4.yaml:/config/config.yaml:ro
+      - node4-tc-state:/var/lib/sdcc
+  node5:
+    <<: *node-tc-base
+    environment: {TC_DELAY_MS: "2000", TC_JITTER_MS: "400", TC_PEER_HOST: "node1", AGGREGATION: "${TC_AGGREGATION:-average}"}
+    volumes:
+      - ../configs/node5.yaml:/config/config.yaml:ro
+      - node5-tc-state:/var/lib/sdcc
+  node6:
+    <<: *node-tc-base
+    environment: {TC_DELAY_MS: "2500", TC_JITTER_MS: "500", TC_PEER_HOST: "node1", AGGREGATION: "${TC_AGGREGATION:-average}"}
+    volumes:
+      - ../configs/node6.yaml:/config/config.yaml:ro
+      - node6-tc-state:/var/lib/sdcc
+
+networks:
+  sdcc-tc-net:
+    name: sdcc-tc-net
+    driver: bridge
+
+volumes:
+  node1-tc-state:
+  node2-tc-state:
+  node3-tc-state:
+  node4-tc-state:
+  node5-tc-state:
+  node6-tc-state:
