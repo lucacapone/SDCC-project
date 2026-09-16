@@ -135,8 +135,12 @@ all_containers_running() {
 peer_interface() {
   local service="$1" peer="$2"
   run_compose exec -T "${service}" sh -eu -c '
-    peer_ip="$(getent ahostsv4 "$1" | awk "NR == 1 { print \\$1 }")"
-    ip -o route get "${peer_ip}" | awk "{ for (i = 1; i <= NF; i++) if (\\$i == \"dev\") { print \\$(i + 1); exit } }"
+    peer_ip="$(getent ahostsv4 "$1" | awk '\''NR == 1 { print $1 }'\'')"
+    [ -n "${peer_ip}" ]
+    route="$(ip -o route get "${peer_ip}")"
+    interface="$(printf '\''%s\n'\'' "${route}" | awk '\''{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }'\'')"
+    [ -n "${interface}" ]
+    printf '\''%s\n'\'' "${interface}"
   ' sh "${peer}"
 }
 
