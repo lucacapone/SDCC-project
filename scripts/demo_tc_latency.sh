@@ -113,6 +113,26 @@ observation_decision() {
   return 1
 }
 
+# record_first_convergence memorizza una sola volta il primo elapsed in cui i
+# sei nodi sono simultaneamente convergenti, senza cancellarlo dopo regressioni.
+record_first_convergence() {
+  local ok_count="$1" elapsed="$2" current="$3"
+  if [ "${current}" -lt 0 ] && all_nodes_ok "${ok_count}"; then
+    printf '%s\n' "${elapsed}"
+    return
+  fi
+  printf '%s\n' "${current}"
+}
+
+# report_success distingue la prima convergenza dalla fine della finestra di
+# stabilita, mantenendo il riepilogo separato dalla logica decisionale.
+report_success() {
+  local first_convergence_elapsed="$1" elapsed="$2"
+  printf '\n%s\nCONVERGENZA RAGGIUNTA\nPrima convergenza osservata: %ss\nStabilità verificata: %ss\n%s\n' \
+    '========================================================' "${first_convergence_elapsed}" "${elapsed}" \
+    '========================================================'
+}
+
 # report_false_suspicion conserva l'evidenza e restituisce un codice distinto,
 # senza adattare automaticamente profilo NetEm o timeout applicativi.
 report_false_suspicion() {
@@ -125,7 +145,7 @@ report_false_suspicion() {
 # self_test congela parser, oracle, epsilon e decisioni successo/timeout senza
 # richiedere Docker; viene richiamato anche dalla validazione statica.
 self_test() {
-  local sample known suspicion status earliest_success=-1 elapsed ok_count
+  local sample known suspicion status earliest_success=-1 elapsed ok_count first_convergence_elapsed=-1 summary
   [ "$(oracle_value average)" = 60 ] && [ "$(oracle_value sum)" = 360 ] \
     && [ "$(oracle_value min)" = 10 ] && [ "$(oracle_value max)" = 110 ] \
     || fail 'self-test oracle fallito'
@@ -153,6 +173,19 @@ self_test() {
     [ "${status}" -eq 1 ] || fail 'self-test harness osservazione fallito'
   done
   [ "${earliest_success}" -eq 8 ] || fail 'self-test successo anticipato rispetto a 8s'
+  # Harness telemetrico: la convergenza iniziale a 4s resta immutata dopo una
+  # regressione temporanea e il riepilogo separa il successo finale a 9s.
+  for elapsed in 3 4 5 8 9; do
+    ok_count=5
+    case "${elapsed}" in 4|8|9) ok_count=6 ;; esac
+    first_convergence_elapsed="$(record_first_convergence "${ok_count}" "${elapsed}" "${first_convergence_elapsed}")"
+  done
+  [ "${first_convergence_elapsed}" -eq 4 ] || fail 'self-test prima convergenza sovrascritta'
+  summary="$(report_success "${first_convergence_elapsed}" 9)"
+  printf '%s\n' "${summary}" | grep -Fx 'Prima convergenza osservata: 4s' >/dev/null \
+    || fail 'self-test riepilogo prima convergenza fallito'
+  printf '%s\n' "${summary}" | grep -Fx 'Stabilità verificata: 9s' >/dev/null \
+    || fail 'self-test riepilogo stabilita fallito'
   report_false_suspicion "${suspicion}" >/dev/null 2>&1
   status=$?
   [ "${status}" -eq 2 ] || fail 'self-test exit false suspicion fallito'
@@ -243,7 +276,7 @@ render_and_count_ok() {
 }
 
 main() {
-  local aggregation="${1:-average}" expected started_epoch elapsed monitor_status suspicion_status first_convergence_seen=0
+  local aggregation="${1:-average}" expected started_epoch elapsed monitor_status suspicion_status first_convergence_elapsed=-1
   expected="$(oracle_value "${aggregation}")" || fail "aggregazione non supportata: ${aggregation} (usare average, sum, min o max)"
   command -v docker >/dev/null 2>&1 || fail 'Docker non disponibile'
   docker info >/dev/null 2>&1 || fail 'daemon Docker non disponibile'
@@ -270,15 +303,14 @@ main() {
     printf '%s\n   DEMO - TRAFFIC CONTROL\n%s\n' '========================================================' '========================================================'
     printf 'Aggregazione: %s\nValore atteso: %s\nTempo trascorso: %ss / %ss\n\n' "${aggregation}" "${expected}" "${elapsed}" "${TIMEOUT_SECONDS}"
     render_and_count_ok "${aggregation}" "${expected}" "${elapsed}"
-    if all_nodes_ok "${RENDERED_OK_COUNT}"; then first_convergence_seen=1; fi
-    if [ "${first_convergence_seen}" -eq 1 ] && ! deadline_reached "${elapsed}" "${OBSERVATION_SECONDS}"; then
+    first_convergence_elapsed="$(record_first_convergence "${RENDERED_OK_COUNT}" "${elapsed}" "${first_convergence_elapsed}")"
+    if [ "${first_convergence_elapsed}" -ge 0 ] && ! deadline_reached "${elapsed}" "${OBSERVATION_SECONDS}"; then
       printf '\nStabilita: osservazione in corso fino ad almeno %ss.\n' "${OBSERVATION_SECONDS}"
     fi
     observation_decision "${RENDERED_OK_COUNT}" "${elapsed}"
     monitor_status=$?
     if [ "${monitor_status}" -eq 0 ]; then
-      printf '\n%s\nCONVERGENZA RAGGIUNTA\nTempo totale: %ss\n%s\n' \
-        '========================================================' "${elapsed}" '========================================================'
+      report_success "${first_convergence_elapsed}" "${elapsed}"
       return 0
     fi
     if [ "${monitor_status}" -eq 3 ]; then

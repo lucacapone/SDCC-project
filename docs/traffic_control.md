@@ -67,7 +67,9 @@ ad almeno 8 secondi totali dalla partenza della fase di osservazione, verificand
 a ogni ciclo container, false suspicion e stime. Se un nodo perde la convergenza
 torna `[WAIT]`; il successo viene emesso soltanto quando tutti i nodi sono di
 nuovo `[OK]` dopo la soglia degli 8 secondi. Il timeout complessivo resta 30
-secondi.
+secondi. Il riepilogo finale distingue il primo istante di convergenza simultanea
+dal tempo totale in cui la verifica di stabilità termina positivamente; una
+successiva regressione `[WAIT]` non sovrascrive il primo istante osservato.
 
 Con `membership_timeout_ms=10000`, il runtime deriva `SuspectTimeout=5000 ms` e
 `DeadTimeout=10000 ms`. La demo cerca nella run
@@ -105,7 +107,7 @@ docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc logs --no-color | grep
 
 Per un confronto non artificiale, eseguire prima la modalità normale a sei nodi
 come in `docs/demo.md`, annotarne il tempo osservato e poi confrontarlo con il
-`Tempo totale` della demo TC.
+`Stabilità verificata` della demo TC.
 
 ## Stop, cleanup e reset
 
