@@ -6,6 +6,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/deploy/docker-compose.tc.yml"
+TC_DOCKERFILE="${REPO_ROOT}/deploy/traffic-control/Dockerfile"
+TC_IMAGE="sdcc-node-tc:local"
 PROJECT_NAME="sdcc-tc"
 TIMEOUT_SECONDS=30
 EPSILON=0.000001
@@ -15,6 +17,12 @@ JITTERS=(0 100 200 300 400 500)
 
 run_compose() {
   docker compose -f "${COMPOSE_FILE}" -p "${PROJECT_NAME}" "$@"
+}
+
+# build_tc_image costruisce una sola volta l'immagine condivisa prima che
+# Compose avvii i sei servizi, evitando export concorrenti sul medesimo tag.
+build_tc_image() {
+  docker build --file "${TC_DOCKERFILE}" --tag "${TC_IMAGE}" "${REPO_ROOT}"
 }
 
 fail() {
@@ -202,8 +210,10 @@ main() {
   export TC_AGGREGATION="${aggregation}"
   RUN_STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   export RUN_STARTED_AT
-  printf 'Preparazione progetto TC isolato %s...\n' "${PROJECT_NAME}"
-  run_compose up -d --build --force-recreate || fail 'build o avvio TC fallito'
+  printf 'Build unica immagine TC %s...\n' "${TC_IMAGE}"
+  build_tc_image || fail 'build immagine TC fallito'
+  printf 'Avvio progetto TC isolato %s...\n' "${PROJECT_NAME}"
+  run_compose up -d --no-build --force-recreate || fail 'avvio TC fallito'
   all_containers_running || fail 'non tutti i 6 container TC risultano running'
   verify_qdiscs
   started_epoch="$(date +%s)"

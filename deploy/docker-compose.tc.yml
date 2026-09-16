@@ -1,8 +1,5 @@
 # Modalita sperimentale isolata: usare sempre il project name sdcc-tc.
 x-node-tc-base: &node-tc-base
-  build:
-    context: ..
-    dockerfile: deploy/traffic-control/Dockerfile
   image: sdcc-node-tc:local
   command: ["--config", "/config/config.yaml"]
   cap_add:
