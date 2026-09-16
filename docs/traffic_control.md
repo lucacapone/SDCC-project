@@ -43,6 +43,9 @@ l'override applicativo già supportato `AGGREGATION`; gli `initial_value` restan
 Il jitter è il 20% del delay. L'entrypoint risolve un peer, ricava dalla route la
 relativa interfaccia e applica `tc qdisc replace dev <interface> root netem delay
 <delay>ms <jitter>ms distribution normal`. `replace` rende l'avvio idempotente.
+La risoluzione esegue un tentativo immediato e, soltanto durante il bootstrap,
+fino a 40 retry ogni 250 ms (massimo 10 secondi) per assorbire la pubblicazione
+concorrente dei nomi nel DNS Docker; allo scadere l'entrypoint termina non-zero.
 `NET_ADMIN` è assegnata solo dai servizi TC. L'entrypoint verifica `ip`, `tc`,
 route e `tc qdisc show`, fallisce chiaramente in caso di errore e usa infine
 `exec`, preservando i segnali al nodo Go.
