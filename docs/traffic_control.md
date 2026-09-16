@@ -34,11 +34,11 @@ l'override applicativo già supportato `AGGREGATION`; gli `initial_value` restan
 | Nodo | Delay egress | Jitter | Comportamento |
 |---|---:|---:|---|
 | node1 | 0 ms | 0 ms | bypass TC, nessuna qdisc NetEm |
-| node2 | 500 ms | 100 ms | NetEm |
-| node3 | 1000 ms | 200 ms | NetEm |
-| node4 | 1500 ms | 300 ms | NetEm |
-| node5 | 2000 ms | 400 ms | NetEm |
-| node6 | 2500 ms | 500 ms | NetEm |
+| node2 | 400 ms | 80 ms | NetEm |
+| node3 | 800 ms | 160 ms | NetEm |
+| node4 | 1200 ms | 240 ms | NetEm |
+| node5 | 1600 ms | 320 ms | NetEm |
+| node6 | 2000 ms | 400 ms | NetEm |
 
 Il jitter è il 20% del delay. L'entrypoint risolve un peer, ricava dalla route la
 relativa interfaccia e applica `tc qdisc replace dev <interface> root netem delay
@@ -61,15 +61,31 @@ La stima arriva dall'ultimo `event=convergence_sample` valido, verificando anche
 `node_id` e `aggregation`. `[START]` indica che manca ancora un campione; `[WAIT]`
 indica una stima distante dall'oracle più di `0.000001`; `[OK]` indica
 `abs(estimate-oracle) <= 0.000001`. `known` è solo informativo. La Fase A non
-richiede stabilità su due controlli. La schermata si aggiorna circa ogni secondo,
-termina appena i sei nodi sono contemporaneamente `[OK]` e riporta il tempo
-totale; dopo 30 secondi fallisce mostrando lo stato finale.
+richiede stabilità su due controlli. La schermata si aggiorna circa ogni secondo.
+La prima convergenza simultanea non conclude la demo: il monitor continua fino
+ad almeno 8 secondi totali dalla partenza della fase di osservazione, verificando
+a ogni ciclo container, false suspicion e stime. Se un nodo perde la convergenza
+torna `[WAIT]`; il successo viene emesso soltanto quando tutti i nodi sono di
+nuovo `[OK]` dopo la soglia degli 8 secondi. Il timeout complessivo resta 30
+secondi.
 
 Con `membership_timeout_ms=10000`, il runtime deriva `SuspectTimeout=5000 ms` e
 `DeadTimeout=10000 ms`. La demo cerca nella run
 `event=membership_transition previous_status=alive status=suspect`: se lo trova
 mentre i sei container sono attivi, mostra l'evento, dichiara la run non valida e
-termina non-zero, senza adattare profili o timeout.
+termina non-zero, senza adattare profili o timeout. La ricerca è confinata alla
+run corrente: lo script registra il timestamp subito prima di `up
+--force-recreate`, e Compose consulta soltanto i nuovi container ricreati oltre
+ad applicare `logs --since`.
+
+Il profilo precedente arrivava a `2500 ± 500 ms` su `node6`, troppo vicino alla
+soglia `SuspectTimeout=5000 ms`. Nelle validazioni AWS EC2, pur con tutti i
+container `Up`, aggregato già convergente a `60` e successivi `remote_merge` da
+`node6`, sono state osservate due false suspicion reali: `node1` ha marcato
+`node6` `alive -> suspect` dopo `elapsed_ms=5097`, e in un'altra run `node2` ha
+marcato `node6` dopo `elapsed_ms=5123`. Per aumentare il margine senza cambiare
+failure detector, gossip o configurazioni applicative, il massimo TC è stato
+ridotto a `2000 ± 400 ms`, mantenendo jitter pari al 20% del delay.
 
 ## Diagnostica NetEm e gossip
 
