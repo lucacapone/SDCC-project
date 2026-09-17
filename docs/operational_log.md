@@ -1083,3 +1083,9 @@
 - **Descrizione task**: precisazione append-only dell'orario reale relativo alla precedente entry di riorganizzazione finale, registrata inizialmente con l'orario convenzionale `00:00:00 UTC`.
 - **File modificati**: `docs/operational_log.md` (append-only).
 - **Reasoning summary**: la data della precedente entry è corretta, mentre l'orario effettivo della validazione era `08:49:13 UTC`; la cronologia preesistente e l'entry originale non sono state riscritte.
+
+## 2026-09-17 09:32:42 UTC — Avvio Docker Compose diretto del cluster scale
+
+- **Descrizione task**: documentato il comando Docker Compose diretto per avviare, ispezionare, seguire i log e arrestare localmente il cluster a sei nodi, affiancandolo alla procedura tramite script esistente senza modificare runtime o artefatti di deployment.
+- **File modificati**: `README.md`, `docs/deployment.md`, `docs/operational_log.md` (append-only).
+- **Reasoning summary**: dopo la rilettura obbligatoria della documentazione di progetto, dell'architettura, delle configurazioni, della guida di testing, delle note operative e dello storico, ho mantenuto entrambe le modalità sulla stessa topologia `deploy/docker-compose.scale.yml`. Il comando diretto è presentato come percorso Compose essenziale e locale, indipendente dalla collocazione sotto `deploy/`; gli script restano il percorso orchestrato con cleanup preventivo, controlli e diagnostica.
