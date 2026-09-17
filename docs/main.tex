@@ -44,7 +44,7 @@ Roma, Italia
 \maketitle
 
 \begin{abstract}
-Questo lavoro presenta la progettazione, l'implementazione e la valutazione di un servizio decentralizzato per l'aggregazione distribuita dei dati basato su protocollo gossip. Il sistema è sviluppato in Go e non utilizza un coordinatore centrale per il calcolo dell'aggregato: ogni nodo mantiene una vista locale della membership e dello stato aggregativo, scambia periodicamente informazioni con gli altri peer tramite UDP e applica regole deterministiche e idempotenti di merge. Sono supportate quattro operazioni di aggregazione: somma, media, minimo e massimo. Il sistema include inoltre failure detection, gestione di join, leave e rejoin, versionamento persistente dello stato e osservabilità tramite log strutturati e metriche. La soluzione è stata valutata mediante test unitari, test d'integrazione e cluster Docker Compose a tre e sei nodi, includendo scenari di crash e successivo rejoin. Una modalità sperimentale basata su Linux Traffic Control e NetEm introduce delay e jitter artificiali per studiare l'effetto della rete sulla convergenza. Il deployment è stato inoltre verificato su una singola istanza AWS EC2. I risultati mostrano la convergenza dei sei nodi agli aggregati attesi e la capacità del sistema di riconvergere in seguito a variazioni della membership e a condizioni di rete degradate.
+Questo lavoro presenta la progettazione, l'implementazione e la valutazione di un servizio decentralizzato per l'aggregazione distribuita dei dati basato su protocollo gossip. Il sistema, sviluppato individualmente in Go, non utilizza un coordinatore centrale per il calcolo: ogni nodo mantiene una vista locale della membership e dei contributi, scambia periodicamente stato tramite UDP e applica merge deterministici e idempotenti. Sono supportate somma, media, minimo e massimo. La soluzione comprende failure detection per crash fail-stop, leave, restart/rejoin, versionamento durevole e osservabilità. La valutazione combina test unitari, concorrenti, in-memory, su socket reali e Docker Compose a tre e sei nodi. Una modalità separata basata su Linux Traffic Control e NetEm introduce delay e jitter artificiali, mentre il deployment cloud utilizza Docker Compose su una singola istanza AWS EC2. Nelle esecuzioni osservate, i sei nodi convergono agli oracle configurati; i test verificano inoltre continuità dei peer superstiti e riconvergenza negli scenari di failure e recovery considerati.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -59,11 +59,11 @@ L'aggregazione di informazioni prodotte da molteplici nodi è un problema ricorr
 
 Un approccio centralizzato, nel quale tutti i nodi inviano i propri valori a un coordinatore, semplifica il calcolo ma introduce un punto privilegiato dell'architettura e può rappresentare un limite per fault tolerance e scalabilità. I protocolli gossip adottano invece una strategia decentralizzata: i nodi scambiano periodicamente informazioni con un sottoinsieme di peer e propagano progressivamente lo stato nel sistema \cite{demers1987,jelasity2005}. Tali protocolli privilegiano disponibilità, semplicità e convergenza eventuale rispetto a proprietà di consistenza forte.
 
-Questo progetto realizza un servizio di \emph{gossip-based distributed data aggregation} completamente implementato in Go. Ogni nodo è equivalente agli altri e mantiene localmente sia i contributi necessari al calcolo dell'aggregato sia una vista della membership. Seed statici o un eventuale servizio di join sono utilizzati esclusivamente per il bootstrap; dopo l'avvio, aggregazione, disseminazione dello stato e failure detection procedono tramite comunicazione peer-to-peer.
+Questo progetto individuale realizza un servizio di \emph{gossip-based distributed data aggregation} in Go. Ogni nodo è equivalente agli altri e mantiene localmente sia i contributi necessari al calcolo dell'aggregato sia una vista della membership. I deployment forniti usano seed statici. Il nodo implementa anche il client di un contratto HTTP di join opzionale, verificato dai test ma non distribuito come servizio nel Compose; entrambi i meccanismi riguardano soltanto il bootstrap. Dopo l'avvio, aggregazione, disseminazione e failure detection procedono peer-to-peer.
 
 Il sistema supporta quattro operazioni: \emph{sum}, \emph{average}, \emph{min} e \emph{max}. L'architettura integra inoltre deduplicazione dei messaggi, versionamento dello stato, gestione dei messaggi fuori ordine, stati di membership \texttt{alive}, \texttt{suspect}, \texttt{dead} e \texttt{leave}, nonché restart e rejoin della stessa identità logica.
 
-La valutazione considera correttezza dell'aggregazione, convergenza, comportamento in presenza di crash, riconvergenza dopo il rejoin e sensibilità ai ritardi di rete. Il sistema viene eseguito tramite Docker Compose sia localmente sia su una singola istanza AWS EC2. Una modalità sperimentale separata utilizza Linux \texttt{tc/netem} per introdurre delay e jitter artificiali senza modificare l'algoritmo applicativo.
+La valutazione considera correttezza dell'aggregazione, convergenza, crash fail-stop, leave, restart/rejoin, recovery dopo una partizione temporanea e sensibilità a ritardi sintetici. Il sistema viene eseguito tramite Docker Compose sia localmente sia su una singola istanza AWS EC2. Una modalità sperimentale separata utilizza Linux \texttt{tc/netem} per introdurre delay e jitter senza modificare l'algoritmo applicativo.
 
 Il codice sorgente e la documentazione tecnica del progetto sono disponibili nel repository GitHub del progetto.\footnote{\url{https://github.com/lucacapone/SDCC-project}}
 
@@ -107,7 +107,7 @@ La soluzione è stata progettata perseguendo cinque obiettivi principali:
     \item rendere configurabili i parametri di rete, gossip, membership e aggregazione.
 \end{enumerate}
 
-Tutti i nodi eseguono lo stesso processo Go e sono logicamente equivalenti. La presenza di seed peer o di un endpoint di join influenza soltanto il bootstrap e non introduce un nodo responsabile della computazione globale.
+Tutti i nodi eseguono lo stesso processo Go e sono logicamente equivalenti. I seed influenzano soltanto il bootstrap e non introducono un nodo responsabile della computazione globale. L'endpoint di join è un'integrazione client opzionale; nessun servizio join centrale fa parte dei deployment forniti.
 
 \IfFileExists{figures/architecture.pdf}{
 \begin{figure}[t]
@@ -189,20 +189,11 @@ I contributi appartenenti a nodi \texttt{suspect}, \texttt{dead} o \texttt{leave
 
 \subsection{Failure detection e rejoin}
 
-Il parametro esterno \texttt{membership\_timeout\_ms} viene trasformato in due soglie:
-\begin{equation}
-T_{suspect}=\max(1\text{ ms},T_m/2),
-\end{equation}
-\begin{equation}
-T_{dead}=\max(T_{suspect}+1\text{ ms},T_m),
-\end{equation}
-dove $T_m$ è il membership timeout configurato.
+Il parametro esterno \texttt{membership\_timeout\_ms}, indicato con $T_m$, determina $T_{suspect}=\max(1\text{ ms},T_m/2)$ e $T_{dead}=\max(T_{suspect}+1\text{ ms},T_m)$.
 
 La configurazione viene rifiutata se la soglia di sospetto non è compatibile con il tempo necessario al gossip per coprire i peer configurati. Questo controllo riduce la probabilità di classificare erroneamente come non raggiungibile un nodo che semplicemente non è ancora stato contattato.
 
-Quando un processo viene riavviato, mantiene la stessa \texttt{node\_id} ma incrementa la propria generation persistente. Tale generation viene utilizzata anche come incarnation della membership e come epoch dello stato. Di conseguenza, il nuovo processo può prevalere su informazioni o tombstone appartenenti alla precedente esecuzione.
-
-I volumi Docker associati individualmente ai nodi preservano tale generation attraverso operazioni di stop/start.
+Quando un processo viene riavviato, mantiene la stessa \texttt{node\_id}, ma alloca una generation superiore a quella salvata nel proprio volume durevole. Tale valore è usato come incarnation della membership ed epoch dello stato, consentendo al nuovo processo di prevalere su informazioni o tombstone della precedente esecuzione. La rimozione del volume elimina questa continuità durevole.
 
 \subsection{Configurazione}
 
@@ -249,9 +240,28 @@ L'immagine applicativa viene costruita tramite Docker con una fase di build Go 1
 
 Il deployment cloud utilizza una singola istanza AWS EC2 \cite{awsec2}. I sei nodi sono processi containerizzati indipendenti sulla stessa macchina virtuale e comunicano attraverso una rete bridge Docker. Le porte gossip e observability non devono essere esposte pubblicamente.
 
-La strategia di testing comprende test unitari e contrattuali, test concorrenti e in-memory, test black-box con socket reali e test d'integrazione mediante Docker Compose. Gli scenari includono convergenza, messaggi duplicati e fuori ordine, membership, crash/restart, leave, rejoin, partizioni temporanee e cluster a tre e sei nodi.
+La strategia di testing, riassunta nella Tabella~\ref{tab:testing}, separa le proprietà algoritmiche dalle prove sul deployment effettivo. I test di partizione verificano continuità durante l'isolamento temporaneo, recovery e riconvergenza finale, senza caratterizzare completamente le stime nelle due componenti durante l'intera partizione.
 
-La pipeline di misura emette eventi strutturati \texttt{convergence\_sample}. Uno strumento separato raccoglie i log, ricostruisce le serie temporali e genera CSV e grafici SVG. La convergenza viene definita come il primo istante dal quale tutte le serie dei nodi rimangono entro una tolleranza assoluta di 0.05 rispetto all'oracle fino alla fine dei campioni disponibili.
+\begin{table}[t]
+\centering
+\caption{Livelli della strategia di testing}
+\label{tab:testing}
+\scriptsize
+\begin{tabular}{@{}p{0.18\columnwidth}p{0.48\columnwidth}p{0.22\columnwidth}@{}}
+\toprule
+\textbf{Livello} & \textbf{Proprietà principali} & \textbf{Ambiente} \\
+\midrule
+Unità/contratto & Configurazione, aggregazioni, membership, generation, gossip e osservabilità & Go, deterministico \\
+Concorrenza & Accessi concorrenti a membership, round/ricezione e allocazione generation & Go race detector \\
+Transport & Contratto del transport e ciclo start/send/close & Socket UDP reali \\
+Integrazione & Convergenza, duplicati/out-of-order, leave e rejoin & Cluster in-memory \\
+Deployment & Convergenza a 3/6 nodi, crash/restart e partizione temporanea & Docker Compose \\
+Pipeline & Oracle, completezza dei nodi, tolleranza, CSV e SVG & Log osservativi \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La pipeline di misura emette eventi strutturati \texttt{convergence\_sample}. Uno strumento separato raccoglie i log, ricostruisce le serie temporali e genera CSV e grafici SVG. La convergenza viene definita come il primo istante dal quale tutte le serie dei nodi rimangono entro una tolleranza assoluta di 0.05 rispetto all'oracle fino alla fine della finestra osservata; la readiness HTTP non fa parte di questo criterio.
 
 % =========================================================
 \section{Risultati}
@@ -259,7 +269,7 @@ La pipeline di misura emette eventi strutturati \texttt{convergence\_sample}. Un
 
 \subsection{Configurazione sperimentale}
 
-La valutazione principale è stata effettuata sul cluster a sei nodi, considerato lo scenario più rappresentativo tra quelli inclusi nel progetto. Tutti i nodi utilizzano la stessa operazione di aggregazione durante una singola esecuzione.
+La valutazione principale è stata effettuata sul cluster a sei nodi, considerato lo scenario più rappresentativo tra quelli inclusi nel progetto. Tutti i nodi utilizzano la stessa operazione di aggregazione durante una singola esecuzione. I valori temporali correnti derivano da una singola run rappresentativa per aggregazione ($n=1$): sono misure descrittive provvisorie, non medie statistiche, bound o prestazioni garantite.
 
 La Tabella~\ref{tab:setup} riassume la configurazione principale.
 
@@ -310,70 +320,26 @@ Max     & 110 & \MaxConvTime \\
 In particolare, l'esecuzione più recente della media ha raggiunto convergenza stabile a circa \AvgConvTime~s. Gli altri esperimenti hanno mostrato convergenza a circa \SumConvTime~s per la somma, \MinConvTime~s per il minimo e \MaxConvTime~s per il massimo.
 
 \IfFileExists{figures/convergence_average_6nodes.pdf}{
-\begin{figure}[t]
+\begin{figure*}[t]
     \centering
-    \includegraphics[width=\columnwidth]{figures/convergence_average_6nodes.pdf}
-    \caption{Convergenza dell'aggregazione average nel cluster a sei nodi.}
-    \label{fig:convergence-average}
-\end{figure}
-}{}
-
-\IfFileExists{figures/convergence_sum_6nodes.pdf}{
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/convergence_sum_6nodes.pdf}
-    \caption{Convergenza dell'aggregazione sum nel cluster a sei nodi.}
-    \label{fig:convergence-sum}
-\end{figure}
-}{}
-
-\IfFileExists{figures/convergence_min_6nodes.pdf}{
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/convergence_min_6nodes.pdf}
-    \caption{Convergenza dell'aggregazione min nel cluster a sei nodi.}
-    \label{fig:convergence-min}
-\end{figure}
-}{}
-
-\IfFileExists{figures/convergence_max_6nodes.pdf}{
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/convergence_max_6nodes.pdf}
-    \caption{Convergenza dell'aggregazione max nel cluster a sei nodi.}
-    \label{fig:convergence-max}
-\end{figure}
+    \subfloat[Average]{\includegraphics[width=0.48\textwidth]{figures/convergence_average_6nodes.pdf}}\hfill
+    \subfloat[Sum]{\includegraphics[width=0.48\textwidth]{figures/convergence_sum_6nodes.pdf}}\\
+    \subfloat[Min]{\includegraphics[width=0.48\textwidth]{figures/convergence_min_6nodes.pdf}}\hfill
+    \subfloat[Max]{\includegraphics[width=0.48\textwidth]{figures/convergence_max_6nodes.pdf}}
+    \caption{Serie di convergenza baseline, senza delay NetEm, per le quattro aggregazioni sul cluster a sei nodi. Le linee di riferimento rappresentano gli oracle configurati.}
+    \label{fig:convergence-aggregations}
+\end{figure*}
 }{}
 
 Questi risultati verificano non soltanto che i nodi raggiungano lo stesso valore, ma anche che tale valore coincida con quello calcolato direttamente sui contributi configurati.
 
 \subsection{Crash, failure detection e rejoin}
 
-La fault tolerance è stata verificata arrestando progressivamente nodi del cluster e osservando l'evoluzione dell'aggregazione media. Il risultato iniziale con sei nodi è 60.
+La robustezza al fault model considerato è verificata da prove distinte. I test runtime controllano le transizioni \texttt{alive} $\rightarrow$ \texttt{suspect} $\rightarrow$ \texttt{dead}; i test in-memory isolano la semantica membership-aware, leave e rejoin; i test Docker Compose arrestano realmente un servizio, verificano che i peer superstiti continuino i round e riconvergano, quindi riavviano il processo e controllano il rejoin. Un ulteriore scenario Compose combina due crash sequenziali e una partizione temporanea, verificando continuità durante l'isolamento, recovery e riconvergenza finale.
 
-Dopo la failure detection del primo nodo arrestato, cinque contributi rimangono eleggibili e tutti i peer superstiti espongono una media pari a 50. Dopo un secondo arresto, quattro nodi risultano eleggibili e la media riconverge a 40. Riavviando progressivamente i processi, il sistema ritorna prima a cinque nodi e valore 50 e successivamente alla configurazione originale con sei nodi e valore 60.
+Le evidenze non vengono fuse in un unico benchmark. In particolare, la sequenza illustrativa $60\rightarrow50\rightarrow40\rightarrow50\rightarrow60$, ottenibile escludendo e reintegrando nell'ordine i contributi 110 e 90, descrive la semantica attesa della media sui soli nodi \texttt{alive}; non è presentata come una misura end-to-end del Compose a sei nodi.
 
-\begin{table}[t]
-\centering
-\caption{Evoluzione della media durante crash e rejoin}
-\label{tab:fault}
-\footnotesize
-\begin{tabular}{@{}lcc@{}}
-\toprule
-\textbf{Fase} & \textbf{Nodi eleggibili} & \textbf{Media} \\
-\midrule
-Stato iniziale & 6 & 60 \\
-Dopo primo crash & 5 & 50 \\
-Dopo secondo crash & 4 & 40 \\
-Primo rejoin & 5 & 50 \\
-Riconvergenza finale & 6 & 60 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-L'esperimento evidenzia due proprietà differenti. Innanzitutto, l'indisponibilità di un nodo non arresta i round gossip dei peer superstiti. In secondo luogo, il valore aggregato è \emph{membership-aware}: dopo che la failure detection rende un contributo non eleggibile, il risultato viene ricalcolato esclusivamente sui nodi considerati attivi.
-
-Al rejoin, la generation persistente del processo aumenta. La nuova incarnation prevale quindi sul precedente stato della membership e il contributo viene nuovamente incluso, consentendo il ritorno al valore iniziale.
+Le prove mostrano due proprietà nel perimetro dei crash fail-stop considerati: l'indisponibilità di un nodo non arresta i round dei peer superstiti e, dopo la transizione di membership, il contributo non eleggibile viene escluso dal risultato visibile senza cancellarne necessariamente i metadata. Al restart, la generation superiore permette alla nuova incarnation di prevalere sullo stato precedente e di rendere nuovamente eleggibile il contributo. Queste proprietà non costituiscono tolleranza a fault arbitrari o bizantini.
 
 \subsection{Valutazione con Traffic Control}
 
@@ -400,11 +366,11 @@ node-6 & 2000 & 400 \\
 \end{tabular}
 \end{table}
 
-Il jitter corrisponde al 20\% del delay configurato. \texttt{node-1} opera come riferimento senza NetEm, mentre gli altri nodi ricevono condizioni progressivamente più severe.
+Il jitter corrisponde al 20\% del delay configurato. \texttt{node-1} opera come riferimento senza NetEm, mentre gli altri nodi ricevono condizioni progressivamente più severe. La qdisc agisce sull'egress di ciascun container: il valore tabellato è quindi direzionale e non equivale direttamente a un RTT WAN.
 
-In una delle esecuzioni locali registrate per \emph{average}, la baseline senza Traffic Control convergeva stabilmente a circa \AvgConvTime~s. Con i profili NetEm attivi, tutti i nodi sono stati osservati sul valore corretto per la prima volta a circa \TCLocalFirstConv~s; l'osservazione è proseguita fino a \TCLocalStable~s per verificare che il risultato rimanesse stabile.
+In una delle esecuzioni locali registrate per \emph{average}, la baseline senza Traffic Control raggiungeva il criterio della pipeline a circa \AvgConvTime~s. Tale misura appartiene ai grafici baseline, privi di delay artificiale. Nella run separata con NetEm, tutti i nodi sono stati osservati simultaneamente sul valore corretto per la prima volta a circa \TCLocalFirstConv~s e il monitor ha terminato con un nuovo controllo simultaneamente positivo a \TCLocalStable~s.
 
-L'esperimento mostra quindi che l'introduzione di ritardi artificiali può aumentare il tempo necessario alla disseminazione completa dello stato senza impedire la convergenza.
+Il monitor registra senza sovrascriverlo il primo istante in cui i sei nodi sono entro la tolleranza assoluta di $10^{-6}$, continua l'osservazione e ritorna in attesa in caso di regressione. Il successo richiede che tutti i nodi siano nuovamente entro tolleranza dopo almeno 8 s dall'avvio del monitor; non equivale a certificare otto secondi consecutivi senza regressioni. Nelle esecuzioni osservate il tempo di prima convergenza con TC è risultato maggiore della baseline, ma una singola coppia di run non stabilisce una relazione prestazionale generale.
 
 Lo script invalida inoltre un'esecuzione se individua transizioni \texttt{alive} $\rightarrow$ \texttt{suspect} mentre tutti i container risultano ancora in esecuzione. Questo evita di interpretare come valido un esperimento nel quale i ritardi artificiali sono incompatibili con i timeout della membership.
 
@@ -412,9 +378,9 @@ Lo script invalida inoltre un'esecuzione se individua transizioni \texttt{alive}
 
 Il cluster è stato distribuito anche su una singola istanza EC2 nell'ambiente AWS Academy Learner Lab. I nodi continuano a essere eseguiti come container distinti e comunicano sulla rete bridge interna.
 
-La modalità Traffic Control è stata verificata anche in tale ambiente. Nell'esecuzione attualmente registrata con i profili definitivi 0--2000 ms, tutti i nodi hanno raggiunto l'oracle della media entro circa \TCAWSFirstConv~s e l'osservazione è proseguita fino a circa \TCAWSStable~s. La qdisc NetEm è stata verificata direttamente tramite \texttt{tc -s qdisc}, confermando l'applicazione del delay e del jitter configurati. Il controllo dei log dell'esecuzione definitiva non ha evidenziato transizioni spurie da \texttt{alive} a \texttt{suspect}.
+La modalità Traffic Control è stata verificata anche in tale ambiente. Nell'esecuzione attualmente registrata con i profili definitivi 0--2000 ms, tutti i nodi hanno raggiunto simultaneamente l'oracle della media per la prima volta a circa \TCAWSFirstConv~s e un controllo simultaneamente positivo è stato osservato a circa \TCAWSStable~s. La qdisc NetEm è stata verificata tramite \texttt{tc -s qdisc}; nei log della run non sono state osservate transizioni spurie da \texttt{alive} a \texttt{suspect}. Anche questi valori descrivono una singola esecuzione provvisoria.
 
-Questo esperimento non viene utilizzato per sostenere che EC2 sia più veloce dell'ambiente locale: le due esecuzioni sono influenzate da scheduling, startup e risorse differenti. Il risultato è invece utilizzato come verifica della portabilità del deployment e della capacità del protocollo di convergere anche in presenza di delay sintetico su una macchina cloud Linux.
+Questo esperimento non viene utilizzato per sostenere che EC2 sia più veloce dell'ambiente locale: le due esecuzioni sono influenzate da scheduling, startup e risorse differenti. Il risultato verifica invece l'esecuzione del deployment richiesto su una VM cloud Linux. I container condividono host, kernel, bridge e failure domain: non si tratta di un cluster multi-EC2.
 
 \IfFileExists{figures/baseline_vs_tc.pdf}{
 \begin{figure}[t]
@@ -429,17 +395,19 @@ Questo esperimento non viene utilizzato per sostenere che EC2 sia più veloce de
 \section{Discussione}
 % =========================================================
 
-Gli esperimenti mostrano che la combinazione di gossip periodico, stato versionato e merge deterministico è sufficiente a portare i nodi allo stesso risultato nelle topologie considerate. La convergenza non dipende dall'esistenza di un processo coordinatore e la perdita temporanea di un peer non blocca la progressione dei round degli altri nodi.
+Le prove sulle topologie considerate mostrano che gossip periodico, stato versionato e merge deterministico portano i nodi allo stesso risultato negli scenari osservati. La convergenza non dipende da un processo coordinatore e la perdita temporanea di un peer non blocca la progressione dei round degli altri nodi.
 
 Un elemento rilevante è l'integrazione tra membership e aggregazione. La semplice memorizzazione di tutti i contributi ricevuti non sarebbe sufficiente in presenza di crash: un valore appartenente a un nodo non più operativo continuerebbe altrimenti a influenzare il risultato. Separando conoscenza del contributo ed eleggibilità del nodo, il sistema può mantenere i metadata senza considerarli necessariamente nel valore corrente.
 
 La generation persistente risolve inoltre un problema tipico del rejoin. Dopo il restart, la stessa identità logica deve essere distinguibile dalla precedente incarnazione, altrimenti tombstone o informazioni obsolete potrebbero impedire la reintegrazione del nodo. L'uso coordinato della generation come incarnation della membership e come epoch dello stato fornisce un ordinamento tra esecuzioni successive.
 
-I risultati di Traffic Control evidenziano che la convergenza viene mantenuta anche con delay e jitter significativamente superiori rispetto all'esecuzione baseline. L'esperimento deve tuttavia essere interpretato con cautela. NetEm introduce un delay egress sintetico all'interno di una topologia single-host e non riproduce completamente una WAN reale, nella quale intervengono routing, congestione, perdita correlata, variazioni dell'RTT e failure indipendenti delle macchine.
+Nelle run Traffic Control osservate il protocollo ha raggiunto l'oracle anche con delay e jitter artificiali, ma il confronto quantitativo con la baseline resta descrittivo. NetEm introduce delay egress sintetico in una topologia single-host e non riproduce una WAN reale, nella quale intervengono routing, congestione, perdita correlata, variazioni dell'RTT e failure indipendenti delle macchine.
 
-Anche la valutazione della scalabilità presenta limiti. I deployment effettivamente verificati comprendono tre e sei nodi, mentre test in-memory coprono topologie leggermente più grandi. Inoltre, nella configurazione principale a sei nodi il fanout è 5: ogni processo può quindi raggiungere tutti gli altri peer in un singolo round. I tempi osservati non devono essere generalizzati a cluster molto più grandi o a configurazioni con fanout significativamente inferiore.
+Anche la valutazione della scalabilità presenta limiti. I deployment effettivamente considerati comprendono soltanto tre e sei nodi. Inoltre, nella configurazione principale a sei nodi il fanout è 5: ogni processo può quindi raggiungere tutti gli altri peer in un singolo round. Fanout configurabile, selezione rotante e assenza di coordinatore sono scelte orientate alla scalabilità, ma i tempi osservati non dimostrano il comportamento di cluster grandi o con fanout significativamente inferiore.
 
-Il costo di comunicazione per singolo round è limitato dal fanout, ma ciascun messaggio contiene sia informazioni aggregative sia un digest della membership. La dimensione dei payload e la memoria necessaria per conservare contributi versionati crescono pertanto con il numero di partecipanti. Una futura evoluzione potrebbe introdurre tecniche di compattazione o strutture di aggregazione con dimensione indipendente dal numero totale dei nodi.
+Il costo di comunicazione per singolo round è limitato dal fanout, ma ciascun messaggio contiene informazioni aggregative e un digest della membership. Payload e memoria per i contributi versionati crescono pertanto con il numero di partecipanti. Anche la cache in-memory dei \texttt{message\_id} osservati non è limitata durante la vita del processo. Compattazione dello stato e deduplicazione con retention limitata costituiscono possibili sviluppi.
+
+La membership dinamica consente leave, restart e rejoin, ma non equivale a elasticity infrastrutturale. I Compose definiscono topologie statiche e il progetto non implementa autoscaling AWS, provisioning automatico o ridimensionamento autonomo del numero di container.
 
 L'uso di UDP riduce l'overhead del transport ma non garantisce consegna, ordine o protezione da frammentazione. L'implementazione compensa duplicati e riordinamento a livello applicativo, mentre la perdita viene assorbita dai round successivi. Non sono invece implementati autenticazione, cifratura del gossip o meccanismi Byzantine fault tolerant.
 
@@ -451,11 +419,11 @@ Infine, i tempi di convergenza riportati in questa versione derivano da singole 
 
 È stato progettato e implementato un servizio decentralizzato per l'aggregazione distribuita di dati mediante gossip. La soluzione supporta somma, media, minimo e massimo, utilizza comunicazione UDP peer-to-peer e non richiede un coordinatore centrale per la computazione.
 
-Il sistema integra versionamento dello stato, deduplicazione, failure detection, membership dinamica e generation persistenti per gestire crash e rejoin. Le aggregazioni sono consapevoli dello stato della membership e utilizzano soltanto i contributi dei nodi considerati attivi.
+Il sistema integra versionamento, deduplicazione, failure detection, membership dinamica e generation durevoli per gestire gli scenari considerati di crash fail-stop e rejoin. Le aggregazioni utilizzano soltanto i contributi dei nodi considerati attivi.
 
-Gli esperimenti su un cluster Docker Compose a sei nodi mostrano la convergenza ai quattro oracle attesi. Gli scenari di fault injection mostrano inoltre il ricalcolo dell'aggregato dopo la perdita di nodi e la successiva riconvergenza al loro rientro. Gli esperimenti NetEm dimostrano che il protocollo mantiene la convergenza anche con delay e jitter artificiali, mentre il deployment su AWS EC2 verifica la riproducibilità della soluzione nell'ambiente cloud previsto.
+Le singole run rappresentative sul cluster Docker Compose a sei nodi raggiungono i quattro oracle attesi. Test distinti verificano failure detection, continuità dei peer superstiti, esclusione membership-aware, restart/rejoin e recovery dopo una partizione temporanea. Le run NetEm osservate raggiungono l'oracle in presenza di delay e jitter artificiali, mentre il deployment Docker Compose su una singola EC2 verifica l'eseguibilità nell'ambiente cloud previsto.
 
-Il lavoro soddisfa quindi l'obiettivo di realizzare una computazione aggregativa decentralizzata e fault tolerant, lasciando come possibili sviluppi futuri una valutazione su cluster di dimensioni maggiori, la riduzione della dimensione dei messaggi e l'introduzione di meccanismi di sicurezza per la comunicazione tra peer.
+Il lavoro soddisfa quindi l'obiettivo di realizzare una computazione aggregativa decentralizzata che continui a operare nei fault fail-stop verificati. Restano come sviluppi futuri una valutazione ripetuta su cluster più grandi, la riduzione dello stato scambiato e meccanismi di sicurezza tra peer.
 
 \balance
 
@@ -503,9 +471,9 @@ Docker Inc.,
 [Online]. Available: \url{https://docs.docker.com/compose/}
 
 \bibitem{netem}
-Linux Foundation,
-``tc-netem---Network emulator,''
-Linux manual page.
+S. Hemminger,
+``tc-netem(8)---Network emulator,''
+\emph{iproute2 manual page}.
 [Online]. Available: \url{https://man7.org/linux/man-pages/man8/tc-netem.8.html}
 
 \bibitem{awsec2}
