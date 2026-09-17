@@ -1,0 +1,518 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{url}
+\usepackage[caption=false,font=footnotesize]{subfig}
+\usepackage{balance}
+
+% =========================================================
+% RISULTATI SPERIMENTALI
+% I valori seguenti corrispondono alle esecuzioni attualmente
+% disponibili. Prima della consegna sostituirli con quelli
+% ottenuti dagli ultimi run definitivi.
+% =========================================================
+\newcommand{\AvgConvTime}{2.010}
+\newcommand{\SumConvTime}{1.069}
+\newcommand{\MinConvTime}{2.008}
+\newcommand{\MaxConvTime}{1.054}
+
+\newcommand{\TCLocalFirstConv}{4}
+\newcommand{\TCLocalStable}{9}
+\newcommand{\TCAWSFirstConv}{2}
+\newcommand{\TCAWSStable}{10}
+
+\begin{document}
+
+\title{Gossip-Based Distributed Data Aggregation}
+
+\author{
+\IEEEauthorblockN{Luca Capone}
+\IEEEauthorblockA{
+Dipartimento di Informatica\\
+Università degli Studi di Roma Tor Vergata\\
+Roma, Italia
+}
+}
+
+\maketitle
+
+\begin{abstract}
+Questo lavoro presenta la progettazione, l'implementazione e la valutazione di un servizio decentralizzato per l'aggregazione distribuita dei dati basato su protocollo gossip. Il sistema è sviluppato in Go e non utilizza un coordinatore centrale per il calcolo dell'aggregato: ogni nodo mantiene una vista locale della membership e dello stato aggregativo, scambia periodicamente informazioni con gli altri peer tramite UDP e applica regole deterministiche e idempotenti di merge. Sono supportate quattro operazioni di aggregazione: somma, media, minimo e massimo. Il sistema include inoltre failure detection, gestione di join, leave e rejoin, versionamento persistente dello stato e osservabilità tramite log strutturati e metriche. La soluzione è stata valutata mediante test unitari, test d'integrazione e cluster Docker Compose a tre e sei nodi, includendo scenari di crash e successivo rejoin. Una modalità sperimentale basata su Linux Traffic Control e NetEm introduce delay e jitter artificiali per studiare l'effetto della rete sulla convergenza. Il deployment è stato inoltre verificato su una singola istanza AWS EC2. I risultati mostrano la convergenza dei sei nodi agli aggregati attesi e la capacità del sistema di riconvergere in seguito a variazioni della membership e a condizioni di rete degradate.
+\end{abstract}
+
+\begin{IEEEkeywords}
+sistemi distribuiti, gossip protocol, aggregazione distribuita, convergenza eventuale, fault tolerance, membership, Docker Compose, AWS EC2, Traffic Control
+\end{IEEEkeywords}
+
+% =========================================================
+\section{Introduzione}
+% =========================================================
+
+L'aggregazione di informazioni prodotte da molteplici nodi è un problema ricorrente nei sistemi distribuiti. Operazioni quali somma, media, minimo e massimo sono semplici quando i dati sono raccolti da un singolo processo, ma diventano più complesse quando i contributi sono distribuiti tra nodi indipendenti, la comunicazione può essere ritardata o persa e i partecipanti possono entrare, uscire o fallire durante l'esecuzione.
+
+Un approccio centralizzato, nel quale tutti i nodi inviano i propri valori a un coordinatore, semplifica il calcolo ma introduce un punto privilegiato dell'architettura e può rappresentare un limite per fault tolerance e scalabilità. I protocolli gossip adottano invece una strategia decentralizzata: i nodi scambiano periodicamente informazioni con un sottoinsieme di peer e propagano progressivamente lo stato nel sistema \cite{demers1987,jelasity2005}. Tali protocolli privilegiano disponibilità, semplicità e convergenza eventuale rispetto a proprietà di consistenza forte.
+
+Questo progetto realizza un servizio di \emph{gossip-based distributed data aggregation} completamente implementato in Go. Ogni nodo è equivalente agli altri e mantiene localmente sia i contributi necessari al calcolo dell'aggregato sia una vista della membership. Seed statici o un eventuale servizio di join sono utilizzati esclusivamente per il bootstrap; dopo l'avvio, aggregazione, disseminazione dello stato e failure detection procedono tramite comunicazione peer-to-peer.
+
+Il sistema supporta quattro operazioni: \emph{sum}, \emph{average}, \emph{min} e \emph{max}. L'architettura integra inoltre deduplicazione dei messaggi, versionamento dello stato, gestione dei messaggi fuori ordine, stati di membership \texttt{alive}, \texttt{suspect}, \texttt{dead} e \texttt{leave}, nonché restart e rejoin della stessa identità logica.
+
+La valutazione considera correttezza dell'aggregazione, convergenza, comportamento in presenza di crash, riconvergenza dopo il rejoin e sensibilità ai ritardi di rete. Il sistema viene eseguito tramite Docker Compose sia localmente sia su una singola istanza AWS EC2. Una modalità sperimentale separata utilizza Linux \texttt{tc/netem} per introdurre delay e jitter artificiali senza modificare l'algoritmo applicativo.
+
+Il codice sorgente e la documentazione tecnica del progetto sono disponibili nel repository GitHub del progetto.\footnote{\url{https://github.com/lucacapone/SDCC-project}}
+
+% =========================================================
+\section{Contesto e fondamenti}
+% =========================================================
+
+\subsection{Protocolli gossip}
+
+I protocolli gossip, o epidemic protocols, diffondono informazione attraverso interazioni ripetute tra nodi invece di affidarsi a un coordinatore globale. L'idea deriva dagli algoritmi epidemici utilizzati per la manutenzione di database replicati \cite{demers1987}. A ogni round un nodo seleziona uno o più peer, comunica parte del proprio stato e integra le informazioni ricevute.
+
+Questo modello presenta proprietà utili nei sistemi distribuiti: non richiede una topologia rigida, tollera la perdita di singoli messaggi e consente alla conoscenza di propagarsi attraverso scambi successivi. Il prezzo da pagare è che i nodi possono mantenere temporaneamente viste differenti del sistema.
+
+Il gossip può essere utilizzato direttamente anche per la computazione di informazioni aggregate. In letteratura sono state proposte tecniche per la computazione decentralizzata di somme, medie e altre funzioni globali \cite{kempe2003,jelasity2005}. Il presente lavoro segue la stessa filosofia generale, ma mantiene esplicitamente contributi versionati associati alle identità dei nodi, così da integrare il calcolo dell'aggregato con la membership dinamica.
+
+\subsection{Convergenza eventuale}
+
+Il sistema non tenta di garantire consistenza forte o linearizzabilità. L'obiettivo è la \emph{convergenza eventuale}: se la membership diventa stabile, non vengono introdotti nuovi contributi e i messaggi continuano a essere scambiati, i nodi devono convergere allo stesso insieme di informazioni e quindi allo stesso risultato aggregato.
+
+Per ottenere questa proprietà, gli update sono associati a versioni e le operazioni di merge evitano regressioni quando arrivano messaggi duplicati o fuori ordine. Tale approccio presenta analogie con strutture dati convergenti e con i principi dei Conflict-Free Replicated Data Types \cite{shapiro2011}, pur non implementando un CRDT generico.
+
+\subsection{Membership e failure detection}
+
+In un ambiente distribuito l'aggregazione non può essere separata dalla conoscenza dei nodi attivi. Un valore appartenente a un nodo definitivamente non raggiungibile non deve continuare necessariamente a contribuire al risultato corrente.
+
+Il sistema utilizza una membership locale con quattro stati: \texttt{alive}, \texttt{suspect}, \texttt{dead} e \texttt{leave}. I messaggi gossip ricevuti agiscono anche come heartbeat impliciti. La transizione verso \texttt{suspect} e successivamente \texttt{dead} è determinata da timeout. Il modello è concettualmente vicino ai protocolli di membership infection-style, come SWIM \cite{das2002}, pur adottando una propria implementazione e integrandola direttamente con lo stato aggregativo.
+
+% =========================================================
+\section{Progettazione della soluzione}
+% =========================================================
+
+\subsection{Obiettivi di progetto}
+
+La soluzione è stata progettata perseguendo cinque obiettivi principali:
+
+\begin{enumerate}
+    \item eliminare un coordinatore centrale dal calcolo degli aggregati;
+    \item garantire convergenza in presenza di messaggi duplicati o fuori ordine;
+    \item continuare l'elaborazione quando uno o più nodi diventano indisponibili;
+    \item consentire a un nodo riavviato di rientrare correttamente nel cluster;
+    \item rendere configurabili i parametri di rete, gossip, membership e aggregazione.
+\end{enumerate}
+
+Tutti i nodi eseguono lo stesso processo Go e sono logicamente equivalenti. La presenza di seed peer o di un endpoint di join influenza soltanto il bootstrap e non introduce un nodo responsabile della computazione globale.
+
+\IfFileExists{figures/architecture.pdf}{
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/architecture.pdf}
+    \caption{Architettura logica del sistema. Ogni nodo mantiene stato aggregativo e membership e comunica direttamente con gli altri peer tramite gossip UDP.}
+    \label{fig:architecture}
+\end{figure}
+}{}
+
+\subsection{Componenti di un nodo}
+
+L'implementazione separa le responsabilità principali in moduli. Il package di configurazione gestisce default, file YAML/JSON, override tramite variabili di ambiente e validazione. Il modulo \emph{identity} assegna una generation persistente al processo. La membership conserva lo stato dei peer e applica timeout e transizioni. Il transport implementa la comunicazione UDP, mentre il gossip engine gestisce round, selezione dei peer, invio, ricezione e merge. Il package di aggregazione implementa le quattro operazioni supportate. Infine, il modulo di observability raccoglie metriche ed emette log strutturati.
+
+Lo stato mutabile del gossip engine è sincronizzato per consentire al loop periodico dei round e al percorso di ricezione dei messaggi di operare in concorrenza.
+
+\subsection{Stato locale e messaggi}
+
+Ogni messaggio gossip contiene almeno l'identità dell'origine, un identificatore del messaggio, un timestamp, la versione del protocollo, una versione dello stato, lo stato aggregativo e un digest della membership.
+
+La versione dello stato è rappresentata dalla coppia
+\begin{equation}
+V=(epoch,counter).
+\end{equation}
+
+L'\emph{epoch} deriva dalla generation persistente del processo e cambia a ogni nuovo avvio della stessa identità. Il \emph{counter} cresce invece durante la singola esecuzione.
+
+L'identificatore del messaggio permette di rilevare consegne duplicate, mentre la versione permette di distinguere informazioni nuove da informazioni obsolete. Un contributo associato a uno specifico nodo viene sostituito soltanto da una versione più recente. Questa scelta evita che un datagramma ritardato possa riportare lo stato a una versione precedente.
+
+\subsection{Protocollo di disseminazione}
+
+Il protocollo implementato è di tipo \emph{push}. A ogni intervallo di gossip il nodo:
+
+\begin{enumerate}
+    \item aggiorna la membership applicando eventuali timeout;
+    \item aggiorna il proprio contributo e ricalcola la stima;
+    \item incrementa round e versione locale;
+    \item esclude se stesso e i peer non eleggibili;
+    \item ordina i peer disponibili;
+    \item invia il proprio stato a un massimo di \texttt{fanout} peer.
+\end{enumerate}
+
+La selezione utilizza una finestra circolare deterministica. In una membership stabile con $N$ target, l'intero insieme dei peer viene visitato entro un massimo teorico di
+\begin{equation}
+\left\lceil\frac{N}{fanout}\right\rceil
+\end{equation}
+round.
+
+Non viene effettuato un retry immediato del singolo datagramma UDP fallito. La ridondanza è ottenuta naturalmente attraverso i round successivi.
+
+\subsection{Membership-aware aggregation}
+
+Sia membership sia aggregazione partecipano al calcolo del risultato esposto. Indichiamo con $\mathcal{A}$ l'insieme delle identità considerate \texttt{alive} in un determinato nodo.
+
+Per i valori locali $v_i$, la somma è
+\begin{equation}
+S=\sum_{i\in\mathcal{A}} v_i.
+\end{equation}
+
+La media è
+\begin{equation}
+\overline{x}=\frac{\sum_{i\in\mathcal{A}} v_i}{|\mathcal{A}|}.
+\end{equation}
+
+Minimo e massimo sono rispettivamente
+\begin{equation}
+m=\min_{i\in\mathcal{A}} v_i,
+\qquad
+M=\max_{i\in\mathcal{A}} v_i.
+\end{equation}
+
+Nell'implementazione della media ogni nodo conserva metadata di tipo somma/conteggio, mantenendo separato il contributo originario dalla stima corrente per evitare fenomeni di drift.
+
+I contributi appartenenti a nodi \texttt{suspect}, \texttt{dead} o \texttt{leave} non partecipano al risultato visibile, ma possono essere conservati nei metadata. Questo consente di reagire alla failure detection senza distruggere informazioni potenzialmente utili in caso di rejoin.
+
+% =========================================================
+\section{Dettagli della soluzione}
+% =========================================================
+
+\subsection{Failure detection e rejoin}
+
+Il parametro esterno \texttt{membership\_timeout\_ms} viene trasformato in due soglie:
+\begin{equation}
+T_{suspect}=\max(1\text{ ms},T_m/2),
+\end{equation}
+\begin{equation}
+T_{dead}=\max(T_{suspect}+1\text{ ms},T_m),
+\end{equation}
+dove $T_m$ è il membership timeout configurato.
+
+La configurazione viene rifiutata se la soglia di sospetto non è compatibile con il tempo necessario al gossip per coprire i peer configurati. Questo controllo riduce la probabilità di classificare erroneamente come non raggiungibile un nodo che semplicemente non è ancora stato contattato.
+
+Quando un processo viene riavviato, mantiene la stessa \texttt{node\_id} ma incrementa la propria generation persistente. Tale generation viene utilizzata anche come incarnation della membership e come epoch dello stato. Di conseguenza, il nuovo processo può prevalere su informazioni o tombstone appartenenti alla precedente esecuzione.
+
+I volumi Docker associati individualmente ai nodi preservano tale generation attraverso operazioni di stop/start.
+
+\subsection{Configurazione}
+
+Non vengono utilizzati parametri operativi hard-coded come unica modalità di configurazione. Il loader segue la precedenza
+\begin{equation}
+default \rightarrow file \rightarrow environment \rightarrow validation.
+\end{equation}
+
+Sono supportati file YAML e JSON. Tra i parametri configurabili figurano identità, indirizzo e porta del nodo, peer iniziali, intervallo gossip, fanout, timeout della membership, aggregazione, valore iniziale e livello di logging.
+
+Nella configurazione a sei nodi utilizzata negli esperimenti, i valori iniziali sono
+\begin{equation}
+10,\;30,\;50,\;70,\;90,\;110.
+\end{equation}
+
+Gli oracle risultanti sono quindi
+\begin{equation}
+average=60,\quad sum=360,\quad min=10,\quad max=110.
+\end{equation}
+
+Le configurazioni correnti del cluster a sei nodi utilizzano un intervallo gossip di 1000 ms, fanout pari a 5 e membership timeout di 10000 ms. Poiché ogni nodo ha cinque peer, in questo specifico scenario il fanout consente di contattare tutti gli altri partecipanti nello stesso round.
+
+\subsection{Transport e osservabilità}
+
+La comunicazione gossip utilizza UDP. Il transport mantiene un socket persistente e tratta il payload serializzato come una sequenza di byte senza interpretarne il contenuto.
+
+UDP non garantisce consegna né ordinamento. Il sistema non tenta quindi di ottenere affidabilità dal livello di trasporto, ma utilizza versionamento, deduplicazione e ripetizione dei round gossip per tollerare perdite o riordinamenti.
+
+Ogni processo espone inoltre un server HTTP dedicato all'osservabilità, separato dal traffico gossip. Gli endpoint principali sono:
+
+\begin{itemize}
+    \item \texttt{/health}, per la liveness del processo;
+    \item \texttt{/ready}, per verificare che bootstrap ed engine siano stati avviati;
+    \item \texttt{/metrics}, con metriche in formato compatibile con Prometheus.
+\end{itemize}
+
+Le metriche includono numero di round, merge remoti, peer conosciuti, stima corrente, uptime, readiness e stato del lifecycle.
+
+La readiness non coincide con la convergenza: un nodo può essere completamente avviato ma non aver ancora ricevuto tutte le informazioni necessarie per il valore globale corretto.
+
+\subsection{Deployment e testing}
+
+L'immagine applicativa viene costruita tramite Docker con una fase di build Go 1.22 e una runtime image minimale non-root. Docker Compose viene utilizzato per avviare sia il cluster canonico a tre nodi sia la configurazione scale a sei nodi \cite{dockercompose}.
+
+Il deployment cloud utilizza una singola istanza AWS EC2 \cite{awsec2}. I sei nodi sono processi containerizzati indipendenti sulla stessa macchina virtuale e comunicano attraverso una rete bridge Docker. Le porte gossip e observability non devono essere esposte pubblicamente.
+
+La strategia di testing comprende test unitari e contrattuali, test concorrenti e in-memory, test black-box con socket reali e test d'integrazione mediante Docker Compose. Gli scenari includono convergenza, messaggi duplicati e fuori ordine, membership, crash/restart, leave, rejoin, partizioni temporanee e cluster a tre e sei nodi.
+
+La pipeline di misura emette eventi strutturati \texttt{convergence\_sample}. Uno strumento separato raccoglie i log, ricostruisce le serie temporali e genera CSV e grafici SVG. La convergenza viene definita come il primo istante dal quale tutte le serie dei nodi rimangono entro una tolleranza assoluta di 0.05 rispetto all'oracle fino alla fine dei campioni disponibili.
+
+% =========================================================
+\section{Risultati}
+% =========================================================
+
+\subsection{Configurazione sperimentale}
+
+La valutazione principale è stata effettuata sul cluster a sei nodi, considerato lo scenario più rappresentativo tra quelli inclusi nel progetto. Tutti i nodi utilizzano la stessa operazione di aggregazione durante una singola esecuzione.
+
+La Tabella~\ref{tab:setup} riassume la configurazione principale.
+
+\begin{table}[t]
+\centering
+\caption{Configurazione del cluster sperimentale}
+\label{tab:setup}
+\footnotesize
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Parametro} & \textbf{Valore} \\
+\midrule
+Nodi & 6 \\
+Valori & 10, 30, 50, 70, 90, 110 \\
+Transport & UDP \\
+Gossip interval & 1000 ms \\
+Fanout & 5 \\
+Membership timeout & 10000 ms \\
+Deployment & Docker Compose \\
+Aggregazioni & sum, average, min, max \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Convergenza delle aggregazioni}
+
+Per ciascuna operazione il cluster è stato avviato con gli stessi sei contributi. Le serie temporali sono state ricostruite dai campioni generati dai nodi e confrontate con l'oracle calcolato a partire dalle configurazioni.
+
+Nelle esecuzioni attualmente registrate, tutte e quattro le aggregazioni hanno raggiunto il risultato atteso. La Tabella~\ref{tab:convergence} riporta il primo istante di convergenza stabile rilevato dalla pipeline.
+
+\begin{table}[t]
+\centering
+\caption{Convergenza nel cluster a sei nodi}
+\label{tab:convergence}
+\footnotesize
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Aggregazione} & \textbf{Oracle} & \textbf{Tempo [s]} \\
+\midrule
+Average & 60  & \AvgConvTime \\
+Sum     & 360 & \SumConvTime \\
+Min     & 10  & \MinConvTime \\
+Max     & 110 & \MaxConvTime \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In particolare, l'esecuzione più recente della media ha raggiunto convergenza stabile a circa \AvgConvTime~s. Gli altri esperimenti hanno mostrato convergenza a circa \SumConvTime~s per la somma, \MinConvTime~s per il minimo e \MaxConvTime~s per il massimo.
+
+\IfFileExists{figures/convergence_average_6nodes.pdf}{
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/convergence_average_6nodes.pdf}
+    \caption{Convergenza dell'aggregazione average nel cluster a sei nodi.}
+    \label{fig:convergence-average}
+\end{figure}
+}{}
+
+\IfFileExists{figures/convergence_sum_6nodes.pdf}{
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/convergence_sum_6nodes.pdf}
+    \caption{Convergenza dell'aggregazione sum nel cluster a sei nodi.}
+    \label{fig:convergence-sum}
+\end{figure}
+}{}
+
+\IfFileExists{figures/convergence_min_6nodes.pdf}{
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/convergence_min_6nodes.pdf}
+    \caption{Convergenza dell'aggregazione min nel cluster a sei nodi.}
+    \label{fig:convergence-min}
+\end{figure}
+}{}
+
+\IfFileExists{figures/convergence_max_6nodes.pdf}{
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/convergence_max_6nodes.pdf}
+    \caption{Convergenza dell'aggregazione max nel cluster a sei nodi.}
+    \label{fig:convergence-max}
+\end{figure}
+}{}
+
+Questi risultati verificano non soltanto che i nodi raggiungano lo stesso valore, ma anche che tale valore coincida con quello calcolato direttamente sui contributi configurati.
+
+\subsection{Crash, failure detection e rejoin}
+
+La fault tolerance è stata verificata arrestando progressivamente nodi del cluster e osservando l'evoluzione dell'aggregazione media. Il risultato iniziale con sei nodi è 60.
+
+Dopo la failure detection del primo nodo arrestato, cinque contributi rimangono eleggibili e tutti i peer superstiti espongono una media pari a 50. Dopo un secondo arresto, quattro nodi risultano eleggibili e la media riconverge a 40. Riavviando progressivamente i processi, il sistema ritorna prima a cinque nodi e valore 50 e successivamente alla configurazione originale con sei nodi e valore 60.
+
+\begin{table}[t]
+\centering
+\caption{Evoluzione della media durante crash e rejoin}
+\label{tab:fault}
+\footnotesize
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Fase} & \textbf{Nodi eleggibili} & \textbf{Media} \\
+\midrule
+Stato iniziale & 6 & 60 \\
+Dopo primo crash & 5 & 50 \\
+Dopo secondo crash & 4 & 40 \\
+Primo rejoin & 5 & 50 \\
+Riconvergenza finale & 6 & 60 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+L'esperimento evidenzia due proprietà differenti. Innanzitutto, l'indisponibilità di un nodo non arresta i round gossip dei peer superstiti. In secondo luogo, il valore aggregato è \emph{membership-aware}: dopo che la failure detection rende un contributo non eleggibile, il risultato viene ricalcolato esclusivamente sui nodi considerati attivi.
+
+Al rejoin, la generation persistente del processo aumenta. La nuova incarnation prevale quindi sul precedente stato della membership e il contributo viene nuovamente incluso, consentendo il ritorno al valore iniziale.
+
+\subsection{Valutazione con Traffic Control}
+
+Per valutare il comportamento in presenza di comunicazioni più lente è stata realizzata una modalità sperimentale separata basata su Linux Traffic Control e NetEm \cite{netem}. Tale modalità non modifica il binario applicativo, ma applica una qdisc all'interfaccia di rete dei container.
+
+I profili utilizzati sono riportati nella Tabella~\ref{tab:tc}.
+
+\begin{table}[t]
+\centering
+\caption{Profili Traffic Control}
+\label{tab:tc}
+\footnotesize
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Nodo} & \textbf{Delay [ms]} & \textbf{Jitter [ms]} \\
+\midrule
+node-1 & 0    & 0   \\
+node-2 & 400  & 80  \\
+node-3 & 800  & 160 \\
+node-4 & 1200 & 240 \\
+node-5 & 1600 & 320 \\
+node-6 & 2000 & 400 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Il jitter corrisponde al 20\% del delay configurato. \texttt{node-1} opera come riferimento senza NetEm, mentre gli altri nodi ricevono condizioni progressivamente più severe.
+
+In una delle esecuzioni locali registrate per \emph{average}, la baseline senza Traffic Control convergeva stabilmente a circa \AvgConvTime~s. Con i profili NetEm attivi, tutti i nodi sono stati osservati sul valore corretto per la prima volta a circa \TCLocalFirstConv~s; l'osservazione è proseguita fino a \TCLocalStable~s per verificare che il risultato rimanesse stabile.
+
+L'esperimento mostra quindi che l'introduzione di ritardi artificiali può aumentare il tempo necessario alla disseminazione completa dello stato senza impedire la convergenza.
+
+Lo script invalida inoltre un'esecuzione se individua transizioni \texttt{alive} $\rightarrow$ \texttt{suspect} mentre tutti i container risultano ancora in esecuzione. Questo evita di interpretare come valido un esperimento nel quale i ritardi artificiali sono incompatibili con i timeout della membership.
+
+\subsection{Deployment su AWS EC2}
+
+Il cluster è stato distribuito anche su una singola istanza EC2 nell'ambiente AWS Academy Learner Lab. I nodi continuano a essere eseguiti come container distinti e comunicano sulla rete bridge interna.
+
+La modalità Traffic Control è stata verificata anche in tale ambiente. Nell'esecuzione attualmente registrata con i profili definitivi 0--2000 ms, tutti i nodi hanno raggiunto l'oracle della media entro circa \TCAWSFirstConv~s e l'osservazione è proseguita fino a circa \TCAWSStable~s. La qdisc NetEm è stata verificata direttamente tramite \texttt{tc -s qdisc}, confermando l'applicazione del delay e del jitter configurati. Il controllo dei log dell'esecuzione definitiva non ha evidenziato transizioni spurie da \texttt{alive} a \texttt{suspect}.
+
+Questo esperimento non viene utilizzato per sostenere che EC2 sia più veloce dell'ambiente locale: le due esecuzioni sono influenzate da scheduling, startup e risorse differenti. Il risultato è invece utilizzato come verifica della portabilità del deployment e della capacità del protocollo di convergere anche in presenza di delay sintetico su una macchina cloud Linux.
+
+\IfFileExists{figures/baseline_vs_tc.pdf}{
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/baseline_vs_tc.pdf}
+    \caption{Confronto tra convergenza baseline e Traffic Control.}
+    \label{fig:baseline-tc}
+\end{figure}
+}{}
+
+% =========================================================
+\section{Discussione}
+% =========================================================
+
+Gli esperimenti mostrano che la combinazione di gossip periodico, stato versionato e merge deterministico è sufficiente a portare i nodi allo stesso risultato nelle topologie considerate. La convergenza non dipende dall'esistenza di un processo coordinatore e la perdita temporanea di un peer non blocca la progressione dei round degli altri nodi.
+
+Un elemento rilevante è l'integrazione tra membership e aggregazione. La semplice memorizzazione di tutti i contributi ricevuti non sarebbe sufficiente in presenza di crash: un valore appartenente a un nodo non più operativo continuerebbe altrimenti a influenzare il risultato. Separando conoscenza del contributo ed eleggibilità del nodo, il sistema può mantenere i metadata senza considerarli necessariamente nel valore corrente.
+
+La generation persistente risolve inoltre un problema tipico del rejoin. Dopo il restart, la stessa identità logica deve essere distinguibile dalla precedente incarnazione, altrimenti tombstone o informazioni obsolete potrebbero impedire la reintegrazione del nodo. L'uso coordinato della generation come incarnation della membership e come epoch dello stato fornisce un ordinamento tra esecuzioni successive.
+
+I risultati di Traffic Control evidenziano che la convergenza viene mantenuta anche con delay e jitter significativamente superiori rispetto all'esecuzione baseline. L'esperimento deve tuttavia essere interpretato con cautela. NetEm introduce un delay egress sintetico all'interno di una topologia single-host e non riproduce completamente una WAN reale, nella quale intervengono routing, congestione, perdita correlata, variazioni dell'RTT e failure indipendenti delle macchine.
+
+Anche la valutazione della scalabilità presenta limiti. I deployment effettivamente verificati comprendono tre e sei nodi, mentre test in-memory coprono topologie leggermente più grandi. Inoltre, nella configurazione principale a sei nodi il fanout è 5: ogni processo può quindi raggiungere tutti gli altri peer in un singolo round. I tempi osservati non devono essere generalizzati a cluster molto più grandi o a configurazioni con fanout significativamente inferiore.
+
+Il costo di comunicazione per singolo round è limitato dal fanout, ma ciascun messaggio contiene sia informazioni aggregative sia un digest della membership. La dimensione dei payload e la memoria necessaria per conservare contributi versionati crescono pertanto con il numero di partecipanti. Una futura evoluzione potrebbe introdurre tecniche di compattazione o strutture di aggregazione con dimensione indipendente dal numero totale dei nodi.
+
+L'uso di UDP riduce l'overhead del transport ma non garantisce consegna, ordine o protezione da frammentazione. L'implementazione compensa duplicati e riordinamento a livello applicativo, mentre la perdita viene assorbita dai round successivi. Non sono invece implementati autenticazione, cifratura del gossip o meccanismi Byzantine fault tolerant.
+
+Infine, i tempi di convergenza riportati in questa versione derivano da singole esecuzioni rappresentative e devono quindi essere interpretati come misure descrittive, non come stime statistiche delle prestazioni. Una valutazione quantitativa più estesa richiederebbe esecuzioni ripetute nelle stesse condizioni, riportando almeno media, dispersione e intervalli di variabilità.
+
+% =========================================================
+\section{Conclusioni}
+% =========================================================
+
+È stato progettato e implementato un servizio decentralizzato per l'aggregazione distribuita di dati mediante gossip. La soluzione supporta somma, media, minimo e massimo, utilizza comunicazione UDP peer-to-peer e non richiede un coordinatore centrale per la computazione.
+
+Il sistema integra versionamento dello stato, deduplicazione, failure detection, membership dinamica e generation persistenti per gestire crash e rejoin. Le aggregazioni sono consapevoli dello stato della membership e utilizzano soltanto i contributi dei nodi considerati attivi.
+
+Gli esperimenti su un cluster Docker Compose a sei nodi mostrano la convergenza ai quattro oracle attesi. Gli scenari di fault injection mostrano inoltre il ricalcolo dell'aggregato dopo la perdita di nodi e la successiva riconvergenza al loro rientro. Gli esperimenti NetEm dimostrano che il protocollo mantiene la convergenza anche con delay e jitter artificiali, mentre il deployment su AWS EC2 verifica la riproducibilità della soluzione nell'ambiente cloud previsto.
+
+Il lavoro soddisfa quindi l'obiettivo di realizzare una computazione aggregativa decentralizzata e fault tolerant, lasciando come possibili sviluppi futuri una valutazione su cluster di dimensioni maggiori, la riduzione della dimensione dei messaggi e l'introduzione di meccanismi di sicurezza per la comunicazione tra peer.
+
+\balance
+
+% =========================================================
+% RIFERIMENTI
+% =========================================================
+
+\begin{thebibliography}{00}
+
+\bibitem{demers1987}
+A. Demers, D. Greene, C. Hauser, W. Irish, J. Larson, S. Shenker,
+H. Sturgis, D. Swinehart, and D. Terry,
+``Epidemic algorithms for replicated database maintenance,''
+in \emph{Proc. 6th ACM Symposium on Principles of Distributed Computing (PODC)},
+1987, pp. 1--12.
+
+\bibitem{kempe2003}
+D. Kempe, A. Dobra, and J. Gehrke,
+``Gossip-based computation of aggregate information,''
+in \emph{Proc. 44th Annual IEEE Symposium on Foundations of Computer Science (FOCS)},
+2003, pp. 482--491.
+
+\bibitem{jelasity2005}
+M. Jelasity, A. Montresor, and O. Babaoglu,
+``Gossip-based aggregation in large dynamic networks,''
+\emph{ACM Transactions on Computer Systems},
+vol. 23, no. 3, pp. 219--252, 2005.
+
+\bibitem{das2002}
+A. Das, I. Gupta, and A. Motivala,
+``SWIM: Scalable weakly-consistent infection-style process group membership protocol,''
+in \emph{Proc. International Conference on Dependable Systems and Networks (DSN)},
+2002, pp. 303--312.
+
+\bibitem{shapiro2011}
+M. Shapiro, N. Preguiça, C. Baquero, and M. Zawirski,
+``Conflict-free replicated data types,''
+in \emph{Stabilization, Safety, and Security of Distributed Systems},
+Lecture Notes in Computer Science, vol. 6976,
+Springer, 2011, pp. 386--400.
+
+\bibitem{dockercompose}
+Docker Inc.,
+``Docker Compose documentation.''
+[Online]. Available: \url{https://docs.docker.com/compose/}
+
+\bibitem{netem}
+Linux Foundation,
+``tc-netem---Network emulator,''
+Linux manual page.
+[Online]. Available: \url{https://man7.org/linux/man-pages/man8/tc-netem.8.html}
+
+\bibitem{awsec2}
+Amazon Web Services,
+``Amazon EC2 User Guide.''
+[Online]. Available: \url{https://docs.aws.amazon.com/ec2/}
+
+\end{thebibliography}
+
+\end{document}
