@@ -73,7 +73,7 @@ Il codice sorgente e la documentazione tecnica del progetto sono disponibili nel
 
 \subsection{Protocolli gossip}
 
-I protocolli gossip, o epidemic protocols, diffondono informazione attraverso interazioni ripetute tra nodi invece di affidarsi a un coordinatore globale. L'idea deriva dagli algoritmi epidemici utilizzati per la manutenzione di database replicati \cite{demers1987}. A ogni round un nodo seleziona uno o più peer, comunica parte del proprio stato e integra le informazioni ricevute.
+I protocolli gossip costituiscono un paradigma di comunicazione decentralizzato ampiamente utilizzato nei sistemi distribuiti per disseminare stato e realizzare altre forme di coordinamento \cite{vansteen2023,kermarrec2007}. L'idea deriva dagli algoritmi epidemici utilizzati per la manutenzione di database replicati \cite{demers1987}. A ogni round un nodo seleziona uno o più peer, comunica parte del proprio stato e integra le informazioni ricevute.
 
 Questo modello presenta proprietà utili nei sistemi distribuiti: non richiede una topologia rigida, tollera la perdita di singoli messaggi e consente alla conoscenza di propagarsi attraverso scambi successivi. Il prezzo da pagare è che i nodi possono mantenere temporaneamente viste differenti del sistema.
 
@@ -432,6 +432,16 @@ Il lavoro soddisfa quindi l'obiettivo di realizzare una computazione aggregativa
 % =========================================================
 
 \begin{thebibliography}{00}
+
+\bibitem{vansteen2023}
+M. van Steen and A. S. Tanenbaum,
+\emph{Distributed Systems}, 4th ed., 2023.
+
+\bibitem{kermarrec2007}
+A.-M. Kermarrec and M. van Steen,
+``Gossiping in distributed systems,''
+\emph{ACM SIGOPS Operating Systems Review},
+vol. 41, no. 5, pp. 2--7, 2007.
 
 \bibitem{demers1987}
 A. Demers, D. Greene, C. Hauser, W. Irish, J. Larson, S. Shenker,
