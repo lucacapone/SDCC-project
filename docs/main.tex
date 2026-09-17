@@ -14,9 +14,8 @@
 
 % =========================================================
 % RISULTATI SPERIMENTALI
-% I valori seguenti corrispondono alle esecuzioni attualmente
-% disponibili. Prima della consegna sostituirli con quelli
-% ottenuti dagli ultimi run definitivi.
+% I valori seguenti corrispondono alle run rappresentative definitive
+% selezionate per il report; ciascuna misura ha numerosita n=1.
 % =========================================================
 \newcommand{\AvgConvTime}{2.010}
 \newcommand{\SumConvTime}{1.069}
@@ -109,14 +108,12 @@ La soluzione è stata progettata perseguendo cinque obiettivi principali:
 
 Tutti i nodi eseguono lo stesso processo Go e sono logicamente equivalenti. I seed influenzano soltanto il bootstrap e non introducono un nodo responsabile della computazione globale. L'endpoint di join è un'integrazione client opzionale; nessun servizio join centrale fa parte dei deployment forniti.
 
-\IfFileExists{figures/architecture.pdf}{
-\begin{figure}[t]
+\begin{figure*}[t]
     \centering
-    \includegraphics[width=\columnwidth]{figures/architecture.pdf}
-    \caption{Architettura logica del sistema. Ogni nodo mantiene stato aggregativo e membership e comunica direttamente con gli altri peer tramite gossip UDP.}
+    \includegraphics[width=0.94\textwidth]{figures/architecture.png}
+    \caption{Architettura logica del sistema. Ogni nodo equivalente mantiene localmente stato aggregativo e membership, scambia messaggi gossip tramite UDP e pubblica endpoint HTTP di osservabilit\`a; i seed intervengono soltanto nel bootstrap.}
     \label{fig:architecture}
-\end{figure}
-}{}
+\end{figure*}
 
 \subsection{Componenti di un nodo}
 
@@ -269,7 +266,7 @@ La pipeline di misura emette eventi strutturati \texttt{convergence\_sample}. Un
 
 \subsection{Configurazione sperimentale}
 
-La valutazione principale è stata effettuata sul cluster a sei nodi, considerato lo scenario più rappresentativo tra quelli inclusi nel progetto. Tutti i nodi utilizzano la stessa operazione di aggregazione durante una singola esecuzione. I valori temporali correnti derivano da una singola run rappresentativa per aggregazione ($n=1$): sono misure descrittive provvisorie, non medie statistiche, bound o prestazioni garantite.
+La valutazione principale è stata effettuata sul cluster a sei nodi, considerato lo scenario più rappresentativo tra quelli inclusi nel progetto. Tutti i nodi utilizzano la stessa operazione di aggregazione durante una singola esecuzione. I valori temporali riportati sono i risultati definitivi delle run selezionate, una singola run rappresentativa per aggregazione ($n=1$): sono misure descrittive, non medie statistiche, bound o prestazioni garantite.
 
 La Tabella~\ref{tab:setup} riassume la configurazione principale.
 
@@ -298,38 +295,37 @@ Aggregazioni & sum, average, min, max \\
 
 Per ciascuna operazione il cluster è stato avviato con gli stessi sei contributi. Le serie temporali sono state ricostruite dai campioni generati dai nodi e confrontate con l'oracle calcolato a partire dalle configurazioni.
 
-Nelle esecuzioni attualmente registrate, tutte e quattro le aggregazioni hanno raggiunto il risultato atteso. La Tabella~\ref{tab:convergence} riporta il primo istante di convergenza stabile rilevato dalla pipeline.
+Nelle run baseline selezionate, tutte e quattro le aggregazioni hanno raggiunto il risultato atteso con tutti i sei nodi osservati. La Tabella~\ref{tab:convergence} riporta il primo istante dal quale tutte le serie restano entro la tolleranza assoluta 0.05 fino alla fine della finestra osservata.
 
 \begin{table}[t]
 \centering
 \caption{Convergenza nel cluster a sei nodi}
 \label{tab:convergence}
-\footnotesize
-\begin{tabular}{@{}lrr@{}}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrr@{}}
 \toprule
-\textbf{Aggregazione} & \textbf{Oracle} & \textbf{Tempo [s]} \\
+\textbf{Aggregazione} & \textbf{Oracle} & \textbf{Tempo [s]} & \textbf{Campioni} & \textbf{Nodi} \\
 \midrule
-Average & 60  & \AvgConvTime \\
-Sum     & 360 & \SumConvTime \\
-Min     & 10  & \MinConvTime \\
-Max     & 110 & \MaxConvTime \\
+Average & 60  & \AvgConvTime & 152 & 6/6 \\
+Sum     & 360 & \SumConvTime & 153 & 6/6 \\
+Min     & 10  & \MinConvTime & 134 & 6/6 \\
+Max     & 110 & \MaxConvTime & 138 & 6/6 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-In particolare, l'esecuzione più recente della media ha raggiunto convergenza stabile a circa \AvgConvTime~s. Gli altri esperimenti hanno mostrato convergenza a circa \SumConvTime~s per la somma, \MinConvTime~s per il minimo e \MaxConvTime~s per il massimo.
+In particolare, le run definitive selezionate hanno raggiunto il criterio della pipeline a \AvgConvTime~s per la media, \SumConvTime~s per la somma, \MinConvTime~s per il minimo e \MaxConvTime~s per il massimo. Ogni valore deriva da una sola esecuzione e non costituisce una media statistica o un benchmark prestazionale generale.
 
-\IfFileExists{figures/convergence_average_6nodes.pdf}{
 \begin{figure*}[t]
     \centering
-    \subfloat[Average]{\includegraphics[width=0.48\textwidth]{figures/convergence_average_6nodes.pdf}}\hfill
-    \subfloat[Sum]{\includegraphics[width=0.48\textwidth]{figures/convergence_sum_6nodes.pdf}}\\
-    \subfloat[Min]{\includegraphics[width=0.48\textwidth]{figures/convergence_min_6nodes.pdf}}\hfill
-    \subfloat[Max]{\includegraphics[width=0.48\textwidth]{figures/convergence_max_6nodes.pdf}}
+    \subfloat[Average]{\includegraphics[width=0.48\textwidth]{figures/convergence_average_6nodes.png}}\hfill
+    \subfloat[Sum]{\includegraphics[width=0.48\textwidth]{figures/convergence_sum_6nodes.png}}\\
+    \subfloat[Min]{\includegraphics[width=0.48\textwidth]{figures/convergence_min_6nodes.png}}\hfill
+    \subfloat[Max]{\includegraphics[width=0.48\textwidth]{figures/convergence_max_6nodes.png}}
     \caption{Serie di convergenza baseline, senza delay NetEm, per le quattro aggregazioni sul cluster a sei nodi. Le linee di riferimento rappresentano gli oracle configurati.}
     \label{fig:convergence-aggregations}
 \end{figure*}
-}{}
 
 Questi risultati verificano non soltanto che i nodi raggiungano lo stesso valore, ma anche che tale valore coincida con quello calcolato direttamente sui contributi configurati.
 
@@ -366,7 +362,7 @@ node-6 & 2000 & 400 \\
 
 Il jitter corrisponde al 20\% del delay configurato. \texttt{node-1} opera come riferimento senza NetEm, mentre gli altri nodi ricevono condizioni progressivamente più severe. La qdisc agisce sull'egress di ciascun container: il valore tabellato è quindi direzionale e non equivale direttamente a un RTT WAN.
 
-In una delle esecuzioni locali registrate per \emph{average}, la baseline senza Traffic Control raggiungeva il criterio della pipeline a circa \AvgConvTime~s. Tale misura appartiene ai grafici baseline, privi di delay artificiale. Nella run separata con NetEm, tutti i nodi sono stati osservati simultaneamente sul valore corretto per la prima volta a circa \TCLocalFirstConv~s e il monitor ha terminato con un nuovo controllo simultaneamente positivo a \TCLocalStable~s.
+Nella run baseline locale definitiva selezionata per \emph{average}, il criterio della pipeline è stato raggiunto a \AvgConvTime~s. Tale misura appartiene ai grafici baseline, privi di delay artificiale. Nella run rappresentativa definitiva separata con NetEm, tutti i nodi sono stati osservati simultaneamente sul valore corretto per la prima volta a \TCLocalFirstConv~s e il monitor ha terminato con un controllo conclusivo simultaneamente positivo a \TCLocalStable~s.
 
 Il monitor registra senza sovrascriverlo il primo istante in cui i sei nodi sono entro la tolleranza assoluta di $10^{-6}$, continua l'osservazione e ritorna in attesa in caso di regressione. Il successo richiede che tutti i nodi siano nuovamente entro tolleranza dopo almeno 8 s dall'avvio del monitor; non equivale a certificare otto secondi consecutivi senza regressioni. Nelle esecuzioni osservate il tempo di prima convergenza con TC è risultato maggiore della baseline, ma una singola coppia di run non stabilisce una relazione prestazionale generale.
 
@@ -376,18 +372,28 @@ Lo script invalida inoltre un'esecuzione se individua transizioni \texttt{alive}
 
 Il cluster è stato distribuito anche su una singola istanza EC2 nell'ambiente AWS Academy Learner Lab. I nodi continuano a essere eseguiti come container distinti e comunicano sulla rete bridge interna.
 
-La modalità Traffic Control è stata verificata anche in tale ambiente. Nell'esecuzione attualmente registrata con i profili definitivi 0--2000 ms, tutti i nodi hanno raggiunto simultaneamente l'oracle della media per la prima volta a circa \TCAWSFirstConv~s e un controllo simultaneamente positivo è stato osservato a circa \TCAWSStable~s. La qdisc NetEm è stata verificata tramite \texttt{tc -s qdisc}; nei log della run non sono state osservate transizioni spurie da \texttt{alive} a \texttt{suspect}. Anche questi valori descrivono una singola esecuzione provvisoria.
+La modalità Traffic Control è stata verificata anche in tale ambiente. Nella run rappresentativa definitiva con i profili 0--2000 ms, tutti i nodi hanno raggiunto simultaneamente l'oracle della media per la prima volta a circa \TCAWSFirstConv~s e un controllo conclusivo simultaneamente positivo è stato osservato a circa \TCAWSStable~s. La qdisc NetEm è stata verificata tramite \texttt{tc -s qdisc}; nei log della run non sono state osservate transizioni spurie da \texttt{alive} a \texttt{suspect}. Anche questi valori descrivono una singola esecuzione ($n=1$).
 
 Questo esperimento non viene utilizzato per sostenere che EC2 sia più veloce dell'ambiente locale: le due esecuzioni sono influenzate da scheduling, startup e risorse differenti. Il risultato verifica invece l'esecuzione del deployment richiesto su una VM cloud Linux. I container condividono host, kernel, bridge e failure domain: non si tratta di un cluster multi-EC2.
 
-\IfFileExists{figures/baseline_vs_tc.pdf}{
-\begin{figure}[t]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/baseline_vs_tc.pdf}
-    \caption{Confronto tra convergenza baseline e Traffic Control.}
-    \label{fig:baseline-tc}
-\end{figure}
-}{}
+\begin{table}[t]
+\centering
+\caption{Run rappresentative di Average ($n=1$). I tempi con TC hanno semantica diversa dalla baseline e non costituiscono uno speedup.}
+\label{tab:baseline-tc}
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}p{0.19\columnwidth}p{0.25\columnwidth}>{\centering\arraybackslash}p{0.12\columnwidth}>{\centering\arraybackslash}p{0.13\columnwidth}>{\centering\arraybackslash}p{0.13\columnwidth}@{}}
+\toprule
+\textbf{Ambiente} & \textbf{NetEm} & \textbf{Oracle} & \textbf{Prima [s]} & \textbf{Finale [s]} \\
+\midrule
+Locale baseline & no & 60 & \AvgConvTime & -- \\
+Locale TC & 0--2000 ms, jitter 20\% & 60 & \TCLocalFirstConv & \TCLocalStable \\
+AWS EC2 TC, singolo host & 0--2000 ms, jitter 20\% & 60 & \TCAWSFirstConv & \TCAWSStable \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Nella baseline, ``Prima'' indica l'inizio della permanenza entro tolleranza 0.05 fino alla fine della finestra. Per TC indica invece la prima convergenza simultanea osservata con tolleranza $10^{-6}$; ``Finale'' è il controllo conclusivo simultaneamente positivo richiesto dal monitor. La tabella documenta il raggiungimento dell'oracle sotto impairment sintetici, non un confronto prestazionale omogeneo.
 
 % =========================================================
 \section{Discussione}
