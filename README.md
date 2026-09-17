@@ -139,23 +139,44 @@ Usa `docker-compose.yml` e `configs/node1.yaml` … `configs/node3.yaml`. L'aggr
 
 ### Cluster scale a 6 nodi
 
-```bash
-SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
-SDCC_PROJECT_NAME=sdcc-scale \
-SDCC_SERVICES='node1 node2 node3 node4 node5 node6' \
-scripts/cluster_up.sh
+Entrambe le modalità seguenti avviano la stessa topologia a sei nodi definita da `deploy/docker-compose.scale.yml`. I valori sono `10`, `30`, `50`, `70`, `90`, `110`; per `average` il risultato atteso è `60`.
 
-SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
-SDCC_PROJECT_NAME=sdcc-scale \
+#### Avvio diretto
+
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale up -d --build
+```
+
+Comandi utili associati:
+
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale ps
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale logs -f
+```
+
+Cleanup:
+
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale down
+```
+
+Questa è la modalità Docker Compose essenziale. La collocazione del file nella directory `deploy/` non rende il comando specifico per AWS: può essere usato normalmente in locale con Docker Desktop o Docker Engine.
+
+#### Avvio tramite script
+
+```bash
+export SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml
+export SDCC_PROJECT_NAME=sdcc-scale
+export SDCC_SERVICES='node1 node2 node3 node4 node5 node6'
+
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
 scripts/show_aggregation_status.sh
 ```
 
-I valori sono `10`, `30`, `50`, `70`, `90`, `110`; per `average` il risultato atteso è `60`. Cleanup:
+La modalità tramite script aggiunge cleanup preventivo, controlli e diagnostica operativa. Cleanup con le stesse variabili esportate:
 
 ```bash
-SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
-SDCC_PROJECT_NAME=sdcc-scale \
-SDCC_SERVICES='node1 node2 node3 node4 node5 node6' \
 scripts/cluster_down.sh
 ```
 

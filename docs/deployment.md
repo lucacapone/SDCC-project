@@ -70,7 +70,30 @@ docker compose down -v --remove-orphans  # reset distruttivo
 
 ## Cluster scale a 6 nodi
 
-Impostare file, project e lista servizi in modo coerente:
+Entrambe le modalità seguenti avviano la stessa topologia a sei nodi definita da `deploy/docker-compose.scale.yml`. Il cluster usa valori `10`, `30`, `50`, `70`, `90`, `110`: l'average stabile atteso è `60`.
+
+### Avvio diretto
+
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale up -d --build
+```
+
+Comandi utili associati:
+
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale ps
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale logs -f
+```
+
+Cleanup:
+
+```bash
+docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale down
+```
+
+Questa è la modalità Docker Compose essenziale. La collocazione del file nella directory `deploy/` non rende il comando specifico per AWS: può essere usato normalmente in locale con Docker Desktop o Docker Engine.
+
+### Avvio tramite script
 
 ```bash
 export SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml
@@ -82,14 +105,7 @@ scripts/cluster_wait_ready.sh
 scripts/show_aggregation_status.sh
 ```
 
-Il cluster usa valori `10`, `30`, `50`, `70`, `90`, `110`: l'average stabile atteso è `60`. Per log e stato:
-
-```bash
-docker compose -p sdcc-scale -f deploy/docker-compose.scale.yml ps
-docker compose -p sdcc-scale -f deploy/docker-compose.scale.yml logs -f node6
-```
-
-Cleanup con le stesse variabili esportate:
+La modalità tramite script aggiunge cleanup preventivo, controlli e diagnostica operativa. Cleanup con le stesse variabili esportate:
 
 ```bash
 scripts/cluster_down.sh
