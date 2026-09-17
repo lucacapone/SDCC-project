@@ -337,8 +337,6 @@ Questi risultati verificano non soltanto che i nodi raggiungano lo stesso valore
 
 La robustezza al fault model considerato è verificata da prove distinte. I test runtime controllano le transizioni \texttt{alive} $\rightarrow$ \texttt{suspect} $\rightarrow$ \texttt{dead}; i test in-memory isolano la semantica membership-aware, leave e rejoin; i test Docker Compose arrestano realmente un servizio, verificano che i peer superstiti continuino i round e riconvergano, quindi riavviano il processo e controllano il rejoin. Un ulteriore scenario Compose combina due crash sequenziali e una partizione temporanea, verificando continuità durante l'isolamento, recovery e riconvergenza finale.
 
-Le evidenze non vengono fuse in un unico benchmark. In particolare, la sequenza illustrativa $60\rightarrow50\rightarrow40\rightarrow50\rightarrow60$, ottenibile escludendo e reintegrando nell'ordine i contributi 110 e 90, descrive la semantica attesa della media sui soli nodi \texttt{alive}; non è presentata come una misura end-to-end del Compose a sei nodi.
-
 Le prove mostrano due proprietà nel perimetro dei crash fail-stop considerati: l'indisponibilità di un nodo non arresta i round dei peer superstiti e, dopo la transizione di membership, il contributo non eleggibile viene escluso dal risultato visibile senza cancellarne necessariamente i metadata. Al restart, la generation superiore permette alla nuova incarnation di prevalere sullo stato precedente e di rendere nuovamente eleggibile il contributo. Queste proprietà non costituiscono tolleranza a fault arbitrari o bizantini.
 
 \subsection{Valutazione con Traffic Control}
