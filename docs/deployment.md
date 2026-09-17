@@ -1,371 +1,161 @@
-# Deployment locale multi-nodo con Docker Compose
+# Deployment locale con Docker Compose
 
-## Volumi di identità
+## Artefatti
 
-Il runtime non-root scrive la generation in `/var/lib/sdcc`, montata su un named volume diverso per ogni servizio. Non associare mai lo stesso volume a due `NodeID`. Stop/start e recreate sono supportati finché il volume viene conservato; `docker compose down -v` elimina intenzionalmente anche l'identità durevole, senza recovery automatico delle vecchie epoch dai peer.
+- `Dockerfile`: build Go 1.22 con `CGO_ENABLED=0`, runtime distroless non-root;
+- `docker-compose.yml`: deployment canonico a 3 nodi;
+- `deploy/docker-compose.scale.yml`: deployment a 6 nodi;
+- `deploy/docker-compose.yml`: promemoria storico, non deployment eseguibile;
+- `configs/node1.yaml` … `configs/node6.yaml`: configurazioni montate read-only;
+- `scripts/cluster_*.sh`: orchestrazione condivisa da operatori e test.
 
-## Scopo e stato canonico
-Questo documento è il riferimento canonico per il deployment locale multi-nodo del progetto SDCC tramite Docker Compose.
-
-Il file Compose operativo da usare è **sempre** quello nella root della repository:
-
-- `docker-compose.yml`
-
-Il file `deploy/docker-compose.yml` **non** è la sorgente operativa del deployment: è mantenuto solo come promemoria storico e rimanda esplicitamente al file Compose canonico di root.
-
-## Artefatti allineati
-Il deployment locale descritto in questo documento è allineato con i seguenti artefatti del repository:
-
-- `README.md`, che riporta i comandi operativi standard per l'avvio locale;
-- `docker-compose.yml`, che definisce i tre servizi `node1`, `node2`, `node3` e la rete bridge `sdcc-net`;
-- `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`, montati in sola lettura nei container come `/config/config.yaml`.
-
-Ogni servizio usa la stessa immagine locale `sdcc-node:local`, costruita dal `Dockerfile` di root, e passa il file di configurazione tramite il comando applicativo `--config /config/config.yaml`.
+Ogni servizio monta un volume distinto su `/var/lib/sdcc` per preservare la generation tra restart. Tutti i nodi condividono la rete bridge `sdcc-net` e risolvono i peer tramite i nomi DNS dei servizi Compose.
 
 ## Prerequisiti
-Per eseguire il cluster locale servono:
 
-1. **Docker Engine** installato e avviato;
-2. **Docker Compose plugin** disponibile come sottocomando `docker compose`.
-3. **Bash 3.2+** per gli script operativi in `scripts/` (es. `cluster_up.sh`, `cluster_down.sh`, fault injection).
+- Docker Engine/Desktop attivo;
+- plugin Docker Compose v2 (`docker compose version`);
+- Bash per gli script.
 
-Nel file Compose canonico di root **non** è attualmente richiesto come prerequisito che le porte UDP `7001`, `7002`, `7003` siano libere sull'host. Queste porte sono infatti usate dal runtime dei nodi **dentro** la rete Docker Compose `sdcc-net`, ma il `docker-compose.yml` canonico non le pubblica verso l'host con una sezione `ports:`.
+Le porte UDP e HTTP sono interne alla rete Compose. I file forniti non pubblicano porte sull'host, evitando collisioni fra nodi che usano tutti `:8080` internamente per observability.
 
-Di conseguenza, parlare di “porte UDP locali host non occupate” è corretto **solo** in scenari diversi dal Compose canonico, ad esempio se in futuro si aggiungesse una pubblicazione esplicita delle porte o se si eseguissero i nodi con binding/publishing manuale verso l'host.
+## Cluster canonico a 3 nodi
 
-### Porte usate
-Nel deployment corrente è utile distinguere due livelli.
-
-#### Porte interne al cluster Docker Compose
-I nodi usano internamente queste porte applicative sulla rete `sdcc-net`:
-
-- `7001/udp` per `node1`;
-- `7002/udp` per `node2`;
-- `7003/udp` per `node3`.
-
-Queste porte sono dichiarate nei file `configs/node*.yaml` tramite `node_port` e compaiono anche negli `advertise_addr` e nei `seed_peers` come endpoint interni raggiungibili dai container (`node1:7001`, `node2:7002`, `node3:7003`). Nel deployment locale rappresentano quindi la sorgente di verità runtime per la comunicazione **intra-cluster**.
-
-#### Porte host in scenari futuri o manuali
-Il `docker-compose.yml` canonico di root **non** definisce oggi alcuna sezione `ports:` per `node1`, `node2` o `node3`. Questo significa che le porte UDP `7001`, `7002`, `7003` **non sono pubblicate sull'host** dal Compose standard e non vanno presentate come requisito host-side del flusso canonico `docker compose up -d --build`.
-
-Solo se si introducesse una pubblicazione esplicita delle porte nel Compose, oppure si avviassero container/nodi con binding manuale verso l'host, diventerebbe corretto richiedere che le corrispondenti porte locali host siano libere.
-
-## Topologia del cluster locale
-Il cluster Compose reale prevede tre servizi:
-
-- `node1`
-- `node2`
-- `node3`
-
-La configurazione corrente è coerente tra i servizi Compose e i file YAML montati:
-
-- `node1` monta `configs/node1.yaml` e usa `node_port: 7001`, `advertise_addr: node1:7001` e seed `node2:7002`, `node3:7003`;
-- `node2` monta `configs/node2.yaml` e usa `node_port: 7002`, `advertise_addr: node2:7002` e seed `node1:7001`, `node3:7003`;
-- `node3` monta `configs/node3.yaml` e usa `node_port: 7003`, `advertise_addr: node3:7003` e seed `node1:7001`, `node2:7002`.
-
-Convenzione operativa adottata per bootstrap e discovery:
-
-- `node_id` = identificatore logico del nodo, usato nel payload gossip e nella membership;
-- `addr` = endpoint reale raggiungibile nel formato `host:port`;
-- nei container Compose il campo `advertise_addr` usa il **service name** come hostname (`node1`, `node2`, `node3`).
-
-Le aggregazioni configurate sono coerenti con i file `configs/node1.yaml`, `configs/node2.yaml` e `configs/node3.yaml`:
-
-- `node1`: `aggregation: average`, `initial_value: 10`;
-- `node2`: `aggregation: average`, `initial_value: 30`;
-- `node3`: `aggregation: average`, `initial_value: 50`.
-
-Nel deployment Compose corrente tutti e tre i nodi usano quindi **`aggregation: average`**, con valori iniziali `10`, `30`, `50`. Questo scenario è allineato anche con il test canonico `tests/integration/cluster_convergence_test.go` e con la documentazione M09 in `README.md` e `docs/testing.md`.
-
-## Comando standard di build e avvio
-Dalla root della repository eseguire:
-
-```bash
-docker compose up -d --build
-```
-
-Questo comando:
-
-- costruisce l'immagine applicativa locale a partire dal `Dockerfile`;
-- crea, o aggiorna, i container `node1`, `node2`, `node3`;
-- collega i servizi alla rete bridge `sdcc-net`;
-- monta per ogni nodo il rispettivo file `configs/node*.yaml` in `/config/config.yaml`.
-
-## Procedura scale run (6 nodi)
-Per scenari di convergenza multi-nodo più ampi è disponibile una variante Compose dedicata:
-
-- file: `deploy/docker-compose.scale.yml`;
-- servizi: `node1`, `node2`, `node3`, `node4`, `node5`, `node6`;
-- configurazioni aggiuntive: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`;
-- `fanout: 5` in tutti i file `configs/node1.yaml` ... `configs/node6.yaml`, pari al massimo numero di peer remoti in un cluster da 6 nodi.
-
-Comandi operativi:
-
-```bash
-docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale up -d --build
-docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale ps
-docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale down
-```
-
-Per mantenere coerenti script e test Compose reali con la topologia estesa, impostare la lista servizi esterna:
-
-```bash
-SDCC_SERVICES="node1,node2,node3,node4,node5,node6"
-```
-
-La lista viene letta in precedenza da:
-1. variabile ambiente `SDCC_SERVICES`;
-2. file `SDCC_SERVICES_FILE` (default `deploy/compose_services.env`);
-3. fallback canonico `node1 node2 node3`.
-
-Comando canonico dedicato per la validazione automatica della convergenza scale Compose (6 nodi):
-
-```bash
-go test ./tests/integration -run TestClusterConvergenceScaleCompose -count=1
-```
-
-## Verifica dello stato dei servizi
-Per controllare lo stato dei container avviati:
-
-```bash
-docker compose ps
-```
-
-L'output atteso deve mostrare i tre servizi Compose del cluster in stato attivo. Se un container è in restart loop o exited, consultare subito i log del servizio interessato.
-
-## Artefatto ripetibile di verifica M07
-Per rendere ripetibile la verifica minima della milestone M07 è disponibile lo script:
-
-```bash
-scripts/m07_collect_compose_evidence.sh
-```
-
-Lo script esegue dalla root il flusso canonico richiesto:
+### Avvio diretto
 
 ```bash
 docker compose up -d --build
 docker compose ps
-docker compose logs --no-color --tail 120 node1
-docker compose logs --no-color --tail 120 node2
-docker compose logs --no-color --tail 120 node3
+docker compose logs -f
 ```
 
-L'output viene salvato in `artifacts/m07/<timestamp>/` con i file principali:
+Il Compose root usa `node1`, `node2`, `node3`; le configurazioni selezionano `average` con valori `10`, `30`, `50`. Il risultato stabile atteso è `30`.
 
-- `compose-up.txt`;
-- `compose-ps.txt`;
-- `node1.log`;
-- `node2.log`;
-- `node3.log`;
-- `summary.txt`.
-
-Il link simbolico `artifacts/m07/latest` punta sempre all'ultima esecuzione raccolta.
-
-## Consultazione dei log
-Per seguire i log di un singolo nodo, ad esempio `node1`:
+### Avvio tramite script
 
 ```bash
-docker compose logs -f node1
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
 ```
 
-Comandi analoghi possono essere usati per `node2` e `node3`:
+Gli script usano project name `sdcc-bootstrap`, `docker-compose.yml` e i servizi di `deploy/compose_services.env`. `cluster_up.sh` pulisce il project precedente, costruisce l'immagine, avvia i servizi e produce diagnostica se build/startup falliscono.
+
+### Readiness e metriche
+
+Gli endpoint non sono pubblicati sull'host e l'immagine distroless non contiene `curl`. `scripts/cluster_wait_ready.sh` verifica che ogni container sia running e che i log attestino bootstrap e avvio del transport; non equivale a una chiamata HTTP a `/ready`. Per una verifica di stato:
 
 ```bash
-docker compose logs -f node2
-docker compose logs -f node3
+docker compose -p sdcc-bootstrap -f docker-compose.yml ps
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --tail=100 node1
 ```
 
-I log sono il primo strumento diagnostico per verificare:
+### Stop e cleanup
 
-- bootstrap iniziale della membership;
-- eventuali errori di bind porta;
-- errori di risoluzione DNS dei peer Compose;
-- mancata convergenza gossip o round non avviati.
+```bash
+scripts/cluster_down.sh
+```
 
-## Stop e cleanup
-Per fermare il cluster e rimuovere i container creati dal Compose:
+Il comando preserva i volumi per consentire restart/rejoin coerenti. Per un reset distruttivo delle generation:
+
+```bash
+docker compose -p sdcc-bootstrap -f docker-compose.yml down -v --remove-orphans
+```
+
+Con Compose diretto:
 
 ```bash
 docker compose down
+docker compose down -v --remove-orphans  # reset distruttivo
 ```
 
-Questo comando arresta i container del progetto Compose e rimuove le risorse create dal deployment locale, mantenendo però l'immagine locale costruita, salvo rimozione esplicita separata.
+## Cluster scale a 6 nodi
 
-## Rete Compose e risoluzione DNS tramite service name
-Il `docker-compose.yml` canonico definisce una rete bridge dedicata:
+Impostare file, project e lista servizi in modo coerente:
 
-- `sdcc-net`
+```bash
+export SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml
+export SDCC_PROJECT_NAME=sdcc-scale
+export SDCC_SERVICES='node1 node2 node3 node4 node5 node6'
 
-All'interno di questa rete, Docker Compose fornisce la risoluzione DNS automatica dei **service name**. Nel deployment corrente significa che:
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
+scripts/show_aggregation_status.sh
+```
 
-- il servizio `node1` può raggiungere `node2` e `node3` usando gli hostname `node2` e `node3`;
-- il servizio `node2` può raggiungere `node1` e `node3` usando gli hostname `node1` e `node3`;
-- il servizio `node3` può raggiungere `node1` e `node2` usando gli hostname `node1` e `node2`.
+Il cluster usa valori `10`, `30`, `50`, `70`, `90`, `110`: l'average stabile atteso è `60`. Per log e stato:
 
-Per questo motivo i file `configs/node*.yaml` usano gli stessi hostname Compose sia nei `seed_peers` sia negli `advertise_addr`, sempre nel formato:
+```bash
+docker compose -p sdcc-scale -f deploy/docker-compose.scale.yml ps
+docker compose -p sdcc-scale -f deploy/docker-compose.scale.yml logs -f node6
+```
 
-- `node1:7001`
-- `node2:7002`
-- `node3:7003`
+Cleanup con le stesse variabili esportate:
 
-È importante usare i **service name Compose** nei `seed_peers` e negli `advertise_addr`, non hostname arbitrari o nomi container esterni alla rete. In questo repository i service name e i peer configurati sono già allineati e il bootstrap non confonde più il `node_id` logico (`node-1`, `node-2`, `node-3`) con l'endpoint pubblicizzato.
+```bash
+scripts/cluster_down.sh
+```
 
-## Allineamento tra Compose e configurazione runtime
-Nel deployment corrente il file Compose canonico monta un solo livello di sorgente di verità per i nodi applicativi:
+## Variabili degli script
 
-1. **file YAML montato** (`configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`).
+- `SDCC_COMPOSE_FILE`: file Compose relativo alla root o assoluto;
+- `SDCC_PROJECT_NAME`: nome del project Compose;
+- `SDCC_SERVICES`: lista separata da spazi o virgole;
+- `SDCC_SERVICES_FILE`: file alternativo che definisce `SDCC_SERVICES`;
 
-Il runtime del progetto supporta comunque override via environment, ma il `docker-compose.yml` canonico di root non usa la sezione `environment:` per duplicare i parametri dei nodi. Se in ambienti derivati si introducono override custom, bisogna mantenere coerenti in particolare:
+Altri timeout/percorsi sono definiti nei singoli script e nelle suite d'integrazione.
 
-- `NODE_ID` ↔ `node_id`;
-- `NODE_PORT` ↔ `node_port`;
-- `ADVERTISE_ADDR` ↔ `advertise_addr`;
-- `SEED_PEERS` ↔ `seed_peers`;
-- `GOSSIP_INTERVAL_MS` ↔ `gossip_interval_ms`;
-- `FANOUT` ↔ `fanout`;
-- `MEMBERSHIP_TIMEOUT_MS` ↔ `membership_timeout_ms`;
-- `ENABLED_AGGREGATIONS` ↔ `enabled_aggregations`;
-- `AGGREGATION` ↔ `aggregation`.
+## Fault injection manuale
 
-Nel Compose canonico attuale queste chiavi non vengono duplicate via environment, così da evitare ambiguità tra identificativo logico ed endpoint di rete osservati dai peer.
+Dopo l'avvio del cluster canonico:
+
+```bash
+scripts/fault_injection/node_stop_start.sh stop node1
+scripts/fault_injection/collect_debug_snapshot.sh node1
+scripts/fault_injection/node_stop_start.sh start node1
+scripts/fault_injection/network_partition.sh partition node3
+```
+
+Gli script ereditano file, project e lista servizi dalle stesse variabili. La partizione disconnette temporaneamente un container dalla rete Compose; lo scenario combinato è disponibile in `scenario_sequential_crash_partition_rejoin.sh`.
+
+## Pipeline risultati
+
+```bash
+scripts/cluster_collect_results.sh
+scripts/cluster_convergence_report.sh
+```
+
+Gli artefatti vengono scritti in `artifacts/cluster`. Il secondo comando delimita una nuova run e produce CSV/SVG dai campioni strutturati.
 
 ## Troubleshooting
 
-### 1. Bootstrap race condition
-**Sintomo:** uno o più nodi partono correttamente, ma all'inizio non vedono tutti i peer oppure i primi round gossip mostrano membership parziale.
+### Docker o Compose non disponibili
 
-**Causa probabile:** i container sono stati creati quasi simultaneamente e uno dei nodi ha tentato il contatto verso peer non ancora pronti ad accettare traffico UDP o non ancora completamente inizializzati.
-
-**Azioni consigliate:**
-
-- attendere alcuni round gossip e ricontrollare i log con `docker compose logs -f node1` o sul nodo interessato;
-- verificare che tutti i servizi risultino attivi con `docker compose ps`;
-- se la situazione non converge, rieseguire un riavvio pulito con:
+Verificare:
 
 ```bash
-docker compose down
-docker compose up -d --build
+docker info
+docker compose version
 ```
 
-### 2. DNS o nomi container non risolti
-**Sintomo:** nei log compaiono errori verso peer non raggiungibili o hostname non risolti.
-
-**Cause probabili:**
-
-- i `seed_peers` non usano i service name Compose reali;
-- si sta usando un file Compose diverso da quello canonico in root;
-- il container non è collegato alla rete `sdcc-net` prevista.
-
-**Azioni consigliate:**
-
-- usare il file `docker-compose.yml` della root;
-- verificare che i peer siano esattamente `node1`, `node2`, `node3` con le rispettive porte;
-- controllare che `configs/node1.yaml`, `configs/node2.yaml` e `configs/node3.yaml` usino i service name e le porte corrette per i peer dichiarati.
-
-### 3. Mismatch porte/configurazione
-**Sintomo:** i container risultano avviati, ma la comunicazione tra nodi non avanza o si osservano errori di bind/invio verso porte sbagliate.
-
-**Cause probabili:**
-
-- `node_port` o `advertise_addr` modificati in uno dei file YAML senza riallineare i peer che lo referenziano;
-- `seed_peers` configurati con porte diverse da quelle realmente usate dai peer;
-- modifica parziale di un solo nodo senza aggiornare tutti i riferimenti incrociati.
-
-**Azioni consigliate:**
-
-- confrontare `docker-compose.yml` con `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml`;
-- mantenere allineati tra loro i tre file `configs/node*.yaml`, perché nel Compose canonico sono l'unica configurazione runtime montata nei container;
-- dopo correzioni, ricreare i container con `docker compose up -d --build`.
-
-### 4. Differenze tra ambienti Docker locali
-**Sintomo:** il deployment funziona su una macchina ma non su un'altra, oppure mostra comportamenti diversi tra Docker Desktop, Engine Linux nativo o ambienti virtualizzati.
-
-**Cause probabili:**
-
-- differenze di networking locale o firewall host;
-- plugin Compose non aggiornato o comportamento diverso della distribuzione Docker;
-- risorse macchina limitate durante build o start simultaneo dei container.
-
-**Azioni consigliate:**
-
-- verificare che `docker compose` sia disponibile e aggiornato nell'ambiente locale;
-- assicurarsi che Docker Engine sia in esecuzione stabile;
-- ripetere il test con `docker compose down` seguito da `docker compose up -d --build`;
-- usare i log dei nodi per distinguere problemi di applicazione da problemi del runtime Docker.
-
-### 5. Container avviati ma membership non convergente
-**Sintomo:** tutti i container sono in esecuzione, ma la membership rimane incompleta oppure il gossip non converge come atteso.
-
-**Cause probabili:**
-
-- bootstrap iniziale incompleto non recuperato nei round successivi;
-- peer list incoerente tra i file YAML dei nodi;
-- timeout o intervalli gossip configurati in modo incoerente rispetto al contesto locale;
-- modifica manuale di aggregazione o peer senza riallineamento documentale/configurativo.
-
-**Azioni consigliate:**
-
-- controllare i log dei tre nodi per verificare round gossip e merge membership;
-- ricontrollare `gossip_interval_ms`, `membership_timeout_ms`, `seed_peers`, `aggregation` e `enabled_aggregations`;
-- assicurarsi che i peer configurati siano risolvibili via DNS Compose;
-- rifare un avvio pulito del cluster dopo ogni modifica strutturale alla configurazione.
-
-## Evidenze osservabili nei log per M07
-Le evidenze minime da cercare nei log raccolti da Compose sono le seguenti.
-
-### 1. Bootstrap completato
-Il marker principale è la riga con messaggio `gossip bootstrap completato` ed evento strutturato `event=node_bootstrap`.
-
-Segnali utili da verificare sulla stessa riga:
-
-- `node_id=node-1|node-2|node-3`, per confermare il nodo logico corretto;
-- `advertise_addr=node1:7001` oppure gli equivalenti `node2:7002`, `node3:7003`;
-- `peers=<n>` con valore maggiore di zero quando il bootstrap statico ha già caricato i peer seed dal file YAML;
-- `fallback_used=true`, coerente con il deployment Compose corrente che non configura `join_endpoint`.
-
-Questa combinazione dimostra che il nodo ha caricato la configurazione, ha costruito la membership iniziale e ha concluso la fase di bootstrap applicativo.
-
-### 2. Peer discovery via service name Compose
-Nel deployment locale la discovery usa i service name Docker Compose come hostname. L'evidenza minima nei log consiste nella presenza degli endpoint `node1:7001`, `node2:7002`, `node3:7003` nei campi strutturati, in particolare:
-
-- `advertise_addr=nodeX:700X` nel log di bootstrap;
-- `advertise_address=udp://nodeX:700X` nel log `transport gossip avviato`;
-- eventuali `peer_addr=nodeX:700X` nelle transizioni membership;
-- riferimenti a `membership_entries=<n>` o merge remoti che arrivano da nodi il cui indirizzo è stato risolto tramite quei service name.
-
-Se i log mostrano hostname Compose e non IP hardcoded o nomi arbitrari, la discovery tramite DNS interno della rete Compose è osservabile e coerente con la configurazione dichiarata.
-
-### 3. Membership iniziale non vuota o convergente
-L'evidenza minima è una delle seguenti condizioni, osservabile già nei tail iniziali salvati negli artefatti:
-
-- il log `gossip bootstrap completato` riporta `peers>0`, quindi la membership iniziale non è vuota;
-- il log `transport gossip avviato` riporta ancora `peers>0`, confermando che il nodo parte con peer già noti;
-- i log successivi mostrano `event=remote_merge` con `membership_entries=<n>` oppure `event=gossip_round` con `membership_entries=<n>` coerenti con la vista locale;
-- eventuali `event=membership_transition` mostrano peer reali (`peer_id`, `peer_addr`) entrati nella vista runtime e poi monitorati dalla failure detection.
-
-Dal punto di vista operativo, per M07 è sufficiente che almeno uno dei tre nodi mostri una membership iniziale non vuota e che i log dei round/merge successivi non indichino isolamento permanente del cluster.
-
-## Procedura operativa consigliata
-Sequenza minima consigliata per un ciclo standard di verifica locale:
+### Container in restart loop
 
 ```bash
-docker compose up -d --build
 docker compose ps
-docker compose logs -f node1
-docker compose down
+docker compose logs --tail=100 node1
 ```
 
-## Riferimenti correlati
-- `README.md`
-- `docker-compose.yml`
-- `deploy/docker-compose.yml`
-- `configs/node1.yaml`
-- `configs/node2.yaml`
-- `configs/node3.yaml`
-- `docs/configuration.md`
+Cause comuni: configurazione invalida, mount mancante, endpoint non valido o file generation non scrivibile.
 
-## Artefatti di convergenza per topologie Compose
+### Peer non convergenti
 
-La raccolta non aggiunge servizi e non modifica i mount read-only delle configurazioni. Lo script host `scripts/cluster_convergence_report.sh` riusa `cluster_common.sh` e scrive esclusivamente in `artifacts/cluster/<timestamp>/`, ignorata da Git. Per il Compose standard usare il comando senza override; per `deploy/docker-compose.scale.yml` impostare `SDCC_PROJECT_NAME=sdcc-scale` e i sei servizi come documentato in testing/demo. Ogni directory contiene `compose.log`, `convergence.csv`, `convergence.svg` e `summary.txt`.
+Controllare che `advertise_addr` corrisponda al nome/porta del servizio, che tutti i servizi condividano `sdcc-net`, che usino la stessa aggregazione e che i timeout non siano troppo aggressivi. Cercare eventi `transport_start`, `remote_merge` e `membership_transition`.
 
-Il valore atteso è un prodotto offline delle configurazioni della run e supporta le sole aggregazioni implementate (`sum`, `average`, `min`, `max`); resta rigorosamente separato dal piano dati gossip.
+### Risorse residue o nomi in conflitto
+
+Usare lo stesso project name dell'avvio:
+
+```bash
+docker compose -p sdcc-bootstrap -f docker-compose.yml down --remove-orphans
+```
+
+Non eseguire contemporaneamente cluster 3 e 6 nodi con la rete esplicitamente nominata `sdcc-net`.

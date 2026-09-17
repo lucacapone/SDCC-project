@@ -1,402 +1,112 @@
-# Configurazione runtime canonica
+# Configurazione
 
-## Storage della generation runtime
+## Caricamento e formati
 
-Il nodo usa per default `/var/lib/sdcc/generation`, sovrascrivibile con `SDCC_GENERATION_FILE`. Il valore viene incrementato una sola volta per processo e persistito prima di bootstrap/transport; storage corrotto, non leggibile, non scrivibile o in overflow interrompe l'avvio. Ogni `NodeID` deve usare uno storage esclusivo. I Compose canonici montano volumi distinti e non condivisi per node1…node6.
+Il nodo accetta `--config <path>`; `.yaml`, `.yml` e `.json` sono supportati. La precedence è:
 
-`docker compose stop/start` conserva il volume; anche la ricreazione del container conserva la generation se il named volume non viene rimosso. `docker compose down -v` cancella lo storage e rappresenta perdita dell'identità durevole, per la quale non è implementata negoziazione dai peer.
+1. valori di `config.Default()`;
+2. valori presenti nel file;
+3. variabili environment non vuote;
+4. `config.Validate`.
 
-Questo documento è il riferimento canonico per la configurazione del runtime del nodo.
+Il parser YAML è intenzionalmente minimale: supporta scalari `chiave: valore`, liste inline (`[a, b]`) e liste multilinea per `bootstrap_peers`, `seed_peers` ed `enabled_aggregations`. Non è un parser YAML generale: strutture annidate, anchor e tipi complessi non sono accettati. Le chiavi di logging con punto sono scalari letterali.
 
-La fonte primaria è il comportamento reale implementato in:
+## Parametri applicativi
 
-- `internal/config/config.go`
-- `cmd/node/main.go`
-- `configs/*.yaml`
+| Campo | Default | Significato |
+|---|---:|---|
+| `node_id` | `node-1` | Identità logica del nodo. |
+| `bind_address` | `0.0.0.0` | Indirizzo locale per il socket UDP. |
+| `advertise_addr` | vuoto | Endpoint `host:porta` pubblicizzato; se vuoto deriva da bind/porta, usando loopback per bind wildcard. |
+| `node_port` | `7001` | Porta UDP, intervallo 1–65535. |
+| `join_endpoint` | vuoto | Endpoint `host:porta` del bootstrap HTTP opzionale. |
+| `bootstrap_peers` | vuoto | Peer statici preferiti quando la lista non è vuota. |
+| `seed_peers` | vuoto | Fallback statico se `bootstrap_peers` è vuota. |
+| `gossip_interval_ms` | `1000` | Periodo dei round. |
+| `fanout` | `2` | Numero massimo di target per round. |
+| `membership_timeout_ms` | `5000` | Soglia dead; la soglia suspect deriva dalla metà. |
+| `enabled_aggregations` | tutte e quattro | Whitelist di aggregazioni consentite. |
+| `aggregation` | `sum` | Algoritmo attivo: `sum`, `average`, `min`, `max`. |
+| `initial_value` | `0` | Contributo locale del nodo. |
+| `log_level` | `info` | Livello del logger strutturato. |
+| `logging.remote_merge_mode` | `significant` | Log merge: `full`, `significant` o `off`. |
+| `logging.log_estimate_delta_threshold` | `0` | Delta minimo non negativo usato dalla policy di log. |
 
-## Ambito runtime
+`DiscoveryPeers()` sceglie l'intera lista `bootstrap_peers` se presente, altrimenti `seed_peers`; non unisce le due liste.
 
-Il nodo legge la configurazione tramite il flag CLI `--config` definito in `cmd/node/main.go`. Il file viene caricato con `config.Load`, poi il risultato viene validato prima dell'avvio del runtime. Se la configurazione è invalida, il processo termina con errore. 
+## Override environment
 
-## Formati file supportati
-
-Il loader runtime supporta i seguenti formati, riconosciuti **esclusivamente dall'estensione del file**:
-
-- `.yaml`
-- `.yml`
-- `.json`
-
-Qualsiasi altra estensione viene rifiutata con errore di caricamento.
-
-### Dettagli reali del parsing YAML
-
-Il parser YAML implementato in `internal/config/config.go` è volutamente minimale e supporta solo il sottoinsieme realmente gestito dal runtime:
-
-- coppie top-level nel formato `chiave: valore`;
-- liste inline nel formato `[a,b,c]`;
-- liste multilinea solo per:
-  - `bootstrap_peers`
-  - `seed_peers`
-  - `enabled_aggregations`
-
-Non è un parser YAML generale: strutture annidate, mappe arbitrarie o sintassi YAML avanzata non fanno parte del contratto runtime corrente.
-
-## Ordine di precedence effettivo
-
-La precedence effettiva applicata dal runtime è questa:
-
-1. **Default locali** tramite `Default()`.
-2. **File di configurazione** (`.yaml/.yml` oppure `.json`) se `--config` è valorizzato.
-3. **Variabili ambiente** tramite `overrideFromEnv`.
-4. **Validazione finale** tramite `Validate`.
-
-In altre parole, il flusso reale in `Load(path)` è:
-
-```text
-Default() -> parse file config -> overrideFromEnv() -> Validate()
-```
-
-### Effetti pratici della precedence
-
-- Se `--config` è omesso, il runtime parte da `Default()` e applica solo gli eventuali override env.
-- Se un file specifica un valore, quel valore sovrascrive il default.
-- Se una variabile ambiente supportata è presente e valida rispetto al parser usato da `overrideFromEnv`, essa sovrascrive file e default.
-- La validazione finale può comunque rifiutare il risultato anche dopo default, file ed env.
-
-### Nota importante sugli override env
-
-Il comportamento reale di `overrideFromEnv` è **fail-fast** per i campi numerici e CSV:
-
-- per gli interi (`NODE_PORT`, `GOSSIP_INTERVAL_MS`, `FANOUT`, `MEMBERSHIP_TIMEOUT_MS`), se la variabile è presente ma non parseabile come intero, `Load` fallisce subito;
-- per i floating-point (`INITIAL_VALUE`), se la variabile è presente ma non parseabile come numero, `Load` fallisce subito;
-- per le liste CSV (`BOOTSTRAP_PEERS`, `SEED_PEERS`, `ENABLED_AGGREGATIONS`), se la variabile è presente ma contiene item vuoti o sintassi malformata, `Load` fallisce subito;
-- per le stringhe, l'override continua a essere applicato solo se la variabile esiste e non è vuota dopo `TrimSpace`.
-
-La precedence rimane invariata:
-
-```text
-Default() -> file -> env -> Validate()
-```
-
-La differenza è che un env numerico/CSV **presente e invalido** interrompe il caricamento prima della `Validate`, con un messaggio che include il nome della variabile e il valore ricevuto.
-
-Casi espliciti fissati anche dai test di regressione:
-
-- `NODE_PORT=abc` → errore esplicito che cita `NODE_PORT` e `abc`.
-- `FANOUT=abc` → errore esplicito che cita `FANOUT` e `abc`.
-- `ENABLED_AGGREGATIONS=sum,,max` → errore esplicito che cita `ENABLED_AGGREGATIONS` e il CSV ricevuto.
-- `BOOTSTRAP_PEERS=node-1:7001,` → errore esplicito che cita `BOOTSTRAP_PEERS` e il CSV ricevuto.
-
-## Elenco completo dei campi di `internal/config.Config`
-
-La struct `Config` contiene esattamente i seguenti campi:
-
-| Campo | Tipo | Significato operativo |
-|---|---|---|
-| `NodeID` | `string` | Identificativo logico del nodo. |
-| `BindAddress` | `string` | Host/IP usato per il bind UDP locale. |
-| `AdvertiseAddr` | `string` | Endpoint `host:port` pubblicizzato agli altri nodi; se vuoto il runtime deriva un fallback locale da `bind_address:node_port`. |
-| `NodePort` | `int` | Porta UDP del nodo. |
-| `JoinEndpoint` | `string` | Endpoint opzionale di join iniziale nel formato `host:porta`. |
-| `BootstrapPeers` | `[]string` | Peer di bootstrap preferiti per la discovery iniziale. |
-| `SeedPeers` | `[]string` | Peer seed usati come fallback se `BootstrapPeers` è vuoto. |
-| `GossipIntervalMS` | `int` | Intervallo del round gossip in millisecondi. |
-| `Fanout` | `int` | Numero massimo di peer target per round; il runtime lo applica con finestra deterministica rotante sui peer eleggibili. |
-| `MembershipTimeoutMS` | `int` | Timeout membership in millisecondi. |
-| `EnabledAggregations` | `[]string` | Lista whitelist delle aggregazioni consentite. |
-| `Aggregation` | `string` | Aggregazione attiva del nodo. |
-| `InitialValue` | `float64` | Valore iniziale locale del nodo usato per seminare lo stato gossip al bootstrap. |
-| `LogLevel` | `string` | Livello di log del runtime. |
-
-## Mappatura runtime reale di `membership_timeout_ms`
-
-Il runtime non passa più `membership_timeout_ms` come numero isolato al package membership: `cmd/node/main.go` costruisce `membership.NewSetWithConfig(cfg.MembershipConfig())`, e `internal/config.Config.MembershipConfig()` traduce il valore in una `membership.Config` concreta.
-
-La mappatura reale e stabile è:
-
-- `SuspectTimeout = max(1ms, membership_timeout_ms / 2)`
-- `DeadTimeout = max(SuspectTimeout + 1ms, membership_timeout_ms)`
-
-### Motivazione della regola
-
-Questa regola preserva due proprietà operative:
-
-- `membership_timeout_ms` resta la soglia utente che rappresenta il tempo massimo atteso prima di classificare un peer come `dead`;
-- la membership mantiene sempre uno stato intermedio `suspect` osservabile, anche con valori molto piccoli, evitando che `DeadTimeout <= SuspectTimeout` venga corretto in modo implicito dal package membership.
-
-### Esempi concreti di traduzione
-
-| `membership_timeout_ms` | `SuspectTimeout` reale | `DeadTimeout` reale |
-|---|---:|---:|
-| `5000` | `2500ms` | `5000ms` |
-| `3000` | `1500ms` | `3000ms` |
-| `100` | `50ms` | `100ms` |
-| `1` | `1ms` | `2ms` |
-
-
-### Vincolo di sicurezza tra `suspect`, gossip, fanout e heartbeat
-
-Il codice di validazione controlla anche la relazione tra failure detection e frequenza effettiva dei messaggi gossip. Ogni messaggio gossip ricevuto dal nodo origine viene trattato come heartbeat implicito: l'handler runtime aggiorna `LastSeen` del peer mittente prima di fondere il digest membership. La frequenza di heartbeat/merge osservabile per un peer dipende quindi da:
-
-- `gossip_interval_ms`, cioè la frequenza con cui un nodo apre un nuovo round e invia un payload completo stato+membership;
-- `fanout`, applicato dall'engine con selezione senza duplicati e non puramente random: i peer eleggibili vengono ordinati stabilmente per `node_id`/indirizzo e visitati tramite cursore rotante;
-- numero di peer configurati tramite `bootstrap_peers` o, se assenti, `seed_peers`.
-
-Con membership stabile, questa rotazione copre N peer entro `ceil(N/fanout)` round. La stima conservativa usata dalla configurazione è quindi:
-
-```text
-intervallo_massimo_atteso_peer = gossip_interval_ms * ceil(peer_configurati / fanout)
-```
-
-Se non ci sono peer configurati, la validazione usa comunque almeno un peer logico e quindi richiede `SuspectTimeout > gossip_interval_ms`. La configurazione viene rifiutata quando il `SuspectTimeout` reale derivato da `membership_timeout_ms` è minore o uguale all'intervallo massimo atteso: l'uguaglianza non lascia margine per jitter, scheduling o ritardi locali.
-
-Con i file correnti:
-
-| File | Peer configurati | `gossip_interval_ms` | `fanout` | Gap atteso | `membership_timeout_ms` | `SuspectTimeout` reale | Esito |
-|---|---:|---:|---:|---:|---:|---:|---|
-| `configs/node1.yaml`–`configs/node6.yaml` | fino a `5` | `1000` | `5` | `1000ms` | `10000` | `5000ms` | valido |
-| `configs/example.yaml` | `2` bootstrap / `2` seed | `1000` | `2` | `1000ms` | `5000` | `2500ms` | valido |
-
-Questa verifica non pretende di modellare un limite assoluto in presenza di perdite, partizioni di rete o cambi di membership: serve a bloccare configurazioni sicuramente troppo aggressive rispetto alla frequenza nominale di heartbeat/merge prodotta dal gossip. Poiché il fanout usa una finestra deterministica rotante, il gap stimato non dipende più da una probabilità di estrazione casuale, ma dalla copertura periodica dei target. In caso di topologie più grandi o `fanout` più basso, aumentare `membership_timeout_ms` oppure aumentare `fanout` in modo che `SuspectTimeout` resti strettamente maggiore del gap atteso.
-
-### Effetto sull'eleggibilità dei contributi aggregati
-
-I timeout membership esistenti determinano anche quando un contributo smette di essere eleggibile per il risultato aggregato esposto:
-
-- allo scadere di `SuspectTimeout`, un peer passa da `alive` a `suspect` e il suo contributo resta nei metadata gossip ma viene escluso da `state.value`;
-- allo scadere di `DeadTimeout`, il peer passa a `dead` e continua a restare non eleggibile;
-- durante `PruneRetention`, i tombstone `dead`/`leave` permettono di propagare la rimozione e bloccare reintroduzioni obsolete, senza reintrodurre il contributo nel risultato;
-- dopo `Prune`, la rimozione fisica dalla membership non crea nuovi valori hardcoded: l'eventuale rientro del nodo richiede un aggiornamento valido con `incarnation` più nuova che lo riporti a `alive`.
-
-Non esistono timeout aggiuntivi o soglie hardcoded per l'eleggibilità aggregata: la decisione deriva dagli stati membership prodotti da `SuspectTimeout`, `DeadTimeout` e `PruneRetention` già configurati dal runtime.
-
-## Default reali di `Default()`
-
-I default reali restituiti da `Default()` sono:
-
-| Campo | Default |
+| Variabile | Campo |
 |---|---|
-| `NodeID` | `node-1` |
-| `BindAddress` | `0.0.0.0` |
-| `AdvertiseAddr` | `""` |
-| `NodePort` | `7001` |
-| `JoinEndpoint` | `""` |
-| `BootstrapPeers` | `nil` |
-| `SeedPeers` | `nil` |
-| `GossipIntervalMS` | `1000` |
-| `Fanout` | `2` |
-| `MembershipTimeoutMS` | `5000` |
-| `EnabledAggregations` | `['sum', 'average', 'min', 'max']` |
-| `Aggregation` | `sum` |
-| `LogLevel` | `info` |
+| `NODE_ID` | `node_id` |
+| `BIND_ADDRESS` | `bind_address` |
+| `ADVERTISE_ADDR` | `advertise_addr` |
+| `NODE_PORT` | `node_port` |
+| `JOIN_ENDPOINT` | `join_endpoint` |
+| `BOOTSTRAP_PEERS` | lista CSV `bootstrap_peers` |
+| `SEED_PEERS` | lista CSV `seed_peers` |
+| `GOSSIP_INTERVAL_MS` | `gossip_interval_ms` |
+| `FANOUT` | `fanout` |
+| `MEMBERSHIP_TIMEOUT_MS` | `membership_timeout_ms` |
+| `ENABLED_AGGREGATIONS` | lista CSV `enabled_aggregations` |
+| `AGGREGATION` | `aggregation` |
+| `INITIAL_VALUE` | `initial_value` |
+| `LOG_LEVEL` | `log_level` |
+| `LOGGING_REMOTE_MERGE_MODE` | `logging.remote_merge_mode` |
+| `LOGGING_LOG_ESTIMATE_DELTA_THRESHOLD` | `logging.log_estimate_delta_threshold` |
 
-## Variabili ambiente supportate da `overrideFromEnv`
+Valori numerici o CSV malformati causano errore; non vengono ignorati.
 
-Il runtime supporta esattamente queste variabili ambiente:
+Due impostazioni runtime non appartengono a `Config`:
 
-| Variabile ambiente | Campo target | Tipo atteso | Note reali |
-|---|---|---|---|
-| `NODE_ID` | `NodeID` | stringa | Ignorata se vuota/spazi. |
-| `BIND_ADDRESS` | `BindAddress` | stringa | Ignorata se vuota/spazi. |
-| `ADVERTISE_ADDR` | `AdvertiseAddr` | stringa | Endpoint `host:porta` pubblicizzato agli altri nodi. |
-| `NODE_PORT` | `NodePort` | intero | Se presente ma non numerica fallisce il load. |
-| `JOIN_ENDPOINT` | `JoinEndpoint` | stringa | Ignorata se vuota/spazi. |
-| `BOOTSTRAP_PEERS` | `BootstrapPeers` | CSV | Interpretata come lista `a,b,c`; se presente ma malformata fallisce il load. |
-| `SEED_PEERS` | `SeedPeers` | CSV | Interpretata come lista `a,b,c`; se presente ma malformata fallisce il load. |
-| `GOSSIP_INTERVAL_MS` | `GossipIntervalMS` | intero | Se presente ma non numerica fallisce il load. |
-| `FANOUT` | `Fanout` | intero | Se presente ma non numerica fallisce il load. |
-| `MEMBERSHIP_TIMEOUT_MS` | `MembershipTimeoutMS` | intero | Se presente ma non numerica fallisce il load. |
-| `ENABLED_AGGREGATIONS` | `EnabledAggregations` | CSV | Interpretata come lista `a,b,c`; se presente ma malformata fallisce il load. |
-| `AGGREGATION` | `Aggregation` | stringa | Ignorata se vuota/spazi. |
-| `LOG_LEVEL` | `LogLevel` | stringa | Ignorata se vuota/spazi. |
+- `OBSERVABILITY_ADDR` (default `:8080`): bind del server HTTP;
+- `SDCC_GENERATION_FILE` (default `/var/lib/sdcc/generation`): storage della generation.
 
-## Regole di validazione applicate da `Validate`
+## Membership e vincolo temporale
 
-La validazione finale applica le seguenti regole.
-
-### 1. Regole sui campi obbligatori e numerici
-
-- `node_id` deve essere non vuoto dopo trim.
-- `node_port` deve essere compreso tra `1` e `65535`.
-- `gossip_interval_ms` deve essere `> 0`.
-- `fanout` deve essere `> 0`.
-- per robustezza difensiva, il runtime normalizza comunque eventuali valori `<= 0` a `1` nel costruttore dell'engine gossip.
-- `membership_timeout_ms` deve essere `> 0`.
-- il valore viene poi tradotto in `SuspectTimeout` e `DeadTimeout` tramite la regola runtime documentata sopra.
-- `aggregation` deve essere non vuota dopo trim.
-- `enabled_aggregations` deve contenere almeno un valore.
-
-### 2. Regole su `bind_address`
-
-- `bind_address` è obbligatorio.
-- Il valore deve essere un host valido secondo le regole interne del package `config`.
-- Il valore deve poter essere combinato con `node_port` tramite `net.JoinHostPort` e poi ri-parseato con `net.SplitHostPort`.
-
-## 3. Regole sugli endpoint peer
-
-Queste regole si applicano a:
-
-- `advertise_addr` se valorizzato;
-- `join_endpoint` se valorizzato;
-- ogni elemento di `bootstrap_peers`;
-- ogni elemento di `seed_peers`.
-
-Ogni endpoint deve:
-
-- rispettare il formato `host:porta`;
-- avere host valido;
-- avere porta numerica;
-- avere porta compresa tra `1` e `65535`.
-
-Inoltre:
-
-- `bootstrap_peers` rifiuta valori vuoti;
-- `seed_peers` rifiuta valori vuoti;
-- entrambe le liste rifiutano duplicati inutili.
-
-### 4. Regole sulle aggregazioni
-
-Le aggregazioni supportate dal runtime sono **esattamente**:
-
-- `sum`
-- `average`
-- `min`
-- `max`
-
-Le regole applicate sono:
-
-- ogni elemento di `enabled_aggregations` deve essere non vuoto;
-- `enabled_aggregations` non può contenere duplicati;
-- ogni elemento di `enabled_aggregations` deve appartenere al set supportato (`sum`, `average`, `min`, `max`);
-- `aggregation` deve appartenere allo stesso set supportato;
-- `aggregation` deve essere presente in `enabled_aggregations`.
-
-## Interazione runtime con bootstrap/discovery
-
-Il metodo `DiscoveryPeers()` restituisce:
-
-- `BootstrapPeers` se la lista è non vuota;
-- altrimenti `SeedPeers`.
-
-Nel bootstrap reale del nodo:
-
-- `cmd/node/main.go` invoca `membership.Bootstrap(...)`;
-- passa `cfg.JoinEndpoint` come endpoint di join opzionale;
-- passa `cfg.DiscoveryPeers()` come peer di discovery iniziale.
-
-Quindi la precedence di discovery è:
+Il timeout esterno viene mappato in:
 
 ```text
-join_endpoint (se disponibile nel flusso di bootstrap) + bootstrap_peers preferiti, altrimenti seed_peers
+SuspectTimeout = max(1 ms, membership_timeout_ms / 2)
+DeadTimeout    = max(SuspectTimeout + 1 ms, membership_timeout_ms)
 ```
 
-Più precisamente, a livello di configurazione peer locale:
+La validazione stima la copertura dei peer come `ceil(peer_configurati/fanout) × gossip_interval_ms` e richiede che `SuspectTimeout` sia strettamente maggiore. Una configurazione troppo aggressiva viene quindi rifiutata prima dello startup.
 
-```text
-DiscoveryPeers() = bootstrap_peers se presenti, altrimenti seed_peers
-```
+## Validazione
 
-## Esempio minimo locale con `configs/example.yaml`
+Il caricamento fallisce se:
 
-### Avvio diretto con file di esempio
+- identità o bind sono vuoti;
+- porte, host o endpoint `host:porta` non sono validi;
+- liste contengono valori vuoti, duplicati o endpoint malformati;
+- intervallo, fanout o timeout non sono positivi;
+- la finestra di failure detection è incompatibile con la copertura gossip attesa;
+- un'aggregazione non è tra `sum`, `average`, `min`, `max`;
+- `aggregation` non appartiene a `enabled_aggregations`;
+- modalità o threshold di logging non sono validi.
+
+## Configurazioni incluse
+
+- `configs/example.yaml`: esempio completo, non usato dal Compose canonico;
+- `configs/node1.yaml` … `configs/node3.yaml`: cluster a 3 nodi, `average`, valori 10/30/50;
+- `configs/node1.yaml` … `configs/node6.yaml`: cluster scale e TC, `average`, valori 10/30/50/70/90/110.
+
+I file nodo usano `gossip_interval_ms: 1000`, `fanout: 5` e `membership_timeout_ms: 10000`. Con tre peer effettivi il fanout viene naturalmente limitato ai target disponibili.
+
+## Esempi
+
+Avvio diretto:
 
 ```bash
 go run ./cmd/node --config configs/example.yaml
 ```
 
-Il file `configs/example.yaml` definisce un nodo locale con:
-
-- `node_id: node-1`
-- `bind_address: 0.0.0.0`
-- `advertise_addr: node1:7001`
-- `node_port: 7001`
-- `join_endpoint: bootstrap:9000`
-- `bootstrap_peers` espliciti
-- `seed_peers` di fallback
-- aggregazioni abilitate `sum`, `average`, `min`, `max`
-- aggregazione attiva `sum`
-
-### Esempio minimo locale senza env override
+Override dell'algoritmo e del valore:
 
 ```bash
+AGGREGATION=max INITIAL_VALUE=42 \
 go run ./cmd/node --config configs/example.yaml
 ```
 
-### Esempio minimo locale con override env
-
-```bash
-NODE_ID=node-local-1 \
-BIND_ADDRESS=127.0.0.1 \
-ADVERTISE_ADDR=node-local-1:7101 \
-NODE_PORT=7101 \
-JOIN_ENDPOINT=bootstrap:9000 \
-BOOTSTRAP_PEERS=node-1:7001,node-2:7002 \
-SEED_PEERS=node-2:7002,node-3:7003 \
-GOSSIP_INTERVAL_MS=500 \
-FANOUT=1 \
-MEMBERSHIP_TIMEOUT_MS=3000 \
-ENABLED_AGGREGATIONS=sum,average,min,max \
-AGGREGATION=min \
-LOG_LEVEL=debug \
-go run ./cmd/node --config configs/example.yaml
-```
-
-## Esempi di override env con nomi esatti
-
-### Override di identificazione e bind
-
-```bash
-NODE_ID=node-dev-1 \
-BIND_ADDRESS=127.0.0.1 \
-NODE_PORT=7201 \
-go run ./cmd/node --config configs/example.yaml
-```
-
-### Override bootstrap/discovery
-
-```bash
-JOIN_ENDPOINT=bootstrap:9000 \
-BOOTSTRAP_PEERS=node-1:7001,node-2:7002 \
-SEED_PEERS=node-2:7002,node-3:7003 \
-go run ./cmd/node --config configs/example.yaml
-```
-
-### Override timing gossip e membership
-
-```bash
-GOSSIP_INTERVAL_MS=250 \
-FANOUT=2 \
-MEMBERSHIP_TIMEOUT_MS=4000 \
-go run ./cmd/node --config configs/example.yaml
-```
-
-### Override aggregazioni e logging
-
-```bash
-ENABLED_AGGREGATIONS=sum,average,min,max \
-AGGREGATION=average \
-LOG_LEVEL=info \
-LOGGING_REMOTE_MERGE_MODE=significant \
-LOGGING_LOG_ESTIMATE_DELTA_THRESHOLD=0.5 \
-go run ./cmd/node --config configs/example.yaml
-```
-
-## Elenco sintetico dei nomi env supportati
-
-Per riferimento rapido, i nomi esatti supportati dal runtime sono:
-
-- `NODE_ID`
-- `BIND_ADDRESS`
-- `NODE_PORT`
-- `JOIN_ENDPOINT`
-- `BOOTSTRAP_PEERS`
-- `SEED_PEERS`
-- `GOSSIP_INTERVAL_MS`
-- `FANOUT`
-- `MEMBERSHIP_TIMEOUT_MS`
-- `ENABLED_AGGREGATIONS`
-- `AGGREGATION`
-- `LOG_LEVEL`
-
-- `LOGGING_REMOTE_MERGE_MODE` (valori: `full|significant|off`, default consigliato `significant`)
-- `LOGGING_LOG_ESTIMATE_DELTA_THRESHOLD` (soglia `abs(estimate_after-estimate_before)` per classificare un merge `applied` come significativo; default `0`)
+In un cluster reale applicare lo stesso `AGGREGATION` a tutti i nodi. Per indirizzi raggiungibili da altri container/host impostare sempre un `advertise_addr` coerente: il fallback `127.0.0.1` per bind wildcard è adatto soltanto a esecuzioni locali isolate.

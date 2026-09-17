@@ -1,163 +1,159 @@
-# Demo operativa cluster gossip SDCC
+# Checklist per la live demo
 
-Questa guida descrive la demo operativa **reale** del cluster SDCC su Docker Compose e resta allineata alla documentazione canonica di test e deployment.
+## Obiettivo
 
-Riferimenti incrociati:
-- panoramica repository e quickstart: [README.md](../README.md)
-- strategia test canonica M09/M10: [docs/testing.md](testing.md)
+Dimostrare in modo ripetibile startup, readiness, gossip decentralizzato, aggregazione, convergenza, continuità dopo crash e rejoin. Le sezioni scale e Traffic Control sono opzionali e vanno eseguite solo se tempo e ambiente lo consentono.
 
-## 1) Scopo demo
+## Preparazione prima della presentazione
 
-Obiettivo della demo:
-- avviare un cluster gossip SDCC a **3 nodi** (`node1`, `node2`, `node3`);
-- osservare la convergenza dell'aggregazione `average` nello scenario congelato dei valori iniziali `10`, `30`, `50`;
-- verificare che i nodi convergano verso una stima comune attesa intorno a `30.0`.
+- [ ] Docker Engine/Desktop e Compose v2 funzionano.
+- [ ] La repository è sul commit da presentare e la working tree è pulita.
+- [ ] `go test ./... -count=1` è stato eseguito in precedenza con esito registrato.
+- [ ] Nessun project `sdcc-bootstrap`, `sdcc-scale` o `sdcc-tc` è rimasto attivo.
+- [ ] Terminali e font sono leggibili; comandi lunghi sono pronti.
+- [ ] È disponibile un piano di fallback con log/artefatti raccolti, senza dichiararlo una live run.
 
-## 2) Prerequisiti reali
+Preflight rapido:
 
-Prerequisiti minimi richiesti nel repository corrente:
-1. **Docker Engine** installato e attivo.
-2. **Docker Compose plugin** disponibile come comando `docker compose`.
-3. **Go locale installato (minimo `1.22`, coerente con `go.mod`)**.
-4. Repository clonata localmente.
-5. File di configurazione presenti e coerenti:
-   - `configs/node1.yaml`
-   - `configs/node2.yaml`
-   - `configs/node3.yaml`
-
-Verifica rapida prerequisiti:
 ```bash
-docker --version
+docker info
 docker compose version
-go version
+scripts/cluster_down.sh
 ```
 
-## 3) Setup e avvio (comandi reali)
+## Demo principale: cluster a 3 nodi
 
-Eseguire dalla root repository:
+### 1. Startup e topologia
 
 ```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f node1
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
+docker compose -p sdcc-bootstrap -f docker-compose.yml ps
 ```
 
-Note operative:
-- il file Compose canonico è `docker-compose.yml` in root;
-- i nodi usano i file `configs/node*.yaml` montati nel container;
-- per interrompere la demo: `docker compose down`.
+Mostrare tre processi equivalenti, le configurazioni `configs/node1.yaml` … `node3.yaml` e l'assenza di un servizio coordinatore.
 
-## 4) Cosa osservare durante la demo
+### 2. Readiness e lifecycle
 
-Durante i log e le verifiche runtime osservare almeno questi segnali:
-
-1. **Bootstrap**
-   - marker di bootstrap completato;
-   - membership iniziale popolata con peer Compose raggiungibili.
-
-2. **Round gossip**
-   - avanzamento dei round gossip sui nodi attivi;
-   - scambio periodico di stato/membership tra peer.
-
-3. **Convergenza stime**
-   - le stime locali dei nodi devono avvicinarsi nella stessa banda;
-   - nello scenario `10/30/50`, il riferimento informativo atteso è circa `30.0`.
-
-4. **Readiness / metrics (dove disponibile)**
-   - endpoint `/ready` coerente con bootstrap+engine avviati;
-   - endpoint `/metrics` con metriche come `sdcc_node_rounds_total`, `sdcc_node_estimate`, `sdcc_node_remote_merges_total`.
-
-## 5) Criteri di successo misurabili
-
-I criteri devono restare coerenti con test e documentazione esistenti:
-
-- **Convergenza M09**: banda cluster `max(values) - min(values) <= 0.05`.
-- **Evidenza da log/metriche**:
-  - round gossip osservabili (log e/o `sdcc_node_rounds_total` crescente);
-  - nodi `ready` dopo bootstrap completo;
-  - stime finali compatibili con la banda di convergenza.
-
-Per la verifica automatica canonica:
+Su host Linux:
 
 ```bash
-go test ./tests/integration -run TestClusterConvergence -count=1
+CID=$(docker compose -p sdcc-bootstrap -f docker-compose.yml ps -q node1)
+IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CID")
+curl --fail "http://${IP}:8080/health"
+curl --fail "http://${IP}:8080/ready"
+curl --fail "http://${IP}:8080/metrics" | head -30
 ```
 
-Nota di distinzione operativa:
-- i comandi runtime cluster (`docker compose up/ps/logs/down`) orchestrano il deployment locale dei container;
-- i comandi test canonici (`go test ./tests/integration ...`) eseguono test Go locali e richiedono la toolchain Go installata sull'host.
+Su Docker Desktop, se l'IP bridge non è raggiungibile, usare l'esito di `cluster_wait_ready.sh` e i test observability già verificati; non cambiare il deployment durante la presentazione.
 
-## 6) Scenario crash/restart (supportato)
+Chiarire che ready significa engine avviato, non aggregato già convergente.
 
-Lo scenario crash/restart è **supportato** nel repository, ma va riferito ai flussi reali già esistenti:
-
-- test canonico: `tests/integration/TestNodeCrashAndRestart`;
-- variante rapida: `tests/integration/TestNodeCrashAndRestartInMemory`;
-- script di supporto manuale: `scripts/fault_injection/*`.
-
-Comandi di riferimento già supportati:
+### 3. Gossip e aggregazione
 
 ```bash
-go test ./tests/integration -run TestNodeCrashAndRestart -count=1
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --no-color | \
+  grep -E 'event=(gossip_round|remote_merge|convergence_sample)' | tail -30
+```
+
+Evidenziare round crescenti, merge tra peer e stime. I valori 10, 30 e 50 producono `average=30` quando tutti i nodi sono `alive`.
+
+### 4. Convergenza verificata
+
+```bash
+go test ./tests/integration -run TestClusterConvergence -count=1 -v
+```
+
+Il criterio automatico richiede banda fra stime `<= 0.05` entro il timeout della suite. Distinguere questo test da un semplice controllo di readiness.
+
+### 5. Crash del nodo
+
+```bash
 scripts/fault_injection/node_stop_start.sh stop node1
+docker compose -p sdcc-bootstrap -f docker-compose.yml ps
+sleep 12
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --since=20s --no-color | \
+  grep -E 'event=(membership_transition|gossip_round|convergence_sample)' | tail -40
+```
+
+Mostrare che `node2` e `node3` restano attivi, continuano i round e, dopo failure detection, escludono il contributo non `alive`.
+
+### 6. Restart e rejoin
+
+```bash
 scripts/fault_injection/node_stop_start.sh start node1
-scripts/fault_injection/collect_debug_snapshot.sh node1
+sleep 12
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --since=20s --no-color | \
+  grep -E 'event=(membership_transition|remote_merge|convergence_sample)' | tail -50
 ```
 
-Questa sezione non introduce workflow nuovi: riusa esclusivamente test/script già presenti.
-
-
-## 6) Scenario resilienza esteso (crash sequenziale + partizione + rejoin)
-
-Oltre al test M10 base, la demo supporta uno scenario combinato più severo:
-
-- crash di `node1`, poi crash di `node2`;
-- partizione temporanea di rete su `node3`;
-- recovery con restart e rejoin di `node1`/`node2`.
-
-Comandi di riferimento:
+Mostrare generation/incarnation superiore, ritorno `alive` e riconvergenza a 30. Il test completo ripetibile è:
 
 ```bash
-go test ./tests/integration -run TestSequentialCrashPartitionAndRejoin -count=1
-scripts/fault_injection/scenario_sequential_crash_partition_rejoin.sh
+go test ./tests/integration -run TestNodeCrashAndRestart -count=1 -v
 ```
 
-Timeout configurabili per ambienti lenti/CI:
+### 7. Cleanup principale
 
 ```bash
-SDCC_M10_EXT_SCENARIO_TIMEOUT=150s \
-SDCC_M10_EXT_RESIDUAL_TIMEOUT=30s \
-SDCC_M10_EXT_REJOIN_TIMEOUT=45s \
-go test ./tests/integration -run TestSequentialCrashPartitionAndRejoin -count=1
+scripts/cluster_down.sh
 ```
 
-Criteri di successo osservabili:
+Non usare la rimozione volumi se si vuole mostrare la persistenza della generation.
 
-- cluster residuo operativo durante fault (nodo superstite `ready` e con round in avanzamento);
-- riconvergenza cluster entro banda `0.08`;
-- membership corretta dopo reintegro (`sdcc_node_known_peers >= 2` per nodo).
+## Estensione opzionale: 6 nodi
 
-## 7) Troubleshooting minimo
+```bash
+export SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml
+export SDCC_PROJECT_NAME=sdcc-scale
+export SDCC_SERVICES='node1 node2 node3 node4 node5 node6'
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
+scripts/show_aggregation_status.sh
+```
 
-### A) Container in stato `exited`
-- Verificare stato servizi: `docker compose ps`.
-- Ispezionare log del servizio: `docker compose logs --tail 200 node1` (o nodo interessato).
-- Se necessario: `docker compose down && docker compose up -d --build`.
+Il risultato atteso è `average=60`. Per un grafico:
 
-### B) Peer non raggiungibili
-- Verificare che i peer nei file config usino gli hostname Compose (`node1`, `node2`, `node3`).
-- Controllare rete e nomi servizi nel `docker-compose.yml` canonico.
+```bash
+scripts/cluster_convergence_report.sh
+```
 
-### C) Mismatch configurazione
-- Verificare coerenza tra `node_id`, `advertise_addr`, `seed_peers`, `aggregation`, `initial_value` nei file `configs/node*.yaml`.
-- Evitare override env non coerenti con i file montati.
+Mostrare il CSV/SVG prodotto sotto `artifacts/cluster`, quindi:
 
----
+```bash
+scripts/cluster_down.sh
+unset SDCC_COMPOSE_FILE SDCC_PROJECT_NAME SDCC_SERVICES
+```
 
-Per contestualizzare la demo rispetto ai target di test e ai criteri di successo, fare sempre riferimento anche a [README.md](../README.md) e [docs/testing.md](testing.md).
+## Estensione opzionale: Traffic Control
 
-## Demo del grafico di convergenza
+```bash
+scripts/demo_tc_latency.sh --self-test
+scripts/demo_tc_latency.sh average
+```
 
-Avviare la raccolta a tre nodi con `OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh`; per la topologia a sei nodi usare `SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml SDCC_PROJECT_NAME=sdcc-scale SDCC_SERVICES='node1 node2 node3 node4 node5 node6' OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh`. Aprire l'SVG nella directory timestamp stampata dallo script e mostrare: asse X in secondi dal primo campione globale, asse Y come stima locale, gradino distinto per ogni `node_id`, banda `atteso ± tolleranza` e annotazione della convergenza stabile (oppure della sua mancata osservazione).
+Mostrare i profili 0–2000 ms, la verifica qdisc, il primo istante di convergenza e la finestra di stabilità. Non eseguire contemporaneamente il cluster scale. Cleanup:
 
-Il riferimento è calcolato sull'host dagli `initial_value` associati alla run (`30` per tre nodi, `60` per sei) e non è conoscenza dei nodi. `compose.log` consente di ricostruire il CSV senza affidarsi a volumi scrivibili o a un collector nel Compose.
+```bash
+docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down
+```
+
+## Q&A: punti da chiarire
+
+- Il calcolo è decentralizzato; seed/join endpoint servono solo al bootstrap.
+- Fanout limita gli invii per round, ma il payload completo cresce con membership e contributi.
+- UDP può perdere/riordinare messaggi; idempotenza e round successivi consentono la convergenza eventuale.
+- Solo peer `alive` contribuiscono alla stima esposta; metadata non eleggibili restano disponibili per rejoin.
+- Persistenza della generation rende monotono il restart della stessa identità, finché i volumi non vengono eliminati.
+- Traffic Control è una valutazione sintetica single-host, non una WAN reale.
+- Il report scientifico e il dataset definitivo sono deliverable successivi.
+
+## Cleanup di emergenza
+
+```bash
+docker compose -p sdcc-bootstrap -f docker-compose.yml down --remove-orphans
+docker compose -p sdcc-scale -f deploy/docker-compose.scale.yml down --remove-orphans
+docker compose -p sdcc-tc -f deploy/docker-compose.tc.yml down --remove-orphans
+```
+
+Usare `-v` soltanto se si vuole eliminare intenzionalmente tutta la persistenza delle generation.

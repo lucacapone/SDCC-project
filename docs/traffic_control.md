@@ -1,158 +1,134 @@
 # Modalità sperimentale Traffic Control
 
-## Scopo e isolamento
+## Obiettivo e isolamento
 
-La modalità Traffic Control (TC) è un esperimento opzionale a sei nodi che usa
-Linux `tc/netem` per ritardare **tutto il traffico in uscita** da ciascun
-container. Non modifica né riusa le risorse della modalità normale: immagine,
-entrypoint, Compose, rete (`sdcc-tc-net`), project name (`sdcc-tc`) e sei volumi
-`*-tc-state` sono dedicati. Il binario resta quello costruito da `cmd/node` e le
-configurazioni montate restano `configs/node1.yaml` … `configs/node6.yaml`.
-Lo script costruisce una sola volta `sdcc-node-tc:local` dal Dockerfile TC e poi
-avvia Compose con `--no-build`: tutti i sei servizi riusano quindi la stessa
-immagine locale, senza build o export concorrenti sul medesimo tag.
+La modalità opzionale misura l'effetto di ritardi e jitter di rete sulla convergenza del cluster a sei nodi. Usa Linux `tc` con qdisc `netem` senza modificare il binario Go, i file applicativi o il deployment standard.
 
-## Avvio e profili
+Artefatti dedicati:
 
-Dalla root, scegliere una delle aggregazioni supportate (default `average`):
+- `deploy/traffic-control/Dockerfile`: immagine Alpine con nodo, `iproute2` e `curl`;
+- `deploy/traffic-control/entrypoint.sh`: applicazione e verifica della qdisc;
+- `deploy/docker-compose.tc.yml`: sei servizi, rete/volumi `sdcc-tc` e `NET_ADMIN`;
+- `scripts/demo_tc_latency.sh`: build, startup, diagnostica e monitor.
+
+Il project name è sempre `sdcc-tc`; rete e volumi sono separati dal cluster normale/scale.
+
+## Prerequisiti
+
+- Docker Engine/Desktop con container Linux e Compose v2;
+- kernel/container runtime con NetEm;
+- possibilità di assegnare `NET_ADMIN` ai container;
+- Bash.
+
+La capability privilegiata è presente soltanto nel Compose TC. Il deployment normale non dipende da `tc`.
+
+## Profili di rete
+
+| Nodo | Delay egress | Jitter | Stato |
+|---|---:|---:|---|
+| `node1` | 0 ms | 0 ms | bypass, nessuna qdisc NetEm |
+| `node2` | 400 ms | 80 ms | NetEm |
+| `node3` | 800 ms | 160 ms | NetEm |
+| `node4` | 1200 ms | 240 ms | NetEm |
+| `node5` | 1600 ms | 320 ms | NetEm |
+| `node6` | 2000 ms | 400 ms | NetEm |
+
+Il jitter è il 20% del delay. L'entrypoint risolve `TC_PEER_HOST` con retry limitato a 10 secondi, ricava l'interfaccia dalla route, esegue:
+
+```text
+tc qdisc replace dev <interface> root netem delay <delay>ms <jitter>ms distribution normal
+```
+
+e verifica `tc qdisc show` prima di eseguire il nodo con `exec`. I valori devono essere interi non negativi; un errore di DNS, route, capability o qdisc termina il container.
+
+## Avvio
+
+Validazione preliminare:
 
 ```bash
-scripts/demo_tc_latency.sh
+bash -n deploy/traffic-control/entrypoint.sh scripts/demo_tc_latency.sh
+scripts/demo_tc_latency.sh --self-test
+docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc config --quiet
+```
+
+Esecuzione:
+
+```bash
+scripts/demo_tc_latency.sh average
+```
+
+Sono supportati anche:
+
+```bash
 scripts/demo_tc_latency.sh sum
 scripts/demo_tc_latency.sh min
 scripts/demo_tc_latency.sh max
 ```
 
-Il comando resta responsabile dell'intera sequenza `build unica -> avvio dei sei
-servizi`; non è necessario costruire manualmente l'immagine.
+Lo script costruisce una sola volta `sdcc-node-tc:local`, poi avvia i sei servizi con `--no-build --force-recreate`. `AGGREGATION` sovrascrive uniformemente i file; gli `initial_value` restano 10, 30, 50, 70, 90, 110.
 
-Lo script usa oracle statici, senza ricalcolare il risultato dei nodi:
-`average=60`, `sum=360`, `min=10`, `max=110`. Compose passa la scelta tramite
-l'override applicativo già supportato `AGGREGATION`; gli `initial_value` restano
-`10, 30, 50, 70, 90, 110` nei YAML esistenti.
+Oracle usati: `average=60`, `sum=360`, `min=10`, `max=110`.
 
-| Nodo | Delay egress | Jitter | Comportamento |
-|---|---:|---:|---|
-| node1 | 0 ms | 0 ms | bypass TC, nessuna qdisc NetEm |
-| node2 | 400 ms | 80 ms | NetEm |
-| node3 | 800 ms | 160 ms | NetEm |
-| node4 | 1200 ms | 240 ms | NetEm |
-| node5 | 1600 ms | 320 ms | NetEm |
-| node6 | 2000 ms | 400 ms | NetEm |
+## Verifica della qdisc
 
-Il jitter è il 20% del delay. L'entrypoint risolve un peer, ricava dalla route la
-relativa interfaccia e applica `tc qdisc replace dev <interface> root netem delay
-<delay>ms <jitter>ms distribution normal`. `replace` rende l'avvio idempotente.
-La risoluzione esegue un tentativo immediato e, soltanto durante il bootstrap,
-fino a 40 retry ogni 250 ms (massimo 10 secondi) per assorbire la pubblicazione
-concorrente dei nomi nel DNS Docker; allo scadere l'entrypoint termina non-zero.
-`NET_ADMIN` è assegnata solo dai servizi TC. L'entrypoint verifica `ip`, `tc`,
-route e `tc qdisc show`, fallisce chiaramente in caso di errore e usa infine
-`exec`, preservando i segnali al nodo Go.
-
-## Lettura della schermata
-
-La demo interroga `/metrics` con `docker compose exec` su `127.0.0.1:8080`, senza
-attraversare la qdisc. `known X/6` legge `sdcc_node_known_peers` e indica
-**soltanto il numero di entry nella membership locale**: non indica contributi,
-peer alive, contatti diretti o contributi effettivamente usati nella stima.
-
-La stima arriva dall'ultimo `event=convergence_sample` valido, verificando anche
-`node_id` e `aggregation`. `[START]` indica che manca ancora un campione; `[WAIT]`
-indica una stima distante dall'oracle più di `0.000001`; `[OK]` indica
-`abs(estimate-oracle) <= 0.000001`. `known` è solo informativo. La Fase A non
-richiede stabilità su due controlli. La schermata si aggiorna circa ogni secondo.
-La prima convergenza simultanea non conclude la demo: il monitor continua fino
-ad almeno 8 secondi totali dalla partenza della fase di osservazione, verificando
-a ogni ciclo container, false suspicion e stime. Se un nodo perde la convergenza
-torna `[WAIT]`; il successo viene emesso soltanto quando tutti i nodi sono di
-nuovo `[OK]` dopo la soglia degli 8 secondi. Il timeout complessivo resta 30
-secondi. Il riepilogo finale distingue il primo istante di convergenza simultanea
-dal tempo totale in cui la verifica di stabilità termina positivamente; una
-successiva regressione `[WAIT]` non sovrascrive il primo istante osservato.
-
-Con `membership_timeout_ms=10000`, il runtime deriva `SuspectTimeout=5000 ms` e
-`DeadTimeout=10000 ms`. La demo cerca nella run
-`event=membership_transition previous_status=alive status=suspect`: se lo trova
-mentre i sei container sono attivi, mostra l'evento, dichiara la run non valida e
-termina non-zero, senza adattare profili o timeout. La ricerca è confinata alla
-run corrente: lo script registra il timestamp subito prima di `up
---force-recreate`, e Compose consulta soltanto i nuovi container ricreati oltre
-ad applicare `logs --since`.
-
-Il profilo precedente arrivava a `2500 ± 500 ms` su `node6`, troppo vicino alla
-soglia `SuspectTimeout=5000 ms`. Nelle validazioni AWS EC2, pur con tutti i
-container `Up`, aggregato già convergente a `60` e successivi `remote_merge` da
-`node6`, sono state osservate due false suspicion reali: `node1` ha marcato
-`node6` `alive -> suspect` dopo `elapsed_ms=5097`, e in un'altra run `node2` ha
-marcato `node6` dopo `elapsed_ms=5123`. Per aumentare il margine senza cambiare
-failure detector, gossip o configurazioni applicative, il massimo TC è stato
-ridotto a `2000 ± 400 ms`, mantenendo jitter pari al 20% del delay.
-
-## Diagnostica NetEm e gossip
-
-Per verificare qdisc e contatori (sostituire il nodo quando necessario):
+Lo script verifica automaticamente che `node1` sia in bypass e che gli altri nodi abbiano NetEm. Diagnostica manuale su `node2`:
 
 ```bash
 docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc exec -T node2 sh -c \
   'dev=$(ip -o route get "$(getent ahostsv4 node1 | awk "NR==1 {print \\$1}")" | awk "{for(i=1;i<=NF;i++)if(\\$i==\"dev\"){print \\$(i+1);exit}}"); tc qdisc show dev "$dev"; tc -s qdisc show dev "$dev"'
 ```
 
-Ripetendo `tc -s` durante il gossip, i contatori devono aumentare. Gli scambi
-applicativi sono verificabili con:
+Ripetere `tc -s` per osservare l'aumento dei contatori. Per verificare traffico applicativo:
 
 ```bash
-docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc logs --no-color | grep 'event=remote_merge'
+docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc logs --no-color | \
+  grep 'event=remote_merge'
 ```
 
-Per un confronto non artificiale, eseguire prima la modalità normale a sei nodi
-come in `docs/demo.md`, annotarne il tempo osservato e poi confrontarlo con il
-`Stabilità verificata` della demo TC.
+## Osservazione della convergenza
 
-## Stop, cleanup e reset
+Il monitor legge `/metrics` su loopback interno per `known_peers` e l'ultimo `convergence_sample` per la stima. Stati:
 
-`Ctrl-C` ferma il monitor lasciando il cluster disponibile per la diagnostica.
-Questi comandi operano soltanto sul project TC:
+- `[START]`: nessun campione disponibile;
+- `[WAIT]`: distanza dall'oracle maggiore di `0.000001`;
+- `[OK]`: stima entro la tolleranza.
+
+`known X/6` descrive la dimensione della membership locale, non il numero di contributori. Il monitor conserva il primo istante in cui tutti sono `[OK]`, continua almeno fino a 8 secondi per verificare stabilità e ha timeout totale di 30 secondi. Una regressione torna `[WAIT]` senza cancellare la prima convergenza.
+
+La run è invalidata se nei log correnti compare una transizione `alive → suspect` mentre tutti i container sono ancora attivi. Lo script non altera automaticamente timeout o profili per nascondere il problema.
+
+## Confronto baseline e rete ritardata
+
+1. Avviare `deploy/docker-compose.scale.yml` con la stessa aggregazione.
+2. Annotare convergenza/stabilità tramite campioni o report.
+3. Eseguire il cleanup del cluster scale.
+4. Avviare `scripts/demo_tc_latency.sh <aggregation>`.
+5. Confrontare prima convergenza e stabilità, conservando log e condizioni della VM.
+
+Il confronto è sperimentale: non confondere il delay egress per container con un RTT WAN simmetrico.
+
+## Uso su EC2
+
+Su una singola EC2 Linux usare gli stessi comandi. I container condividono un bridge dedicato; non servono nuove regole Security Group. Se il kernel non offre NetEm o il runtime non applica `NET_ADMIN`, l'entrypoint fallisce esplicitamente.
+
+## Cleanup
+
+`Ctrl-C` arresta il monitor ma lascia i container per la diagnostica.
 
 ```bash
-# Rimuove container/rete preservando le generation nei volumi TC.
+# preserva le generation TC
 docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down
 
-# Reset completo della sola modalità TC, generation incluse.
+# reset completo e distruttivo della sola modalità TC
 docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down -v --remove-orphans
 ```
 
-Non usare `-v` quando si vuole mantenere l'identità durevole tra run. Le risorse
-della modalità normale e del project `sdcc-scale` non vengono toccate.
+## Troubleshooting e limiti
 
-## Validazione su macOS
-
-Docker Desktop deve usare container Linux e consentire `NET_ADMIN`. Dalla root:
-
-```bash
-go test ./...
-go vet ./...
-bash -n deploy/traffic-control/entrypoint.sh scripts/demo_tc_latency.sh
-scripts/demo_tc_latency.sh --self-test
-docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc config --quiet
-scripts/demo_tc_latency.sh average
-```
-
-Durante la run verificare i contatori con `tc -s`, l'assenza di false suspicion
-e la presenza di `remote_merge`, quindi eseguire il cleanup desiderato.
-
-## AWS EC2 single-host
-
-Su una EC2 Linux con Docker Engine e Compose, clonare la repository ed eseguire
-gli stessi comandi. I sei container condividono il bridge dedicato e ricevono
-individualmente `NET_ADMIN`; non servono nuove regole Security Group, poiché
-gossip e metriche restano interni. La compatibilità effettiva dipende dal kernel:
-se NetEm non è disponibile, l'entrypoint fallisce esplicitamente. A fine prova
-eseguire il cleanup TC e arrestare le risorse EC2 non necessarie.
-
-## Limiti
-
-- Il delay è egress per container, non un RTT bidirezionale configurato.
-- Il criterio Fase A usa soltanto la stima; `known` non ne aumenta la robustezza.
-- Una false suspicion invalida la run invece di cambiare automaticamente profilo.
-- Docker Desktop/host deve supportare realmente Linux NetEm e `NET_ADMIN`.
+- **DNS peer non risolto:** verificare i sei servizi e i log entro il limite di bootstrap di 10 secondi.
+- **Operation not permitted:** il runtime non ha applicato `NET_ADMIN`.
+- **qdisc assente:** controllare supporto `sch_netem`/kernel e interfaccia risolta dalla route.
+- **false suspect:** la run è non valida; conservare log, carico host e profilo anziché aumentare automaticamente i timeout.
+- Il delay è egress e sintetico; la topologia resta single-host.
+- Il criterio automatico usa la stima e un oracle statico, non una misura di accuratezza su stream dinamici.
+- Il monitor non produce da solo il dataset definitivo del report.

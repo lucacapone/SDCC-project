@@ -1,673 +1,210 @@
-# Testing canonico
+# Testing ed evaluation
 
-## Verifiche della modalità Traffic Control
+## Strategia
 
-La modalità sperimentale isolata dispone di self-test shell per oracle statici,
-epsilon, parsing `convergence_sample`, parsing `sdcc_node_known_peers`, false
-suspicion, qdisc e decisioni successo/timeout:
+La repository combina quattro livelli:
+
+1. test unitari e contrattuali sui package pubblici attraverso wrapper sotto `tests/`;
+2. test concorrenti e di integrazione in-memory, veloci e deterministici;
+3. test black-box su processi e socket reali;
+4. suite Docker Compose per il deployment effettivo a 3 e 6 nodi.
+
+I test Compose richiedono Docker Engine e il plugin Compose. Non sono simulazioni: invocano gli script in `scripts/`, leggono metriche/log e raccolgono artefatti sotto `artifacts/cluster`.
+
+## Comandi principali
 
 ```bash
-scripts/demo_tc_latency.sh --self-test
+# intera suite
+go test ./... -count=1
+
+# controllo delle race (più lento)
+go test -race ./... -count=1
+
+# analisi statica Go
+go vet ./...
+
+# nucleo unitario
+make test-unit
+
+# test d'integrazione selezionati dal prefisso TestClusterConvergence
+make test-integration
+
+# crash, continuità residua e restart/rejoin Compose
+make test-crash-restart
 ```
 
-La validazione reale di Docker, `NET_ADMIN`, NetEm, contatori qdisc e convergenza
-richiede un host Linux compatibile ed è descritta in `docs/traffic_control.md`.
+`go test ./...` include anche i test Compose: senza Docker tali test falliscono o vengono saltati solo dove la singola suite prevede esplicitamente quella condizione. Per feedback senza Docker usare i comandi mirati in-memory indicati sotto.
 
-## Fotografia istantanea dello stato aggregativo
+## Copertura per area
 
-Con il cluster di scala gestito da `deploy/docker-compose.scale.yml` e progetto
-Compose `sdcc-scale`, il comando seguente mostra una sola fotografia delle ultime
-stime `convergence_sample` pubblicate dai soli servizi attualmente `running`:
+### Configurazione
+
+`tests/config` verifica default, YAML/JSON, precedence environment, errori di tipo, peer list, range porte, aggregazioni, advertise address, discovery e compatibilità tra timeout e copertura gossip.
 
 ```bash
-scripts/show_aggregation_status.sh
+go test ./tests/config -count=1
 ```
 
-Lo script non effettua polling, non attende la convergenza e non ricalcola
-l'aggregazione: legge una volta stato e log Compose, mostra le stime disponibili e
-termina. Se un servizio running non espone un campione valido, la relativa riga usa
-`N/D` e il comando termina con stato non zero; aggregazioni discordanti sono
-segnalate come `INCOERENTE` e rendono visibile la colonna `AGGREGAZIONE`.
+### Aggregazioni
 
-Questo documento è il riferimento canonico per la distinzione tra test interni in-memory, test di integrazione/end-to-end M09, test canonico M10 per crash/restart e relativi comandi operativi di validazione del repository.
-
-Per la guida demo operativa del cluster (setup, osservazioni, criteri di successo e troubleshooting), vedere anche `docs/demo.md`.
-
-## Verifiche operative per demo/documentazione M12
-
-Per lo scenario dimostrativo end-to-end fare riferimento a `docs/demo.md`, mentre questa pagina resta il riferimento canonico per il perimetro e i livelli di test.
-
-- **Verifiche locali (Docker Compose)**: usare i comandi canonici già documentati in README/testing per avvio cluster e verifiche M09/M10 (`docker compose up -d --build`, `docker compose ps`, `go test ./tests/integration -run TestClusterConvergence -count=1`, `go test ./tests/integration -run TestNodeCrashAndRestart -count=1`, `docker compose down`).
-- **Note deploy EC2 (stesso stack, ambiente diverso)**: usare lo stesso stack Compose descritto in `docs/deployment_ec2.md`, considerando differenze operative di rete/host (latenza, porte, endpoint locali alla VM) e i limiti pratici di tempo/costi Learner Lab già riportati in quel documento.
-- **Limiti pratici da richiamare in demo/documentazione**: lo scenario crash/restart va dichiarato solo dove supportato dai test reali (`TestNodeCrashAndRestart` su Compose e variante `TestNodeCrashAndRestartInMemory`); evitare di estendere il claim a percorsi non coperti da suite esistenti.
-
-Riferimenti incrociati per evitare ridondanza: `README.md` (quickstart/comandi), `docs/demo.md` (scenari e osservazioni), `docs/deployment_ec2.md` (vincoli EC2).
-
-## Ambito
-
-La strategia di test corrente è organizzata su tre livelli:
-
-- **suite repository-wide** per verificare regressioni generali su package interni;
-- **test interni di convergenza in-memory** nel package `tests/gossip`, utili per verifiche rapide della logica gossip e degli scenari crash/rejoin;
-- **suite di integrazione end-to-end M09** in `tests/integration`, usata come entrypoint canonico per la convergenza del cluster;
-- **test rapido in-memory M10** in `tests/integration`, utile per debugging locale rapido del flusso crash/restart;
-- **test lento/reale M10 Compose** in `tests/integration`, dedicato a crash, funzionamento del cluster residuo e rejoin del nodo riavviato su cluster locale reale.
-
-Le regressioni generation verificano che `(G,1300)` respinga `(G,1)`, accetti immediatamente `(G+1,1)` e respinga un successivo pacchetto ritardato `(G,1400)`. Lo scenario a sei nodi percorre `60 -> 50 -> 40 -> 50 -> 60` senza forzare `Membership.Touch` durante il rejoin; la nuova self incarnation viene appresa dal digest ordinario.
-
-## Concurrency checks
-
-Per consolidare il comportamento concorrente del runtime gossip/membership sono disponibili test dedicati che stressano accessi simultanei su strutture condivise.
-
-Copertura introdotta:
-
-- `tests/membership/TestConcurrentSetOperations`: goroutine concorrenti che invocano `Upsert`, `Touch`, `LeaveAt` e `Snapshot` sullo stesso `membership.Set`.
-- `tests/gossip/TestRoundOnceConcurrentWithRemoteDelivery`: esecuzione concorrente di `RoundOnce` con delivery di messaggi remoti simulati via transport spy.
-- `tests/gossip/TestConcurrentRoundOnceAndRemoteDeliveryInvariants`: verifica invarianti concorrenti su deduplica canonico/alias e monotonicità `incarnation`.
-
-Comandi consigliati:
+`tests/aggregation` verifica factory e contratto numerico; le sottocartelle `sum`, `average`, `min`, `max` verificano convergenza, duplicati, fuori ordine, nodi lenti, filtro membership, leave/dead e rejoin. La suite average legge anche le sei configurazioni canoniche.
 
 ```bash
-# verifica base concorrente senza race detector
-go test ./tests/membership ./tests/gossip -run 'TestConcurrentSetOperations|TestRoundOnceConcurrentWithRemoteDelivery|TestConcurrentRoundOnceAndRemoteDeliveryInvariants' -count=1
-
-# verifica opzionale con race detector (dove supportato dalla toolchain/piattaforma)
-go test -race ./tests/membership ./tests/gossip -run 'TestConcurrentSetOperations|TestRoundOnceConcurrentWithRemoteDelivery|TestConcurrentRoundOnceAndRemoteDeliveryInvariants' -count=1
+go test ./tests/aggregation/... -count=1
 ```
 
-Nota operativa:
-- `-race` è raccomandato per ambienti locali/CI che supportano il race detector Go; in ambienti limitati può essere omesso mantenendo comunque il comando base.
+### Gossip e convergenza in-memory
 
-## Test interni di convergenza in-memory (`tests/gossip`)
-
-Le suite storiche nel package `tests/gossip` restano supportate e vanno considerate **test interni**: usano una rete in-memory, esercitano direttamente l'engine gossip e sono pensate per controlli rapidi della logica interna, non come scenario canonico di milestone.
-
-Entry point principali:
-
-- `TestIntegrationGossipConvergence`
-- `TestCrashNodeDownClusterResidualConverges`
-- `TestCrashRestartRejoinOptional`
-
-Comandi utili:
+`tests/gossip` copre envelope, versioning epoch/counter, deduplica, conflitti, merge CRDT-like, fanout rotante, heartbeat, canonicalizzazione dei peer, collector e concorrenza tra round/ricezione.
 
 ```bash
+go test ./tests/gossip -count=1
 go test ./tests/gossip -run TestIntegrationGossipConvergence -count=1
-go test ./tests/gossip -run TestCrash -count=1
-make test-integration-internal
-make test-crash
+go test ./tests/gossip -run 'TestCrashNodeDownClusterResidualConverges|TestCrashRestartRejoinOptional' -count=1
 ```
 
-Questo target resta volutamente un **entry point interno/debug**: punta ai test del package `tests/gossip` e non coincide con il comando canonico di milestone M10.
+### Membership e identity
 
-Questi test **non** vanno descritti come test end-to-end del cluster locale multi-nodo: non usano Docker Compose, non aprono porte UDP reali e non rappresentano un ambiente di deployment.
-
-## Test di integrazione end-to-end M09
-
-Il test canonico della milestone M09 è:
-
-- file: `tests/integration/cluster_convergence_test.go`;
-- entrypoint: `TestClusterConvergence`.
-
-### Scenario M09
-
-`TestClusterConvergence` avvia automaticamente **il cluster locale reale** tramite il deployment Compose canonico di root, usando `scripts/cluster_up.sh`, `scripts/cluster_wait_ready.sh` e `scripts/cluster_down.sh`. La suite quindi non usa più `newIntegrationNetwork()` né `bootstrapCluster(...)` dell'harness in-memory: parte davvero con i tre servizi `node1`, `node2`, `node3` definiti nel `docker-compose.yml` di root, attende readiness osservabile e poi raccoglie i valori finali dai log strutturati di shutdown.
-
-La suite veloce/deterministica resta disponibile nello stesso package come `TestClusterConvergenceInMemory`, utile per debugging locale rapido senza Docker. La distinzione canonica è quindi esplicita: **M09 = cluster Compose reale**, **variante veloce = harness in-memory**.
-
-Parametri di scenario congelati:
-
-- **numero di nodi**: `3` (`node-1`, `node-2`, `node-3`);
-- **servizi Compose reali**: `node1`, `node2`, `node3`;
-- **aggregazione attiva**: `average` su tutti e tre i nodi Compose;
-- **valori iniziali**: `10`, `30`, `50`, configurati nei file `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` tramite `initial_value`;
-- **valore atteso informativo comune**: `30.0`, cioè `average(10, 30, 50)`;
-- **criterio di successo**: la banda `max(values) - min(values)` deve risultare `<= 0.05` entro il timeout M09 Compose.
-
-## Test di convergenza scale (in-memory, 8 nodi)
-
-Per verificare il comportamento su topologie più ampie è disponibile il test dedicato:
-
-- file: `tests/integration/cluster_convergence_scale_test.go`;
-- entrypoint: `TestClusterConvergenceScaleInMemory`;
-- bootstrap: `bootstrapCluster(...)` su 8 nodi in-memory.
-
-Parametri operativi del test scale:
-
-- `scaleNodeCount = 8`;
-- `scaleGossipInterval = 12ms`;
-- `scalePollInterval = 25ms`;
-- `scaleTimeout = 2s`;
-- `scaleBand = 0.10`.
-
-Criterio di convergenza multi-node:
-
-- il cluster è considerato convergente quando la banda `max(values) - min(values)` resta `<= 0.10` entro `2s`.
-
-Comando:
+`tests/membership` verifica join/leave, precedence degli stati, timeout, self filtering, tombstone, incarnation, rejoin, placeholder seed e accesso concorrente. `tests/identity` verifica allocazione e persistenza della generation.
 
 ```bash
-go test ./tests/integration -run TestClusterConvergenceScaleInMemory -count=1
+go test ./tests/membership ./tests/identity -count=1
 ```
 
-## Test di convergenza scale Compose reale (6 nodi)
+### Transport
 
-Per validare la convergenza su topologia reale estesa è disponibile la suite dedicata:
+`tests/transport` congela il contratto astratto e prova l'adapter UDP reale: start/send/close, context cancellato, doppio start e socket persistente. `tests/gossip/TestEngineUsaSoloInterfacciaTransportStartStop` verifica il confine engine/adapter.
 
-- file: `tests/integration/cluster_convergence_scale_compose_test.go`;
-- entrypoint: `TestClusterConvergenceScaleCompose`;
-- harness: `tests/integration/compose_harness_test.go` con override `compose_file=deploy/docker-compose.scale.yml`, `project_name=sdcc-scale`, servizi `node1..node6`.
+```bash
+go test ./tests/transport -count=1
+go test ./tests/gossip -run 'TestEngineUsaSoloInterfacciaTransportStartStop|TestEngineGestisceMessaggiInIngressoViaHandlerTransport' -count=1
+```
 
-Criteri misurabili applicati dalla suite:
+### Observability
 
-- `timeout_prontezza`: `120s` (attesa bootstrap/transport su tutti i 6 servizi);
-- `timeout_convergenza_live`: `45s` con `poll=2s`;
-- `banda_convergenza`: `max(values)-min(values) <= 0.10`;
-- `osservabilità round/merge`: ogni nodo deve essere `ready`, con `sdcc_node_rounds_total >= 2` e `sdcc_node_remote_merges_total > 0` nello snapshot live;
-- artefatti finali obbligatori da teardown: `artifacts/cluster/latest-final-values.txt` e log cluster raccolti da `cluster_down.sh`.
+`tests/observability` verifica logger, endpoint, formato metriche e transizioni lifecycle. I test gossip verificano anche aggiornamento runtime del collector e schema `convergence_sample`.
 
-Comando canonico dedicato:
+```bash
+go test ./tests/observability -count=1
+go test ./tests/gossip -run 'TestRoundAggiornaCollector|TestConvergenceSampleEventSchema' -count=1
+```
+
+### Pipeline di convergenza
+
+`tests/convergence` verifica parsing dei log, normalizzazione temporale, oracle per le quattro aggregazioni, criterio di convergenza persistente, completezza del set nodi e SVG. `tests/convergence-chart` verifica l'orchestrazione CLI.
+
+```bash
+go test ./tests/convergence ./tests/convergence-chart -count=1
+```
+
+## Test d'integrazione
+
+### Cluster a 3 nodi
+
+`TestClusterConvergence` avvia il Compose root, attende readiness e verifica che le stime del cluster `average` convergano con banda `max-min <= 0.05`. `TestMembershipEntriesRestanoStabiliNelCluster3Nodi` controlla che non restino alias seed duplicati.
+
+```bash
+go test ./tests/integration -run 'TestClusterConvergence$|TestMembershipEntriesRestanoStabiliNelCluster3Nodi' -count=1
+```
+
+La variante deterministica senza Docker è:
+
+```bash
+go test ./tests/integration -run TestClusterConvergenceInMemory -count=1
+```
+
+### Cluster a 6 nodi
+
+`TestClusterConvergenceScaleCompose` usa `deploy/docker-compose.scale.yml`; la variante in-memory usa otto nodi e misura convergenza con fanout limitato.
 
 ```bash
 go test ./tests/integration -run TestClusterConvergenceScaleCompose -count=1
+go test ./tests/integration -run TestClusterConvergenceScaleInMemory -count=1
 ```
 
-## Configurazione servizi Compose non hard-coded
+### Crash, restart e rejoin
 
-Gli script `scripts/cluster_*.sh` e l'harness reale `tests/integration/compose_harness_test.go` non usano più una lista servizi hard-coded: la topologia viene letta in modo configurabile da:
-
-1. `SDCC_SERVICES` (es. `node1,node2,node3,node4,node5,node6`);
-2. `SDCC_SERVICES_FILE` (default `deploy/compose_services.env`, chiave `SDCC_SERVICES=...`);
-3. fallback `node1 node2 node3`.
-
-
-
-## Test M10 — variante rapida in-memory e suite reale Compose
-
-Per M10 il repository distingue ora in modo esplicito due livelli complementari:
-
-- **variante rapida/deterministica in-memory**: `tests/integration/TestNodeCrashAndRestartInMemory`;
-- **regressione esplicita membership-aware a 6 nodi**: `tests/integration/TestNodeCrashRestartSixNodesMembershipAwareAverage`;
-- **suite lenta/reale Compose**: `tests/integration/TestNodeCrashAndRestart`.
-
-La variante in-memory resta utile come controllo rapido di debug locale. La suite `TestNodeCrashAndRestart` è invece la verifica automatica richiesta per il crash/restart su **cluster locale reale** orchestrato via Docker Compose e pilotato dagli script canonici della repository.
-
-### Variante rapida in-memory (`TestNodeCrashAndRestartInMemory`)
-
-Questa suite conserva il vecchio harness `tests/integration/harness_test.go` e continua a usare rete/transport in-memory per esercitare in modo riproducibile:
-
-- crash del nodo `node-1`;
-- convergenza del cluster residuo;
-- restart del nodo fermato;
-- verifica del rejoin e della stabilizzazione finale.
-
-La regressione `TestNodeCrashRestartSixNodesMembershipAwareAverage` usa valori `10, 30, 50, 70, 90, 110` e congela la nuova semantica di esclusione dei nodi non attivi: media iniziale `60`, media del cluster residuo `40` dopo `leave`/`dead` di `node-5` e `node-6`, e ritorno a `60` dopo rejoin `alive` e convergenza. Anche `TestNodeCrashAndRestartInMemory` usa ora come riferimento del cluster residuo la media dei soli nodi rimasti `alive`, non la media storica del cluster prima del crash.
-
-Sono inoltre presenti regressioni leave-specifiche in `tests/integration/node_leave_test.go`: `TestVoluntaryLeaveMaintainsResidualConvergence` verifica che un nodo in `leave` venga escluso dalla media osservabile del cluster residuo, mentre `TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow` controlla che, dopo propagazione e prune del tombstone, il nodo uscito non venga più targettato oltre la finestra di protocollo.
-
-È il test più veloce da usare durante lo sviluppo, ma non costituisce più da solo la prova completa del requisito M10 su deployment reale.
-
-Comando rapido:
-
-```bash
-go test ./tests/integration -run 'TestNodeCrashAndRestartInMemory|TestNodeCrashRestartSixNodesMembershipAwareAverage' -count=1
-make test-crash-restart-internal
-```
-
-### Suite lenta/reale Compose (`TestNodeCrashAndRestart`)
-
-Il test automatico canonico M10 è ora:
-
-- **nome canonico**: `TestNodeCrashAndRestart`;
-- **file**: `tests/integration/node_crash_restart_compose_test.go`;
-- **harness reale**: `tests/integration/compose_harness_test.go`;
-- **bootstrap cluster**: `scripts/cluster_up.sh` + `scripts/cluster_wait_ready.sh`;
-- **fault injection reale**: `scripts/fault_injection/node_stop_start.sh`;
-- **raccolta artefatti**: `scripts/fault_injection/collect_debug_snapshot.sh` + `scripts/cluster_down.sh`.
-
-#### Scenario Compose verificato
-
-`TestNodeCrashAndRestart` esegue in ordine osservabile:
-
-1. avvio del cluster locale reale `node1` / `node2` / `node3` dal `docker-compose.yml` canonico;
-2. attesa della readiness tramite marker di bootstrap/log e endpoint HTTP;
-3. acquisizione di uno snapshot live pre-crash via endpoint `/metrics`;
-4. stop reale di `node1` tramite `scripts/fault_injection/node_stop_start.sh stop node1`;
-5. raccolta di uno snapshot diagnostico `after-stop` con `scripts/fault_injection/collect_debug_snapshot.sh`;
-6. verifica che il cluster residuo (`node2`, `node3`) resti osservabile e continui a completare round gossip reali;
-7. restart reale di `node1` tramite `scripts/fault_injection/node_stop_start.sh start node1`;
-8. raccolta di uno snapshot diagnostico `after-restart`;
-9. verifica del rejoin tramite endpoint `/ready` e `/metrics`, richiedendo che il nodo riavviato completi round gossip e si allontani in modo osservabile dal proprio `initial_value`;
-10. verifica della riconvergenza finale dell’intero cluster sia via snapshot live sia via valori finali di shutdown raccolti nel teardown controllato.
-
-#### Evidenze osservabili richieste
-
-La suite reale non si limita a invocare gli script: richiede evidenze esplicite e leggibili.
-
-- **cluster residuo**: `node2` e `node3` devono restare `ready` e mostrare `sdcc_node_rounds_total` crescente rispetto al baseline pre-crash;
-- **rejoin del nodo fermato**: `node1` deve tornare `ready`, esporre `sdcc_node_rounds_total > 0` dopo il restart e mostrare una `sdcc_node_estimate` che non resti bloccata sul valore iniziale `10.0`;
-- **artefatti**: il test salva snapshot diagnostici `after-stop` e `after-restart` in `artifacts/fault_injection/`;
-- **stato finale**: il teardown `cluster_down.sh` deve produrre uno snapshot finale coerente e convergente in `artifacts/cluster/latest-final-values.txt`.
-
-#### Comandi canonici M10
+`TestNodeCrashAndRestart` arresta realmente `node1`, verifica che i nodi rimanenti continuino ad avanzare, attende la failure detection, riavvia il servizio e richiede membership/stima riconvergenti. Le generation persistenti consentono alla stessa `node_id` di superare lo stato precedente.
 
 ```bash
 go test ./tests/integration -run TestNodeCrashAndRestart -count=1
-go test ./tests/integration -run 'TestNodeCrashAndRestartInMemory|TestNodeCrashRestartSixNodesMembershipAwareAverage' -count=1
-make test-crash-restart
-make test-crash-restart-internal
-# alias equivalente del test reale: make test-m10
 ```
 
-#### Rapporto tra i livelli di verifica M10
-
-- **`tests/gossip`**: test interni storici di logica/package;
-- **`tests/integration/TestNodeCrashAndRestartInMemory`**: variante rapida per debugging locale del flusso M10;
-- **`tests/integration/TestNodeCrashAndRestart`**: test automatico canonico M10 su cluster Compose reale;
-- **script `scripts/fault_injection/`**: supporto operativo riusato dal test reale e utile anche per diagnosi manuale.
-
-Questa distinzione evita ambiguità: il controllo veloce resta disponibile, ma il requisito di crash/restart reale è coperto da una suite automatica separata e più lenta.
-
-### Timeout operativo
-
-I timeout ufficiali di M09 sono ora separati in modo esplicito tra suite reale e suite veloce:
-
-- **suite canonica Compose**: `composeReadyTimeout = 90s`, `composeConvergenceTimeout = 18s`, `composeShutdownTimeout = 40s`;
-- **suite veloce in-memory**: `m09InMemoryTimeout = 350ms`.
-
-Motivazione operativa della suite Compose:
-
-- `90s` coprono build immagine, bootstrap container e marker osservabili nei log (`gossip bootstrap completato`, `transport gossip avviato`) senza dipendere da sleep ciechi;
-- `18s` lasciano al cluster reale con `gossip_interval_ms = 1000` una finestra di convergenza di più round completi prima del teardown controllato;
-- `40s` riservano margine per stop pulito dei container e raccolta degli artefatti finali di shutdown.
-
-La suite in-memory mantiene invece il timeout corto storico da `350ms` per debugging rapido e riproducibile.
-
-### Parametri centralizzati nel test
-
-I parametri M09 sono facilmente rintracciabili perché centralizzati come costanti all’inizio di `tests/integration/cluster_convergence_test.go` e `tests/integration/compose_harness_test.go`:
-
-- `m09NodeCount = 3`;
-- `m09Aggregation = "average"`;
-- `m09ComposeTimeout = 18s`;
-- `m09ComposePollInterval = 1s`;
-- `m09InMemoryGossipInterval = 10ms`;
-- `m09InMemoryPollInterval = 20ms`;
-- `m09InMemoryTimeout = 350ms`;
-- `m09ConvergenceBand = 0.05`;
-- `composeReadyTimeout = 90s`;
-- `composeReadyPollInterval = 2s`;
-- `composeShutdownTimeout = 40s`.
-
-### Formato del report finale
-
-Il report finale emesso via `t.Logf` mantiene, per ogni nodo, il formato M09 già usato da `formatNodeObservation(...)`. Nella suite Compose i valori vengono prima estratti dai log strutturati `shutdown nodo completato` raccolti in `artifacts/cluster/latest-final-values.txt`, poi ricostruiti nello stesso `clusterObservation` usato dal report.
-
-```text
-node_id=<id> observed_value=<valore> expected_delta=<differenza_dal_valore_atteso> common_band=<banda_cluster>
-```
-
-Dove:
-
-- `node_id` identifica il nodo osservato;
-- `observed_value` è il valore finale letto nello snapshot;
-- `expected_delta` è la differenza assoluta dal valore atteso comune (`30.0` nello scenario corrente);
-- `common_band` è la banda comune del cluster al momento del report.
-
-## Verifica canonica dei casi rischiosi M02
-
-Per il consolidamento M02 i casi rischiosi dichiarati nel task vengono verificati principalmente nel package `tests/gossip`, con un supporto mirato da `tests/integration` per la failure detection runtime, così da coprire sia le regole di merge membership sia il comportamento osservabile dei timeout membership.
-
-### Scenari coperti
-
-- **Partizione temporanea tra sottoinsiemi di nodi con riconvergenza membership**: `tests/gossip/TestMergeMembershipReconvergesAfterTemporaryPartition` modella due sottoinsiemi che sviluppano viste membership divergenti durante la partizione e verifica che, alla chiusura della partizione, update `alive` con `incarnation` maggiore riallineino entrambi i lati sulla stessa membership finale.
-- **Recupero da `suspect` tramite update gossip `alive` con `incarnation` maggiore**: `tests/gossip/TestMergeMembershipRecoversSuspectWithHigherAliveIncarnation` congela il caso di falso positivo di failure detection e verifica che l’update più fresco riattivi correttamente il peer.
-- **Rejoin con stato obsoleto ignorato**: `tests/gossip/TestMergeMembershipIgnoresRejoinWithLowerIncarnation` verifica che, dopo prune di un tombstone più nuovo, un update `alive` con `incarnation` minore non possa reintrodurre il nodo.
-- **Distinzione tra placeholder seed `host:port` e vero `node_id`**: `tests/gossip/TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID` verifica il riallineamento dal placeholder seed-only al `node_id` canonico propagato via gossip, senza mantenere duplicati logici nella membership. `tests/gossip/TestBootstrapPlaceholderPromossoDaGossipEAverageUsaNodeIDLogici` copre inoltre il bootstrap con seed `node1:7001`, la successiva ricezione di gossip con `OriginNode=node-1`, la promozione del placeholder e il ricalcolo `average` usando solo contributi con chiavi logiche `node-1`, `node-2`, ... .
-- **Filtro esplicito del self node**: `tests/membership/TestApplyTimeoutTransitionsSaltaSempreSelfNode`, `tests/gossip/TestRoundSerializzaMembershipEscludendoSelfNode`, `tests/gossip/TestMergeMembershipIgnoraEntryDelNodoLocale` e `tests/gossip/TestRoundNonLoggaTimeoutPerSelfNode` verificano che il nodo locale non transizioni via timeout, non venga serializzato nel digest e non produca eventi/log di timeout auto-riferiti.
-- **Diagnostica `remote_merge` a due stadi**: `tests/gossip/TestRemoteMergeLoggingAverageDistingueContributiNotiEUsati`, `tests/gossip/TestRemoteMergeSkippedConRicalcoloRuntimeDiventaPartialMerge` e `tests/gossip/TestRemoteMergeRicalcolaEstimateConMembershipAggiornata` verificano i campi `aggregation_changed`, `membership_recalculation_changed`, `membership_eligibility_changed`, `estimate_after_aggregation_merge` e `estimate_after_membership_recalculation`, così i log distinguono nuovi contributi accettati da ricalcoli dovuti al filtro membership.
-
-### Comandi canonici M02
-
-Separiamo esplicitamente gli entrypoint per evitare riferimenti fuorvianti a package interni senza file `*_test.go` e per rendere chiaro il livello di garanzia ottenuto.
+Varianti veloci:
 
 ```bash
-# verifica unitaria membership
-go test ./tests/membership -run 'TestJoinLeave|TestTimeoutTransitions|TestPruneRemovesExpiredDeadPeerAndBlocksObsoleteReintroduction' -count=1
-
-# verifica gossip membership
-go test ./tests/gossip -run 'TestMergeMembership|TestRoundSerializzaMembershipConIncarnation' -count=1
-
-# eventuale verifica integrazione runtime
-go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
+go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
+go test ./tests/integration -run TestNodeCrashRestartSixNodesMembershipAwareAverage -count=1
 ```
 
-Se serve analizzare un singolo rischio M02, restano disponibili anche i comandi puntuali sui test gossip dedicati:
+### Failure detection, leave e bootstrap join
+
+Sono presenti test runtime per `alive → suspect → dead`, una prova lunga senza falsi suspect, leave volontario con convergenza residua e bootstrap contro un join endpoint HTTP reale simulato dal test.
 
 ```bash
-go test ./tests/gossip -run TestMergeMembershipReconvergesAfterTemporaryPartition -count=1
-go test ./tests/gossip -run TestMergeMembershipRecoversSuspectWithHigherAliveIncarnation -count=1
-go test ./tests/gossip -run TestMergeMembershipIgnoresRejoinWithLowerIncarnation -count=1
-go test ./tests/gossip -run 'TestMergeMembershipRealignsPlaceholderSeedWithCanonicalNodeID|TestBootstrapPlaceholderPromossoDaGossipEAverageUsaNodeIDLogici' -count=1
+go test ./tests/integration -run 'TestRuntimeMembership|TestVoluntaryLeave|TestNodeBootstrapViaJoinEndpoint' -count=1
 ```
 
-## Regressioni canoniche average
+### Crash multipli e partizione
 
-Per l'aggregazione `average` il repository congela esplicitamente quattro rischi:
-
-- il contributo locale di un nodo non deve driftare verso la media corrente del cluster dopo round multipli;
-- un payload remoto che include gia' metadata `average` completi non deve re-inferire il contributo del mittente a partire da `state.value`;
-- la media esposta deve filtrare i contributi dei nodi non eleggibili secondo membership (`suspect`, `dead`, `leave`) senza cancellarli dai metadata, così da permettere rejoin e riconvergenza;
-- lo scenario config-backed a 6 nodi (`configs/node1.yaml` ... `configs/node6.yaml`) deve arrivare, dopo round sufficienti con membership stabile, a `peers=6`, sei contributi average canonici e `estimate=60`, senza restare bloccato sulle medie parziali `70`, `76.666` o `90`.
-
-Comandi mirati:
-
-```bash
-go test ./tests/aggregation/average -run 'TestAverageConvergence|TestAverageRoundDoesNotDriftLocalContribution|TestAverageSixNodeClusterFromCanonicalConfigs' -count=1
-go test ./tests/gossip -run 'TestAverageRoundPreservaContributoLocaleOriginario|TestMergeAverageNonReinferisceContributoDaRemoteValueQuandoMetadataCompleti|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli' -count=1
-go test ./tests/integration -run 'TestNodeCrashRestartSixNodesMembershipAwareAverage|TestVoluntaryLeaveMaintainsResidualConvergence|TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow' -count=1
-```
-
-
-## Regressioni eleggibilita' membership per aggregazioni con contributi
-
-La suite congela la regola centralizzata in `membership.IsAggregationEligible`, per cui il valore locale di `sum`, `average`, `min` e `max` viene calcolato solo sui nodi `alive` secondo la membership, includendo il self node se assente dallo snapshot durante il bootstrap. Le suite `tests/aggregation/{average,sum,min,max}` contengono anche casi black-box senza rete reale che consegnano contributi deterministici, marcano uno o più peer come `leave`/`dead`, verificano il ricalcolo filtrato e poi simulano il rejoin `alive`. I contributi dei nodi non eleggibili restano nei metadata per non perdere informazioni utili a riconvergenze o rejoin futuri. Gli endpoint seed-only `host:port` sono esclusi dagli ID eleggibili finché non vengono promossi a `node_id` logici canonici, impedendo a `average` di usare chiavi placeholder come `node1:7001`. Per `min` e `max`, l'assenza di contributori eleggibili con contributi noti produce `0`; nei round locali, però, il contributo self eleggibile viene registrato prima del ricalcolo e quindi preserva il valore locale. Il caso `TestRemoteMergeRicalcolaEstimateConMembershipAggiornata` verifica inoltre che, dopo un merge remoto, il valore osservato da stato runtime, collector e log sia ricalcolato sulla membership aggiornata dal digest appena ricevuto.
-
-Comando mirato:
-
-```bash
-go test ./tests/membership ./tests/gossip -run 'TestIsAggregationEligibleIncludeSoloAlive|TestIsEligibleForAggregationUsaPolicyStatus|TestSetIsEligibleForAggregationIncludeSelfAssenteInBootstrap|TestEligibleNodeIDsIncludeSoloAliveESelfBootstrap|TestRoundSumFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundAverageFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMinFiltraContributiNonEleggibiliSenzaCancellarli|TestRoundMaxFiltraContributiNonEleggibiliSenzaCancellarli|TestRemoteMergeRicalcolaEstimateConMembershipAggiornata' -count=1
-go test ./tests/aggregation/average ./tests/aggregation/sum ./tests/aggregation/min ./tests/aggregation/max -run 'TestAverageConvergence/filtro|TestSumConvergence/filtro|TestMinConvergence/filtro|TestMaxConvergence/filtro' -count=1
-```
-
-## Test canonico observability
-
-La suite esterna `tests/observability` include ora il test canonico:
-
-- **nome canonico**: `TestMetricsExposure`;
-- **file**: `tests/observability/metrics_test.go`.
-
-La suite verifica in modo deterministico che:
-
-- l'endpoint `/metrics` esponga almeno le metriche minime del nodo (`rounds`, merge remoti per esito, peer noti, stima corrente, uptime, readiness);
-- il collector condiviso con l'engine aggiorni davvero le metriche durante l'esecuzione del nodo: i round devono far crescere `sdcc_node_rounds_total`, i merge remoti devono incrementare `sdcc_node_remote_merges_total{result=...}` e le gauge `known_peers`/`estimate` devono riflettere lo stato locale post-round/post-merge, non solo bootstrap o shutdown;
-- l'endpoint `/health` risponda positivamente con HTTP `200 OK`;
-- l'endpoint `/ready` rifletta coerentemente lo stato del collector restituendo `503` quando il nodo non è pronto e `200` quando viene marcato ready;
-- gli esiti di merge riconosciuti includano anche `partial_merge`, usato quando un payload aggregativo saltato produce comunque un ricalcolo runtime osservabile;
-- gli esiti di merge non riconosciuti vengano collassati nel bucket stabile `unknown`, evitando label ad alta cardinalità.
-
-Comando operativo mirato:
-
-```bash
-go test ./tests/observability -run TestMetricsExposure -count=1
-```
-
-## Regressioni canonicalizzazione endpoint origine gossip
-
-Per evitare dipendenze da `remoteAddr` UDP non canonico, il repository include casi mirati su:
-
-- fallback non canonico da transport (`remoteAddr`) quando il digest non contiene l'origin;
-- presenza di `origin_addr` nel metadata gossip;
-- stabilità del numero di entry membership in cluster 3 nodi (tipicamente 2 remote per digest locale, escluso self).
-
-Comandi mirati:
-
-```bash
-go test ./tests/gossip -run 'TestEngineIgnoraFallbackRemoteAddrNonCanonicoQuandoDigestNonHaOrigin|TestRoundIncludeOriginAddrInMetadataPerRendereAffidabileEndpointOrigine' -count=1
-go test ./tests/integration -run TestMembershipEntriesRestanoStabiliNelCluster3Nodi -count=1
-go test ./tests/transport -run TestUDPTransportSendUsaSocketPersistenteConRemoteAddrStabile -count=1
-```
-
-## Test di integrazione bootstrap via join endpoint reale
-
-La suite di integrazione include anche il test mirato:
-
-- **nome canonico**: `TestNodeBootstrapViaJoinEndpointPopulatesInitialMembership`;
-- **file**: `tests/integration/join_endpoint_bootstrap_test.go`.
-
-Scenario verificato:
-
-- il test avvia un endpoint HTTP di join reale con `httptest`;
-- il test costruisce prima un binario temporaneo del nodo da `./cmd/node` tramite l'helper `buildNodeBinary(...)`;
-- il processo viene poi eseguito con `exec.CommandContext(...)` sul binario generato, passando `--config <file temporaneo>` con `join_endpoint` valorizzato e senza peer statici di bootstrap;
-- l'ambiente del processo imposta esplicitamente `OBSERVABILITY_ADDR=127.0.0.1:0` per evitare collisioni sulle porte osservability durante la suite;
-- il server di join restituisce una `JoinResponse` con uno snapshot membership iniziale contenente un peer UDP reale;
-- il test considera il bootstrap corretto solo se osserva sia la `JoinRequest` HTTP inviata dal nodo sia almeno un payload gossip UDP verso il peer restituito dal join endpoint nella `JoinResponse`.
-
-Comando operativo mirato:
-
-```bash
-go test ./tests/integration -run TestNodeBootstrapViaJoinEndpointPopulatesInitialMembership -count=1
-```
-
-## Helper script per cluster locale Docker Compose
-
-Per la validazione operativa/manuale del cluster locale multi-nodo con Docker Compose, il repository ora include helper minimi in `scripts/` progettati per essere **idempotenti**, robusti rispetto a container residui e leggibili in caso di errore:
-
-- `scripts/cluster_up.sh`: cleanup preventivo del progetto Compose canonico e avvio del cluster con build locale; se `docker compose up -d --build` fallisce, lo script stampa il comando Compose usato, l'output di `docker compose ps`, un tail dei log di `node1`/`node2`/`node3` e classifica esplicitamente i casi `plugin compose assente`, `build immagine fallita` e `container avviati ma unhealthy`;
-- `scripts/cluster_wait_ready.sh`: attesa dello stato operativo verificando sia `running` dei container sia la presenza nei log di `gossip bootstrap completato` e `transport gossip avviato`;
-- `scripts/cluster_collect_results.sh`: raccolta di `docker compose ps`, log aggregati e ultimo report di valori finali disponibile nei log;
-- `scripts/cluster_down.sh`: stop pulito del cluster, raccolta degli artefatti finali e `docker compose down --remove-orphans`.
-- `scripts/fault_injection/node_stop_start.sh`: stop/start/bounce di un singolo nodo Compose per prove manuali di crash/restart;
-- `scripts/fault_injection/collect_debug_snapshot.sh`: snapshot diagnostici minimi per un nodo target in `artifacts/fault_injection/`.
-
-Gli script usano naming prevedibile e stabile:
-
-- file Compose canonico: `docker-compose.yml` alla root;
-- project name Compose: `sdcc-bootstrap`;
-- directory artefatti: `artifacts/cluster/`;
-- symlink aggiornati automaticamente: `latest-compose-ps.txt`, `latest-cluster-logs.log`, `latest-final-values.txt`.
-
-Flusso operativo consigliato:
-
-```bash
-scripts/cluster_up.sh
-scripts/cluster_wait_ready.sh
-scripts/cluster_collect_results.sh
-scripts/cluster_down.sh
-```
-
-### Fault injection operativo/manuale sul cluster Compose
-
-Per scenari manuali di crash/restart il repository include la directory `scripts/fault_injection/`, volutamente minimale e senza coordinatore centrale. Gli script riusano `scripts/cluster_common.sh`, quindi restano allineati al project name Compose canonico, al file `docker-compose.yml` di root e ai servizi `node1`, `node2`, `node3`.
-
-Esempio operativo suggerito:
-
-```bash
-scripts/cluster_up.sh
-scripts/cluster_wait_ready.sh
-AFTER_STOP_SLEEP_SECONDS=5 scripts/fault_injection/node_stop_start.sh bounce node2
-SNAPSHOT_LABEL=post-bounce scripts/fault_injection/collect_debug_snapshot.sh node2
-scripts/cluster_down.sh
-```
-
-Parametri principali supportati:
-
-- `ACTION`, `SERVICE`, `STOP_TIMEOUT_SECONDS`, `START_TIMEOUT_SECONDS`, `AFTER_STOP_SLEEP_SECONDS`, `WAIT_FOR_RUNNING` per `node_stop_start.sh`;
-- `SERVICE`, `LOG_TAIL_LINES`, `SNAPSHOT_LABEL` per `collect_debug_snapshot.sh`.
-
-Gli artefatti vengono salvati in `artifacts/fault_injection/` con un symlink `latest-<service>` verso l'ultimo snapshot raccolto per il nodo target.
-
-Nota esplicita di scope: il test automatico canonico crash/restart è ora `TestNodeCrashAndRestart` dentro `tests/integration` e usa un harness Compose reale; la variante `TestNodeCrashAndRestartInMemory` resta disponibile per debugging rapido. Gli script `scripts/fault_injection/` sono sia supporti manuali sia dipendenze operative della suite reale M10.
-
-Note operative importanti:
-
-- `cluster_up.sh` esegue sempre un cleanup preventivo, quindi può essere rilanciato in ambiente sporco senza richiedere interventi manuali;
-- i **valori finali** per nodo vengono estratti dai log applicativi prodotti in shutdown con il messaggio strutturato `shutdown nodo completato`;
-- per questo motivo il file `artifacts/cluster/latest-final-values.txt` contiene un **record finale univoco per ogni `node_id`**, ottenuto mantenendo deterministicamente solo l'occorrenza con timestamp `time` più recente per nodo (in caso di pari timestamp viene mantenuta l'ultima riga incontrata nei log);
-- se il cluster non è ancora stato fermato, `cluster_collect_results.sh` salva comunque i log correnti e segnala esplicitamente l'assenza del riepilogo finale.
-
-
-## Scenario esteso M10: crash sequenziale + partizione temporanea + rejoin
-
-Il repository include ora anche lo scenario composito:
-
-- **test canonico esteso**: `tests/integration/TestSequentialCrashPartitionAndRejoin`;
-- **wrapper fault injection**: `scripts/fault_injection/scenario_sequential_crash_partition_rejoin.sh`;
-- **azione partizione rete**: `scripts/fault_injection/network_partition.sh`.
-
-### Criteri di successo verificati
-
-La suite estesa controlla in sequenza:
-
-1. **cluster residuo operativo** dopo crash di `node1` e `node2` in sequenza, con osservabilità su `node3` (`ready=true` e `sdcc_node_rounds_total` in aumento);
-2. **convergenza entro banda** dopo recovery/rejoin (`max(values)-min(values) <= 0.08`);
-3. **membership corretta dopo reintegro**: per ogni nodo `sdcc_node_known_peers >= 2` nel cluster a 3 nodi.
-
-### Timeout configurabili (nuovo)
-
-Per adattare la suite all'ambiente locale/CI, i timeout principali sono configurabili via env:
-
-- `SDCC_M10_EXT_SCENARIO_TIMEOUT` (default `120s`): timeout complessivo per lo scenario combinato scriptato;
-- `SDCC_M10_EXT_RESIDUAL_TIMEOUT` (default `20s`): finestra per osservare operatività del cluster residuo;
-- `SDCC_M10_EXT_REJOIN_TIMEOUT` (default `35s`): finestra di riconvergenza post-rejoin.
-
-Formato supportato: durata Go (`150s`, `1m`) oppure intero in secondi (`25`).
-
-Comando canonico:
+`TestSequentialCrashPartitionAndRejoin` orchestra due crash sequenziali, una disconnessione temporanea dalla rete Docker, recovery e rejoin, riusando gli script di fault injection.
 
 ```bash
 go test ./tests/integration -run TestSequentialCrashPartitionAndRejoin -count=1
 ```
 
-### Limiti ambientali documentati
-
-- lo scenario richiede Docker Engine + plugin `docker compose` operativi;
-- la partizione rete usa `docker network disconnect/connect` sulla rete Compose `${SDCC_PROJECT_NAME:-sdcc-bootstrap}_default`;
-- in ambienti CI con daemon Docker non privilegiato o policy restrittive sulla manipolazione reti, il test può fallire anche con codice corretto;
-- timeout troppo aggressivi in host lenti (build/pull immagini, I/O disco elevato) possono produrre falsi negativi.
-
-## Comandi operativi canonici
-
-### Verifica mirata M09
+Lo stesso scenario può essere eseguito manualmente dopo lo startup:
 
 ```bash
-go test ./tests/integration -run TestClusterConvergence -count=1
+scripts/fault_injection/scenario_sequential_crash_partition_rejoin.sh
 ```
 
-Questo è il comando ufficiale da usare per validare la convergenza del cluster introdotta dalla milestone M09. Il target equivalente del `Makefile` è `make test-integration`.
+## Osservazione e misura della convergenza
 
-### Verifica mirata M10
-
-```bash
-go test ./tests/integration -run TestNodeCrashAndRestart -count=1
-```
-
-Questo è il comando operativo canonico da usare per validare lo scenario M10 di crash, continuità del cluster residuo e rejoin del nodo riavviato.
-
-### Verifica repository-wide
+L'engine registra `event=convergence_sample` con timestamp, nodo, round, aggregazione e stima. Per una run a sei nodi:
 
 ```bash
-go test ./... -run Test -count=1
-```
-
-Questo comando resta utile per confermare che il test M09 non introduca regressioni sulle suite esistenti.
-
-## Note operative
-
-- La suite `tests/integration` contiene ora sia test in-memory sia test Compose reali: alcuni entry point non richiedono Docker, mentre `TestClusterConvergence` e `TestNodeCrashAndRestart` dipendono dal cluster locale reale.
-- Per evitare ambiguità terminologiche: **test interni di convergenza in-memory** = suite in `tests/gossip` e target `make test-crash`; **test di integrazione/end-to-end M09** = `TestClusterConvergence` in `tests/integration`; **variante rapida M10** = `TestNodeCrashAndRestartInMemory`; **test canonico M10 reale** = `TestNodeCrashAndRestart` e target `make test-crash-restart` / `make test-m10`; **cluster locale multi-nodo con Docker Compose** = ambiente effettivamente usato dalla suite automatica reale M09/M10.
-- Il bootstrap del cluster è automatico nel test e costruisce i tre nodi `node-1`, `node-2`, `node-3` con membership full-mesh iniziale.
-- Il polling usa `time.NewTicker` e un timeout esplicito, evitando sleep arbitrari.
-- In caso di success o failure, il test emette un report leggibile tramite `t.Logf` con valori finali per nodo e metriche di convergenza.
-
-
-Nota runtime: `cmd/node/main.go` avvia anche il piccolo server HTTP di observability sul binding `OBSERVABILITY_ADDR` se presente, altrimenti `:8080`.
-
-## Failure detection runtime nel cluster di test
-Lo scenario `TestRuntimeMembershipFailureDetection` verifica che il loop gossip degradi automaticamente un peer fermato dal runtime del cluster di test senza invocare manualmente `ApplyTimeoutTransitions` dal test stesso. Il test riduce i timeout membership per mantenere la suite rapida e osserva, su un nodo superstite, la sequenza `alive -> suspect -> dead` del peer inattivo dopo lo stop del relativo engine.
-
-La prova documentata `TestRuntimeMembershipStableLongRunNoFalseSuspectConvergence` copre invece il caso opposto richiesto per evitare falsi positivi: avvia sei nodi in-memory con `gossip_interval=20ms`, `fanout=5`, `SuspectTimeout=180ms` e `DeadTimeout=360ms`. In questa configurazione ogni peer è target a ogni round, quindi il gap massimo atteso tra heartbeat/merge diretti dello stesso peer è `20ms`; il timeout `suspect` è 9 volte superiore. Il test attende prima la convergenza dell'aggregazione `average`, poi mantiene una finestra stabile di `600ms` verificando a ogni poll che il cluster resti convergente e che nessuna membership contenga peer diversi da `alive`.
-
-Comandi operativi dedicati:
-```bash
-go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
-go test ./tests/integration -run TestRuntimeMembershipStableLongRunNoFalseSuspectConvergence -count=1
-```
-
-## Leave volontario (join/leave lifecycle) nel cluster di test
-
-La suite di integrazione include due scenari dedicati al lifecycle esplicito di uscita:
-
-- `TestVoluntaryLeaveMaintainsResidualConvergence`: avvia il cluster in-memory, forza un leave volontario (`AnnounceLeave` + stop del nodo) e verifica che il cluster residuo continui a convergere; inoltre controlla che i nodi residui osservino il peer uscito con stato `leave` e `incarnation` incrementata.
-- `TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow`: usa timeout membership ridotti (`SuspectTimeout`, `DeadTimeout`, `PruneRetention`) per verificare che, dopo propagate+prune del tombstone `leave`, il nodo uscito non riceva più tentativi di invio oltre la finestra temporale attesa dal protocollo.
-
-Limiti temporali attesi (suite in-memory):
-- propagazione stato `leave`: entro pochi round gossip (`leavePropagationWait` nel test);
-- pruning del tombstone `leave`: entro `PruneRetention` + margine (`leavePruneDeadline` nel test);
-- assenza nuovi target sul nodo uscito: stabile nella finestra di osservazione `leaveIdleWindow`.
-
-Comandi operativi dedicati:
-```bash
-go test ./tests/integration -run TestVoluntaryLeaveMaintainsResidualConvergence -count=1
-go test ./tests/integration -run TestVoluntaryLeaveNodeNotTargetAfterProtocolWindow -count=1
-```
-
-
-## Verifiche versioning e merge gossip
-
-La suite `tests/gossip/TestMergeRules` congela la semantica di confronto degli stati gossip:
-
-- `state_version` confronta solo `version_epoch` e `version_counter`; `origin_node`, `message_id`, `sent_at` e le `incarnation` membership restano segnali separati;
-- payload concorrenti di `sum`, `average`, `min` e `max` con stessa versione globale ma contributi di nodi diversi vengono fusi tramite metadata per-nodo invece di produrre `same_version_different_payload`;
-- il caso anomalo di due contributi `average` dello stesso `node_id` con identica versione ma contenuto diverso usa un tie-break deterministico (`sum` maggiore, poi `count` maggiore), allineato alle regole già presenti per `sum`, `min` e `max`.
-
-Comando operativo dedicato:
-```bash
-go test ./tests/gossip -run 'TestMergeRules|TestMergeMaxConcorrenza' -count=1
-```
-
-## Verifiche convergenza `sum` idempotente
-
-La suite `tests/aggregation/sum/TestSumConvergence` copre esplicitamente:
-
-- convergenza deterministica su **6 nodi** con input fisso (`10,20,30,40,50,60`) e valore atteso costante `210`;
-- replay/duplicati e messaggi out-of-order senza alterazione del risultato finale;
-- conflitto `same_version_different_payload` sullo stesso `node_id` con risoluzione sempre ripetibile.
-
-Comando operativo dedicato:
-```bash
-go test ./tests/aggregation/sum -run TestSumConvergence -count=1
-```
-
-## Pipeline di convergenza osservata
-
-La suite esterna `tests/convergence`, nel package `convergence_test`, importa esclusivamente l’API esportata di `internal/convergence` e copre parsing dei log/CSV, ordinamento, origine temporale globale, serie con numero dinamico di nodi, riferimento offline per `sum`, `average`, `min`, `max`, tolleranza, convergenza stabile, mancata convergenza e XML essenziale dell'SVG. Una regressione configura sei nodi ma fornisce campioni in banda per cinque soltanto e verifica che `node-6` impedisca la convergenza; copre inoltre il rifiuto di un nodo osservato estraneo. La suite `tests/convergence-chart` esercita il package importabile `internal/convergencechart`, al quale il comando `cmd/convergence-chart` delega la pipeline, e controlla che riepilogo e SVG rendano visibile la stessa diagnostica. Un ulteriore caso a sei nodi verifica che ogni serie, inclusa `node-6`, compaia nella legenda e che le coordinate delle etichette restino entro il `viewBox`, la cui altezza cresce con il numero di serie. `TestConvergenceSampleEventSchema` verifica lo schema emesso dall'engine.
-
-```bash
-go test ./tests/convergence ./tests/convergence-chart ./tests/gossip -count=1
-go test ./... -count=1
-```
-
-Validazione Compose a tre nodi (valori iniziali `10,30,50`, riferimento average `30`):
-
-```bash
-OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh
-```
-
-Validazione scale a sei nodi con project name obbligatorio `sdcc-scale` (valori `10,30,50,70,90,110`, riferimento average `60`):
-
-```bash
-SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml SDCC_PROJECT_NAME=sdcc-scale \
-SDCC_SERVICES='node1 node2 node3 node4 node5 node6' OBSERVE_SECONDS=20 \
+SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
+SDCC_PROJECT_NAME=sdcc-scale \
+SDCC_SERVICES='node1 node2 node3 node4 node5 node6' \
 scripts/cluster_convergence_report.sh
 ```
 
-Il grafico SVG associa a ciascuna linea verticale una tacca temporale in secondi
-tra `0` e la durata osservata e a ciascuna linea orizzontale la stima compresa
-tra il minimo e il massimo del grafico. Le etichette usano una precisione
-adattiva alla distanza tra le tacche, così valori interi restano compatti e
-intervalli piccoli conservano i decimali necessari. Sotto il grafico, titolo
-dell'asse X, legenda e annotazione della convergenza occupano fasce distinte;
-l'altezza dell'SVG viene calcolata dal numero di righe della legenda.
-L'etichetta del riferimento `atteso ... ± ...` è ancorata verso sinistra al
-margine destro interno del plot e la sua coordinata verticale viene confinata
-tra i bordi superiore e inferiore, così valori lunghi o estremi non vengono
-tagliati. Una regressione dedicata verifica `x`, `text-anchor` e i due limiti Y.
-Le serie mantengono un path a gradini basato sui comandi SVG `H` e `V`: i
-segmenti semitrasparenti prolungano l'ultima stima nota, mentre marker circolari
-ad alto contrasto identificano i campioni osservati. Fino a 100 campioni per
-serie viene mostrato un marker per campione; oltre tale soglia i marker sono
-ridotti e campionati uniformemente, includendo sempre primo e ultimo punto. I
-test verificano sia la generazione ordinaria sia il limite per serie dense.
+Lo script forza una run delimitata, raccoglie i log e genera CSV/SVG. Il tool calcola l'oracle dagli `initial_value`, normalizza l'asse temporale al primo campione globale e considera convergente il primo istante dal quale tutte le serie restano nella tolleranza. Rifiuta set di nodi incompleti o estranei.
 
-Nel CSV si controlla che ogni serie inizi dal relativo `initial_value`, presenti almeno una variazione dovuta al gossip e termini stabilmente entro `±0.05` dal riferimento. Il riepilogo riporta `nodes_expected`, `nodes_observed`, `missing_nodes` e `unexpected_nodes`; dichiara `convergence=non osservata` sia quando nessun suffisso soddisfa il criterio sia quando l'insieme osservato non coincide esattamente con i `node_id` delle configurazioni selezionate. L'annotazione SVG elenca a sua volta i nodi mancanti e quelli non configurati.
+Per uno snapshot senza polling del cluster scale già avviato:
+
+```bash
+SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
+SDCC_PROJECT_NAME=sdcc-scale \
+scripts/show_aggregation_status.sh
+```
+
+## Traffic Control
+
+La modalità `deploy/docker-compose.tc.yml` applica profili Linux NetEm isolati e osserva la convergenza dei sei nodi:
+
+```bash
+bash -n deploy/traffic-control/entrypoint.sh scripts/demo_tc_latency.sh
+scripts/demo_tc_latency.sh --self-test
+scripts/demo_tc_latency.sh average
+```
+
+La prova confrontabile richiede una baseline normale a sei nodi, poi una run TC con la stessa aggregazione e gli stessi valori. Lo script riporta prima convergenza e fine della finestra di stabilità; invalida la run se osserva falsi suspect mentre tutti i container sono attivi. Dettagli in [Traffic Control](traffic_control.md).
+
+## Artefatti e cleanup
+
+Log, valori finali, snapshot e report sono scritti sotto `artifacts/`, escluso da Git. Gli harness tentano il cleanup anche in caso di errore; per operazioni manuali:
+
+```bash
+scripts/cluster_down.sh
+docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down
+```
+
+## Limiti della valutazione
+
+- Le topologie reali incluse sono 3 e 6 nodi; non costituiscono un benchmark di larga scala.
+- Le soglie temporali Compose dipendono dalle risorse dell'host e possono richiedere override documentati nei test/script.
+- Traffic Control misura uno scenario sintetico single-host, non una WAN reale.
+- I grafici sono prodotti da log applicativi e non sostituiscono un sistema di tracing distribuito.
+- Il repository non contiene ancora il dataset definitivo o i risultati da discutere nel report scientifico.

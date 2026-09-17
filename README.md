@@ -1,513 +1,216 @@
-# SDCC-project
+# SDCC — Gossip-Based Distributed Data Aggregation
 
-Progetto SDCC per aggregazione dati distribuita con approccio **gossip decentralizzato**.
+Servizio distribuito in Go che calcola aggregati globali mediante scambio gossip peer-to-peer, senza un coordinatore centrale per la computazione.
 
-## Indice
-- [Panoramica sistema gossip decentralizzato](#panoramica-sistema-gossip-decentralizzato)
-- [Architettura ad alto livello](#architettura-ad-alto-livello)
-- [Scelte architetturali confermate](#scelte-architetturali-confermate)
-- [Protocollo gossip (M01)](#protocollo-gossip-m01)
-- [Stato avanzamento milestone](#stato-avanzamento-milestone)
-- [Sezione aggregazioni](#sezione-aggregazioni)
-- [Configurazione esterna](#configurazione-esterna)
-- [Quickstart end-to-end](#quickstart-end-to-end)
-- [Avvio locale con Docker Compose](#avvio-locale-con-docker-compose)
-- [Esecuzione test](#esecuzione-test)
-- [Test interni di convergenza in-memory](#test-interni-di-convergenza-in-memory)
-- [Test di integrazione end-to-end M09](#test-di-integrazione-end-to-end-m09)
-- [Script/comandi standard](#scriptcomandi-standard)
-- [Supporti operativi fault injection](#supporti-operativi-fault-injection)
-- [Criteri di successo misurabili](#criteri-di-successo-misurabili)
-- [Demo](#demo)
-- [Deploy EC2 (Learner Lab)](#deploy-ec2-learner-lab)
+## Table of Contents
 
-## Panoramica sistema gossip decentralizzato
-Il sistema è pensato per nodi indipendenti che scambiano periodicamente informazioni in modalità peer-to-peer.
+- [Overview](#overview)
+- [Project Requirements](#project-requirements)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Supported Aggregations](#supported-aggregations)
+- [Repository Structure](#repository-structure)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Running the Cluster](#running-the-cluster)
+- [Testing](#testing)
+- [Observability](#observability)
+- [Deployment](#deployment)
+- [Documentation](#documentation)
+- [Project Report](#project-report)
 
-## Architettura ad alto livello
-Ogni nodo usa configurazione esterna (YAML/JSON + variabili ambiente), costruisce una membership locale dai seed peer e avvia round gossip periodici con intervallo configurabile. Il parametro `fanout` è applicato nel runtime: dopo il filtro peer (`alive`/`suspect`) il nodo ordina stabilmente i target per `node_id`/indirizzo e seleziona una finestra circolare senza duplicati, oppure invia a tutti se `fanout >= peer eleggibili`. La selezione non è più puramente random: un cursore conservato dall'engine avanza a ogni round e garantisce copertura periodica dei peer entro `ceil(N/fanout)` round in membership stabile.
+## Overview
 
-## Scelte architetturali confermate
-- **Transport tra nodi**: UDP + payload JSON (`[]byte`) su adapter `Transport`.
-- **Strategia gossip (implementata oggi)**: push verso peer attivi (`alive`/`suspect`) con payload completo stato+membership; fanout applicato a runtime con selezione deterministica a finestra rotante, senza duplicati e con copertura periodica dei peer.
-- **Aggregazioni richieste**: `sum`, `average`, `min`, `max`.
-- **Membership/discovery**: join endpoint con fallback su seed statici da configurazione.
+Ogni nodo mantiene una vista locale della membership e dell'aggregato, scambia periodicamente via UDP messaggi JSON contenenti stato e digest dei peer e applica merge idempotenti per contributo. I nodi sono equivalenti: seed e join endpoint servono soltanto al bootstrap, mentre gossip, failure detection e aggregazione proseguono in modo decentralizzato.
 
-Queste scelte sono definitive per il progetto corrente e sostituiscono la precedente matrice comparativa.
+Il progetto è l'implementazione individuale di **B3 — Gossip-based distributed data aggregation** per il corso di Sistemi Distribuiti e Cloud Computing.
 
-## Decisioni confermate (2026-03-05)
-- **Transport**: UDP adapter concreto (`internal/transport/udp_transport.go`) con fallback esplicito a `NoopTransport` solo in caso di errore di init.
-- **Strategia gossip**: round periodici push su `Transport` astratto; selezione fanout attiva e retry non automatico.
-- **Aggregazioni richieste**: **sum + average + min/max**.
+## Project Requirements
 
-## Protocollo gossip (M01)
-Sintesi operativa del protocollo M01:
-- `GossipMessage` include i campi principali `message_id`, `origin_node`, `state_version` (con `version_epoch` + `version_counter`), `payload`, `sent_at` e `membership` (digest serializzato con `status` + `incarnation` per peer).
-- Il versioning è composto da `version_epoch + version_counter`: l'epoch è la generation durevole allocata una volta per boot della stessa `node_id`, mentre il counter ordina gli aggiornamenti nella singola generation. La stessa generation inizializza la membership `incarnation`, senza usare timestamp, `runtime_instance` o `message_id` nel confronto.
-- Regole principali di merge: `duplicate_message_id` (idempotenza), `out_of_order_stale`/`older_version` (scarto update vecchi quando non portano contributi CRDT-like utili), `partial_merge` (payload aggregativo saltato ma stima variata da ricalcolo runtime), merge per-contributo per `sum`/`average`/`min`/`max` anche quando due nodi concorrenti hanno la stessa versione globale, `same_version_different_payload` solo per conflitti non risolvibili con metadati per-nodo e `remote_newer_version` per applicazione di update più recenti non CRDT-like.
-- Comando mirato di verifica: `go test ./tests/gossip -run TestMergeRules -count=1`.
+| Requisito B3 | Evidenza nella repository |
+|---|---|
+| Go e computazione gossip decentralizzata | Nodo in `cmd/node`, engine peer-to-peer in `internal/gossip` e transport UDP in `internal/transport`. |
+| Almeno due aggregazioni | `sum`, `average`, `min` e `max`, selezionabili da configurazione e coperte da test dedicati. |
+| Parametri configurabili | Configurazione YAML/JSON con default, override environment e validazione fail-fast. |
+| Testing e robustezza ai crash | Suite unitarie, concorrenti, in-memory e Compose; scenari di crash, restart/rejoin, leave e partizione temporanea. |
+| Scalabilità ed elasticità | Topologie Compose verificate a 3 e 6 nodi; join/rejoin e membership propagata via gossip. |
+| Deployment AWS | Procedura principale single-host: Docker Compose su una istanza EC2 dell'AWS Academy Learner Lab. |
 
-Per i dettagli completi consultare l'architettura: [docs/architecture.md](docs/architecture.md).
-- Test membership dedicati: `go test ./tests/gossip -run TestMergeMembershipConvergeConDuplicatiOutOfOrder`.
+I risultati sperimentali non sono versionati come dataset: gli script possono produrre artefatti CSV/SVG e snapshot locali sotto `artifacts/`.
 
-## Stato avanzamento milestone
-- **M01**: completata (contratto messaggio gossip, versioning `epoch+counter`, merge deterministico e test di convergenza base).
-- **M02**: completata a livello repository su modello membership locale + propagazione digest gossip + merge `incarnation/status` + test dedicati.
-- **M03**: completata lato documentazione del transport astratto/concreto, confini gossip↔adapter e contratto verificato da suite dedicata.
-- **M04**: completata lato repository per `sum` (algoritmo base in `internal/aggregation/sum/`, merge gossip idempotente con contributi/versioni per nodo in `internal/gossip/state.go`, gestione duplicati/out-of-order, saturazione overflow e suite canonica di convergenza in `tests/aggregation/sum/sum_convergence_test.go`).
-- **M05**: completata lato repository/documentazione per estensione e consolidamento `average`/`min`/`max`, regressione multi-aggregazione e verifica coerenza architetturale.
-- **M08**: completata come milestone di consolidamento test/documentazione; copertura iniziale esplicitata per `merge`, `membership`, `config`, `aggregation` e comando unico di verifica post-milestone introdotto nel README.
-- **M09**: completata lato test/documentazione con suite canonica `tests/integration/TestClusterConvergence`, documento `docs/testing.md` e comando operativo ufficiale dedicato alla convergenza cluster.
-- **M10**: completata lato repository/documentazione con suite reale `tests/integration/TestNodeCrashAndRestart` su cluster Compose locale, variante rapida `tests/integration/TestNodeCrashAndRestartInMemory`, criteri osservabili di crash/restart in `docs/testing.md` e task report dedicato `docs/task/M10.md`.
-- **M11**: completata lato documentazione operativa dell'observability con guida dedicata `docs/observability.md`, task report `docs/task/M11.md` e comando canonico di verifica `go test ./tests/observability -run TestMetricsExposure`.
-- **M12**: completata lato deliverable documentali finali con consolidamento di `README.md` (indice, quickstart end-to-end, riferimenti demo/deploy), allineamento operativo di `docs/demo.md` e `docs/deployment_ec2.md`, più coerenza lessicale con `docs/testing.md` per scenario M09/M10 e criteri di successo misurabili.
+## Features
 
-Comandi di verifica milestone:
-- M03 → `go test ./tests/transport -run TestTransportContract`
-- M04 → `go test ./tests/aggregation/sum -run TestSumConvergence`
-- M05 → test merge `average`/`min`/`max` + regressione multi-aggregazione (vedi sezione test M05).
-- M08 → `go test ./... -run Test -count=1`
-- M11 → `go test ./tests/observability -run TestMetricsExposure`
+- round gossip push periodici con fanout deterministico a finestra rotante;
+- payload JSON versionato e transport UDP astratto dietro interfaccia;
+- deduplicazione tramite `message_id` e gestione di update duplicati, concorrenti e fuori ordine;
+- membership locale con stati `alive`, `suspect`, `dead` e `leave`;
+- bootstrap tramite join endpoint HTTP opzionale, con fallback ai peer statici;
+- failure detection a timeout, prune e rejoin con generation/incarnation durevole;
+- aggregati membership-aware: contribuiscono al risultato esposto soltanto i nodi `alive`;
+- log strutturati e endpoint HTTP `/health`, `/ready`, `/metrics`;
+- cluster Compose a 3 nodi, scenario scale a 6 nodi e modalità sperimentale Linux Traffic Control isolata;
+- pipeline passiva per campioni di convergenza, CSV e grafico SVG.
 
-Documento task:
-- `docs/task/M01.md`
-- `docs/task/M02.md`
-- `docs/task/M03.md`
-- `docs/task/M04.md`
-- `docs/task/M05.md`
-- `docs/task/M06.md`
-- `docs/task/M07.md`
-- `docs/task/M08.md`
-- `docs/task/M09.md`
-- `docs/task/M10.md`
-- `docs/task/M11.md`
+## Architecture
 
-## Raccomandazione membership / discovery
-Consiglio **Opzione B (join endpoint) con fallback seed statici da configurazione**.
+Il processo carica e valida la configurazione, alloca una generation persistente, inizializza membership, observability e transport UDP, quindi avvia l'engine gossip. A ogni round applica le transizioni di failure detection, seleziona fino a `fanout` peer raggiungibili e invia lo stato completo. I merge conservano contributi e versioni per nodo, consentendo convergenza senza coordinatore.
 
-Perché questa scelta è la più equilibrata per il progetto:
-- mantiene il sistema decentralizzato per il calcolo degli aggregati;
-- consente join dinamici (elasticità) senza aggiornare manualmente tutti i file di configurazione;
-- resta semplice da testare in locale e su EC2 perché i seed rimangono piano B operativo.
+Dettagli su protocollo, membership, versioning, merge e limiti: [Architecture](docs/architecture.md).
 
-Impatto pratico previsto:
-- `join_endpoint` è già presente in configurazione come meccanismo di bootstrap opzionale;
-- nel runtime reale (`cmd/node`) il nodo usa un client HTTP concreto verso `http://<join_endpoint>/join`; se il join fallisce o non è configurato, resta attivo il fallback su `bootstrap_peers`/`seed_peers`;
-- la membership operativa resta decentralizzata e evolve via gossip peer-to-peer.
+## Supported Aggregations
 
-## Sezione aggregazioni
-Aggregazioni abilitate via configurazione:
-- `sum`
-- `average`
-- `min`
-- `max`
+| Valore `aggregation` | Risultato |
+|---|---|
+| `sum` | Somma dei contributi eleggibili, con saturazione a `±math.MaxFloat64` in caso di overflow. |
+| `average` | Media aritmetica ottenuta da coppie somma/conteggio per nodo. |
+| `min` | Minimo dei contributi eleggibili. |
+| `max` | Massimo dei contributi eleggibili. |
 
-La chiave `aggregation` seleziona l'aggregazione attiva nel nodo, validata contro `enabled_aggregations`.
-La configurazione segue tre leve operative:
-- `enabled_aggregations`: insieme delle aggregazioni consentite per il nodo (whitelist runtime);
-- `aggregation`: aggregazione effettivamente attiva nel nodo e usata dal gossip locale;
-- `initial_value`: valore locale iniziale con cui il nodo semina il proprio stato gossip al bootstrap.
-La validazione fallisce se `aggregation` non appartiene a `enabled_aggregations`.
-Il layer comune risiede in `internal/aggregation`, con implementazioni dedicate in `sum`, `average`, `min` e `max`.
+`aggregation` deve comparire in `enabled_aggregations`. Tutti i nodi di un cluster operativo devono usare la stessa aggregazione.
 
-Sintesi del comportamento osservabile: i contributi appresi via gossip restano nei metadata per convergenza e rejoin, ma il risultato esposto (`state.value`, metriche e log) viene ricalcolato solo sui nodi membership-eligible. Sono quindi esclusi dal risultato i nodi in stato `suspect`, `dead` e `leave`; tornano a contribuire solo dopo rejoin/heartbeat valido che li renda di nuovo `alive`.
+## Repository Structure
 
-- **Stato reale `sum`**: algoritmo base in `internal/aggregation/sum/`; il merge gossip usa `state.aggregation_data.sum` con contributi/versioni per nodo ed è implementato in `internal/gossip/state.go`, dove mantiene semantica idempotente su duplicati/out-of-order; la suite canonica di convergenza è `tests/aggregation/sum/sum_convergence_test.go` con `TestSumConvergence`.
-- **Stato reale `average`**: merge gossip convergente con metadati `state.aggregation_data.average` (`contributions.sum/count` + `versions` per nodo); ogni nodo conserva inoltre il proprio contributo locale originario in stato runtime separato, evitando che round successivi sostituiscano il contributo con la media corrente del cluster. La media esposta considera solo contributi `alive` con chiavi `node_id` logiche canoniche, escludendo `suspect`, `dead`, `leave` e placeholder seed-only nel formato `host:port`.
-- **Stato reale `min`/`max`**: merge gossip monotono robusto con metadati opzionali `state.aggregation_data.min/max.versions` per nodo e fallback retrocompatibile su payload legacy senza metadati; anche il valore esposto di `min`/`max` filtra i contributori non `alive`.
-- Overflow numerico in `sum`: saturazione esplicita a `±math.MaxFloat64` con flag `overflowed` propagato nello stato gossip.
-
-## Observability minima
-Lo stato post-M11 dell'observability è documentato in modo canonico in `docs/observability.md`.
-
-**Decisione architetturale vincolante**: per il repository la scelta univoca è la **soluzione ibrida** — **stdout strutturato** per gli eventi applicativi e **HTTP** per metriche/probe. I task successivi non devono introdurre alternative concorrenti o duplicare la stessa informazione su superfici osservabili diverse senza aggiornamento esplicito della documentazione canonica.
-
-Sintesi operativa M11:
-- architettura minima composta da logger strutturato, collector metriche, stato lifecycle del nodo e server HTTP minimo integrato in `cmd/node/main.go`;
-- campi log stabili per gli eventi gossip principali (`event`, `node_id`, `round`, `peers`, `estimate`, `result`, `node_state`), emessi su stdout/stderr strutturato;
-- metriche e probe esposte via endpoint HTTP `/health`, `/ready` e `/metrics`;
-- il collector viene passato anche all'engine gossip, così `/metrics` cresce durante i round e i merge remoti reali invece di fermarsi a snapshot di bootstrap/shutdown;
-- binding HTTP configurabile via `OBSERVABILITY_ADDR` (default `:8080`);
-- criterio canonico di readiness: `/ready` resta `503` fino a bootstrap completato + engine gossip avviato, poi passa a `200`;
-- lifecycle del server HTTP: avvio insieme al runtime del nodo, disponibilità per tutta la vita del processo e terminazione contestuale allo shutdown;
-- comando canonico di verifica post-M11:
-  - `go test ./tests/observability -run TestMetricsExposure`
-
-Per istruzioni d'uso, verifica manuale, limiti noti e scelte progettuali consultare direttamente `docs/observability.md`.
-
-## Configurazione esterna
-Documento canonico della configurazione runtime:
-- `docs/configuration.md`
-
-File di esempio:
-- `configs/example.yaml`
-
-Parametri esterni principali:
-- `join_endpoint`
-- `bootstrap_peers`
-- `gossip_interval_ms`
-- `fanout`
-- `node_port`
-- `advertise_addr`
-- `seed_peers`
-- `membership_timeout_ms`
-- `enabled_aggregations`
-
-Nota failure detection: `membership_timeout_ms` viene tradotto in `SuspectTimeout = max(1ms, membership_timeout_ms/2)` e `DeadTimeout = max(SuspectTimeout+1ms, membership_timeout_ms)`. La validazione rifiuta configurazioni in cui il timeout `suspect` non è strettamente maggiore del gap massimo atteso tra messaggi gossip dello stesso peer, stimato da `gossip_interval_ms`, `fanout` e numero di peer di discovery. La stima è coerente con la selezione fanout deterministica: con N peer eleggibili e fanout F, il cursore rotante visita periodicamente tutti i target entro `ceil(N/F)` round, salvo cambi di membership o perdite di rete.
-
-Ogni servizio Compose monta un volume distinto in `/var/lib/sdcc`: il file `generation` viene incrementato e sincronizzato atomicamente prima che il nodo partecipi al protocollo. `docker compose stop/start` e la ricreazione del container conservano l'identità se il volume resta disponibile. `docker compose down -v` elimina invece le generation insieme ai volumi e rappresenta perdita esplicita dell'identità durevole; in questa versione non esiste recupero automatico dai peer.
-
-Esecuzione locale con file config:
-```bash
-go run ./cmd/node --config configs/example.yaml
+```text
+.
+├── cmd/                         # eseguibili node e convergence-chart
+├── internal/                    # gossip, membership, transport, config e aggregazioni
+├── configs/                     # esempio e configurazioni node1 ... node6
+├── deploy/                      # Compose scale/TC e immagine Traffic Control
+├── scripts/                     # lifecycle, risultati, demo e fault injection
+├── tests/                       # suite black-box per componente e integrazione
+├── docs/                        # documentazione tecnica e record operativi
+├── Dockerfile                   # immagine applicativa multi-stage
+├── docker-compose.yml           # cluster canonico a 3 nodi
+├── Makefile                     # entry point dei test principali
+└── go.mod                       # modulo Go 1.22
 ```
 
-Override via variabili ambiente (precedenza sull'YAML):
+## Prerequisites
 
-> Nota runtime reale: gli override env numerici o CSV malformati ora fanno fallire `Load` in modo fail-fast. Gli errori citano sempre nome variabile e valore ricevuto, ad esempio per `NODE_PORT=abc`, `FANOUT=abc`, `ENABLED_AGGREGATIONS=sum,,max` o `BOOTSTRAP_PEERS=node-1:7001,`.
+- Git;
+- Go 1.22 o successivo per build e test nativi;
+- Docker Engine o Docker Desktop con plugin `docker compose` per cluster e test Compose;
+- Bash per gli script operativi;
+- per Traffic Control: host Linux/container Linux con supporto NetEm e capability `NET_ADMIN`.
 
-```bash
-NODE_ID=node-custom \
-NODE_PORT=7100 \
-ADVERTISE_ADDR=node-local-1:7100 \
-JOIN_ENDPOINT=bootstrap:9000 \
-BOOTSTRAP_PEERS=node-1:7001,node-2:7002 \
-SEED_PEERS=node-1:7001,node-2:7002 \
-GOSSIP_INTERVAL_MS=500 \
-FANOUT=1 \
-MEMBERSHIP_TIMEOUT_MS=3000 \
-ENABLED_AGGREGATIONS=sum,average,min,max \
-AGGREGATION=min \
-go run ./cmd/node --config configs/example.yaml
-```
+## Quick Start
 
-Flusso bootstrap all'avvio:
-- il nodo invia al bootstrap una `JoinRequest` con `node_id` logico e `addr` reale (`host:port`) ricavato da `advertise_addr` oppure, in fallback locale, da `bind_address:node_port`;
-- il nodo prova `join_endpoint` per ottenere snapshot/delta membership iniziale;
-- se il join non è disponibile, usa `bootstrap_peers` (o `seed_peers` come fallback compatibile) come elenco di endpoint reali `host:port`;
-- eventuali seed placeholder creati dal fallback vengono riallineati al vero `node_id` non appena arriva gossip dal peer canonico oppure un digest membership che espone lo stesso `addr`;
-- il bootstrap non è autoritativo: dopo discovery iniziale la membership evolve solo via gossip peer-to-peer.
-
-Convenzione unica adottata:
-- `node_id` = identificatore logico stabile del nodo (`node-1`, `node-2`, ...);
-- `addr` = endpoint di rete realmente raggiungibile nel formato `host:port`;
-- nei deployment Docker Compose il `host` dell'endpoint coincide con il **service name** (`node1`, `node2`, `node3`), che Docker risolve via DNS interno.
-
-## Quickstart end-to-end
-Prerequisiti minimi (coerenti con i flussi reali del repository):
-- Docker Engine attivo;
-- Docker Compose plugin (`docker compose`);
-- **Go locale installato (minimo `1.22`, coerente con `go.mod`)**;
-- repository clonata con file `docker-compose.yml` e `configs/node*.yaml` presenti.
-
-Verifica rapida prerequisiti:
-```bash
-docker --version
-docker compose version
-go version
-```
-
-### 1) Avvio cluster
-```bash
-docker compose up -d --build
-```
-
-### 2) Verifica stato servizi
-```bash
-docker compose ps
-```
-
-### 3) Verifica convergenza automatica (M09)
-> Nota: questo comando esegue test Go locali e richiede la toolchain Go installata sull'host che lancia i test.
+Dalla root della repository:
 
 ```bash
-go test ./tests/integration -run TestClusterConvergence -count=1
+git clone <repository-url>
+cd SDCC-project
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
+docker compose -p sdcc-bootstrap -f docker-compose.yml ps
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --tail=30 node1
+scripts/cluster_down.sh
 ```
 
-### 4) Stop cluster e cleanup locale
+`cluster_up.sh` costruisce e ricrea il cluster canonico; `cluster_wait_ready.sh` attende i servizi configurati in `deploy/compose_services.env`. Le porte di observability non sono pubblicate sull'host: gli script e i test le interrogano dall'interno dei container.
+
+Per eliminare anche le generation persistenti:
+
 ```bash
-docker compose down
+docker compose -p sdcc-bootstrap -f docker-compose.yml down -v --remove-orphans
 ```
 
-## Avvio locale con Docker Compose
-Per M07 il file Compose canonico del cluster locale è:
-- `docker-compose.yml` alla root della repository.
+## Configuration
 
-Il file `deploy/docker-compose.yml` resta solo come **variante secondaria/storica di promemoria** e non va usato come sorgente operativa principale, così da evitare ambiguità sul file Compose da eseguire.
+Il loader applica la precedence **default → file YAML/JSON → environment → validazione**. Le categorie principali sono identità e rete, discovery, intervallo/fanout gossip, timeout membership, aggregazione/valore iniziale e logging. `configs/example.yaml` mostra tutti i campi applicativi; `configs/node1.yaml` … `configs/node6.yaml` definiscono le topologie Compose.
 
-Comandi reali del flusso standard:
+Gli override usano nomi come `NODE_ID`, `NODE_PORT`, `SEED_PEERS`, `GOSSIP_INTERVAL_MS`, `FANOUT`, `MEMBERSHIP_TIMEOUT_MS`, `AGGREGATION` e `INITIAL_VALUE`. `OBSERVABILITY_ADDR` e `SDCC_GENERATION_FILE` sono impostazioni runtime separate.
+
+Riferimento completo: [Configuration](docs/configuration.md).
+
+## Running the Cluster
+
+### Cluster canonico a 3 nodi
+
 ```bash
 docker compose up -d --build
 docker compose ps
-docker compose logs -f node1
+docker compose logs -f
 docker compose down
 ```
 
-Ogni servizio usa la stessa immagine applicativa locale costruita dal `Dockerfile` multi-stage e monta una config esterna dedicata:
-- `configs/node1.yaml`
-- `configs/node2.yaml`
-- `configs/node3.yaml`
+Usa `docker-compose.yml` e `configs/node1.yaml` … `configs/node3.yaml`. L'aggregazione predefinita del cluster è `average` sui valori `10`, `30`, `50`, quindi il risultato atteso a membership stabile è `30`.
 
-I nodi si scoprono tramite la rete Compose `sdcc-net` e i nomi servizio `node1`, `node2`, `node3`: questi hostname vengono risolti via DNS interno di Compose e sono gli stessi usati negli `advertise_addr` e nei `seed_peers` del runtime.
+### Cluster scale a 6 nodi
 
-I file `configs/node1.yaml`, `configs/node2.yaml`, `configs/node3.yaml` sono coerenti con il runtime effettivo perché dichiarano:
-- `node_id` logici distinti (`node-1`, `node-2`, `node-3`);
-- `advertise_addr` raggiungibili sulla rete Compose (`node1:7001`, `node2:7002`, `node3:7003`);
-- peer seed espressi come endpoint reali `host:port` e non come identificativi logici.
-
-Per passare configurazioni personalizzate basta cambiare i file montati. Il Compose canonico non duplica più `NODE_ID`, `NODE_PORT` o `SEED_PEERS` via environment, così da mantenere nei file YAML la sorgente di verità per identità logica ed endpoint pubblicizzati. La build dell'immagine avviene localmente tramite `docker compose up -d --build`, senza più usare `golang:1.22` con `go run` dentro i container.
-
-### Scale run (6 nodi)
-Per eseguire una variante di scala con nodi aggiuntivi usare il file dedicato:
-- `deploy/docker-compose.scale.yml` (servizi `node1`..`node6`);
-- config dedicate: `configs/node4.yaml`, `configs/node5.yaml`, `configs/node6.yaml`;
-- `fanout: 5` su tutti i sei nodi, così ogni round gossip invia a tutti i peer eleggibili del cluster demo e mantiene stabile la media `average=60` finché tutti i nodi restano `alive`.
-
-Comandi:
 ```bash
-docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale up -d --build
-SDCC_SERVICES=\"node1,node2,node3,node4,node5,node6\" \
-  go test ./tests/integration -run TestClusterConvergence -count=1
-docker compose -f deploy/docker-compose.scale.yml -p sdcc-scale down
+SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
+SDCC_PROJECT_NAME=sdcc-scale \
+SDCC_SERVICES='node1 node2 node3 node4 node5 node6' \
+scripts/cluster_up.sh
+
+SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
+SDCC_PROJECT_NAME=sdcc-scale \
+scripts/show_aggregation_status.sh
 ```
 
-Nota operativa: per gli script `scripts/cluster_*.sh` e per l'harness Compose dei test, la lista servizi non è hard-coded; viene letta da `SDCC_SERVICES` oppure dal file `deploy/compose_services.env`.
+I valori sono `10`, `30`, `50`, `70`, `90`, `110`; per `average` il risultato atteso è `60`. Cleanup:
 
-Dettagli operativi canonici di build/deploy locale multi-nodo:
-- `docs/deployment.md`
-
-## Test interni di convergenza in-memory
-Le suite storiche nel package `tests/gossip` restano utili come test interni di convergenza e resilienza in-memory, ma **non** rappresentano la suite canonica M09. Sono verifiche interne al repository rivolte alla logica gossip, senza Docker Compose e senza un cluster locale multi-nodo eseguito come scenario end-to-end.
-
-Comandi interni disponibili:
 ```bash
-go test ./tests/gossip -run TestIntegrationGossipConvergence -count=1
-go test ./tests/gossip -run TestCrash -count=1
+SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml \
+SDCC_PROJECT_NAME=sdcc-scale \
+SDCC_SERVICES='node1 node2 node3 node4 node5 node6' \
+scripts/cluster_down.sh
 ```
 
-Target `Makefile` dedicati:
+Il file `deploy/docker-compose.yml` è un promemoria storico e non è un entry point di deployment.
+
+## Testing
+
+La suite copre configurazione, factory e semantica numerica delle aggregazioni, merge gossip, fanout, membership, UDP, concorrenza, observability, generation persistente e pipeline di convergenza. I test d'integrazione includono cluster Compose, scala a sei nodi, crash/restart e uno scenario con crash sequenziali, partizione e rejoin.
+
 ```bash
-make test-integration-internal
-make test-crash
+go test ./... -count=1
+go test -race ./... -count=1
+go vet ./...
+go test ./tests/integration -run 'TestClusterConvergence$' -count=1
 make test-crash-restart
-# alias equivalente: make test-m10
 ```
 
-Differenza operativa tra i target crash:
-- `make test-crash`: **target interno/debug** che resta puntato ai test in-memory del package `tests/gossip`.
-- `make test-crash-restart` / `make test-m10`: **target canonico milestone M10** che esegue `tests/integration/TestNodeCrashAndRestart` sul cluster Compose reale.
-- `make test-crash-restart-internal`: variante rapida/deterministica che esegue `tests/integration/TestNodeCrashAndRestartInMemory`.
+I test Compose richiedono Docker attivo e gestiscono il proprio cluster. Strategia, comandi mirati e criteri: [Testing](docs/testing.md).
 
-## Test di integrazione end-to-end M09
-Documento canonico dei test di integrazione e dei comandi operativi:
-- `docs/testing.md`
+## Observability
 
-Test canonico M09 disponibile:
-- `tests/integration/cluster_convergence_test.go` (`TestClusterConvergence`)
+I nodi scrivono log strutturati su stdout/stderr. Un server HTTP separato, configurabile con `OBSERVABILITY_ADDR` (default `:8080`), espone:
 
-Test canonico M10 disponibile:
-- `tests/integration/node_crash_restart_compose_test.go` (`TestNodeCrashAndRestart`)
-- `tests/integration/node_crash_restart_test.go` (`TestNodeCrashAndRestartInMemory`)
+- `/health`: liveness del processo;
+- `/ready`: `503` prima dell'avvio dell'engine, poi `200`;
+- `/metrics`: contatori e gauge in formato testuale Prometheus.
 
-Il target `make test-integration` punta ufficialmente alla suite di integrazione M09 in `tests/integration` e oggi esegue il **cluster Compose reale** tramite gli script canonici della repository. La variante veloce `TestClusterConvergenceInMemory` resta disponibile per debugging locale, ma non sostituisce lo scenario end-to-end reale.
+Sono disponibili metriche per round, merge remoti, peer noti, stima, uptime, readiness e stato lifecycle. Riferimento: [Observability](docs/observability.md).
 
-Sintesi criteri M09:
-- scenario congelato a **3 nodi** (`node-1`, `node-2`, `node-3`);
-- aggregazione attiva: `average`;
-- valori iniziali: `10`, `30`, `50`;
-- criterio di successo: banda cluster `max(values) - min(values) <= 0.05`;
-- timeout Compose espliciti: `composeReadyTimeout = 90s`, `composeConvergenceTimeout = 18s`, `composeShutdownTimeout = 40s`;
-- report finale per nodo: `node_id`, `observed_value`, `expected_delta`, `common_band`.
+## Deployment
 
-Comando ufficiale M09:
-```bash
-go test ./tests/integration -run TestClusterConvergence -count=1
-make test-integration
-```
+### Local Docker Compose
 
-Comando ufficiale M10:
-```bash
-go test ./tests/integration -run TestNodeCrashAndRestart -count=1
-go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
-make test-crash-restart
-make test-crash-restart-internal
-# alias equivalente: make test-m10
-```
+Il percorso canonico usa il `Dockerfile` multi-stage e `docker-compose.yml` a tre nodi; `deploy/docker-compose.scale.yml` estende la stessa immagine a sei nodi. Consultare [Local Deployment](docs/deployment.md).
 
-Distinzione esplicita dei target crash/restart:
-- `make test-crash` continua a rappresentare il livello **interno/debug** del package `tests/gossip`.
-- `make test-crash-restart` e `make test-m10` rappresentano il livello **canonico milestone M10** nella suite `tests/integration` su cluster Compose reale.
-- `make test-crash-restart-internal` mantiene una variante veloce in-memory per debugging locale.
+### AWS EC2
 
-Sintesi criteri M10:
-- stop/start reale di **1 servizio Compose su 3** tramite `scripts/fault_injection/node_stop_start.sh`;
-- evidenza del **cluster residuo** (`node2`, `node3`) tramite endpoint `/metrics` con `sdcc_node_rounds_total` crescente e nodi ancora `ready`;
-- raccolta di snapshot diagnostici `after-stop` e `after-restart` con `scripts/fault_injection/collect_debug_snapshot.sh`;
-- **rejoin reale** verificato osservando che il nodo riavviato torna `ready`, completa round gossip e si allontana dal proprio valore iniziale locale;
-- convergenza finale del cluster entro banda `<= 0.05`, verificata sia live sia nel teardown finale.
+Il deployment B3 supportato è **una singola istanza EC2 con Docker Compose**. Gossip e metriche restano sulla rete bridge interna; dall'esterno è necessario soltanto l'accesso amministrativo alla VM. Consultare [AWS EC2 Deployment](docs/deployment_ec2.md).
 
-Comando ufficiale M10:
-```bash
-go test ./tests/integration -run TestNodeCrashAndRestart -count=1
-go test ./tests/integration -run TestNodeCrashAndRestartInMemory -count=1
-make test-crash-restart
-make test-crash-restart-internal
-# alias equivalente: make test-m10
-```
+## Documentation
 
-## Esecuzione test
-- Test transport (UDP + contratto): `go test ./tests/transport -count=1`
-```bash
-go test ./...
-```
+- [Architecture](docs/architecture.md) — protocollo gossip, membership, merge e proprietà distribuite.
+- [Configuration](docs/configuration.md) — schema, precedence, override e validazione.
+- [Testing](docs/testing.md) — suite, scenari di robustezza e valutazione della convergenza.
+- [Local Deployment](docs/deployment.md) — Dockerfile, Compose a 3/6 nodi e troubleshooting.
+- [AWS EC2 Deployment](docs/deployment_ec2.md) — procedura single-host per Learner Lab.
+- [Observability](docs/observability.md) — log, probe, metriche e campioni di convergenza.
+- [Traffic Control](docs/traffic_control.md) — esperimento isolato Linux `tc/netem` a sei nodi.
+- [Live Demo](docs/demo.md) — checklist ripetibile per presentazione e Q&A.
 
-Comandi mirati membership (M02), separati per livello di verifica:
-```bash
-# verifica unitaria membership
-go test ./tests/membership -run 'TestJoinLeave|TestTimeoutTransitions|TestPruneRemovesExpiredDeadPeerAndBlocksObsoleteReintroduction' -count=1
+### Additional project records
 
-# verifica gossip membership
-go test ./tests/gossip -run 'TestMergeMembership|TestRoundSerializzaMembershipConIncarnation' -count=1
+- [AWS Learner Lab Notes](docs/aws_learner_lab_notes.md) — note operative di contesto, non documentazione canonica di deployment.
+- [Operational Log](docs/operational_log.md) — cronologia append-only delle attività sul progetto.
 
-# eventuale verifica integrazione runtime
-go test ./tests/integration -run TestRuntimeMembershipFailureDetection -count=1
-```
+## Project Report
 
-Comando operativo M04 (verifica convergenza `sum`):
-```bash
-go test ./tests/aggregation/sum -run TestSumConvergence
-```
-
-Comandi operativi M05:
-```bash
-# average: suite canonica di convergenza end-to-end nel package reale dedicato
-go test ./tests/aggregation/average -run TestAverageConvergence -count=1
-
-# average: scenario config-backed a 6 nodi su configs/node1.yaml ... configs/node6.yaml
-go test ./tests/aggregation/average -run TestAverageSixNodeClusterFromCanonicalConfigs -count=1
-
-# min/max: suite canoniche di convergenza nei package reali dedicati
-go test ./tests/aggregation/min ./tests/aggregation/max -count=1
-
-# regressione multi-aggregazione: sum invariata con nuove aggregazioni abilitate
-go test ./tests/gossip -run TestSumRegressionConNuoveAggregazioni -count=1
-```
-
-Comando di verifica post-M08:
-```bash
-go test ./... -run Test -count=1
-```
-
-Stato post-M08 dichiarato esplicitamente:
-- area `merge`: suite dedicata nel package `tests/gossip` con verifica delle regole di merge, casi out-of-order, legacy, overflow e regressioni multi-aggregazione;
-- area `membership`: suite dedicata nei package `tests/membership` e `tests/gossip` per join/leave, timeout, incarnation, bootstrap e convergenza digest membership;
-- area `config`: suite dedicata in `tests/config` per load/validate, precedence env/file e validazioni bloccanti;
-- area `aggregation`: suite root + test di convergenza per `sum`, `average`, `min`, `max`, con verifica finale repository-wide demandata al comando sopra riportato.
-
-## Supporti operativi fault injection
-Per validazione manuale e debug del cluster Docker Compose canonico è disponibile la directory `scripts/fault_injection/`, costruita come estensione leggera degli helper già presenti in `scripts/` e senza introdurre orchestrazione centralizzata o dipendenze fragili.
-
-Script disponibili:
-- `scripts/fault_injection/node_stop_start.sh`: simula `stop`, `start` o `bounce` di un singolo servizio Compose (`node1`, `node2`, `node3`) con parametri configurabili via argomenti o variabili ambiente.
-- `scripts/fault_injection/collect_debug_snapshot.sh`: raccoglie snapshot diagnostici minimi (`docker compose ps`, log cluster, log del servizio target, `docker inspect`, metadata) in `artifacts/fault_injection/`.
-- `scripts/fault_injection/common.sh`: helper condivisi che riusano `scripts/cluster_common.sh` per rimanere allineati al `docker-compose.yml` canonico di root.
-
-Esempi rapidi:
-```bash
-# arresta e riavvia node2 con una breve pausa post-stop
-AFTER_STOP_SLEEP_SECONDS=5 scripts/fault_injection/node_stop_start.sh bounce node2
-
-# raccoglie uno snapshot diagnostico del nodo riavviato
-SNAPSHOT_LABEL=post-restart scripts/fault_injection/collect_debug_snapshot.sh node2
-```
-
-Nota importante: il test automatico canonico di crash/restart vive ora in `tests/integration` come suite **Compose reale** (`TestNodeCrashAndRestart`), mentre la variante veloce `TestNodeCrashAndRestartInMemory` resta disponibile per debugging locale. Gli script in `scripts/fault_injection/` sono inoltre usati dalla suite reale per pilotare lo stop/start e raccogliere artefatti coerenti con il deployment Compose.
-
-## Script/comandi standard
-È disponibile `Makefile` con target per esecuzioni riproducibili locali e Docker:
-
-```bash
-# Suite completa
-make test
-
-# Solo unit test (config + aggregation + membership)
-make test-unit
-
-# Test di integrazione/end-to-end M09
-make test-integration
-
-# Test interni di convergenza gossip in-memory
-make test-integration-internal
-
-# Robustezza crash/rejoin in-memory
-make test-crash
-
-# Esecuzione test completa dentro container Go
-make docker-test
-```
-
-## Criteri di successo misurabili
-I test introdotti in repository usano i seguenti criteri quantitativi:
-
-1. **M09 — Convergenza gossip (3 nodi, harness in-memory della suite di integrazione end-to-end M09)**:
-   - criterio esplicito di pass/fail: differenza massima tra stati `<= 0.05`
-   - riferimento informativo nel report: media iniziale `30.0` per input `10`, `30`, `50`
-   - timeout massimo `350ms`, coerente con la documentazione canonica M09 (`50ms` bootstrap + `300ms` buffer locale/CI).
-2. **M10 — Crash di un nodo e convergenza del cluster residuo**:
-   - crash di `1` nodo su `3` solo dopo avere osservato attività gossip reale pre-crash;
-   - con `1` nodo down su `3`, il cluster residuo (`2/3`) converge con banda `<= 0.05`;
-   - il cluster residuo deve mostrare progresso o stabilizzazione coerente su più snapshot consecutivi, non su un singolo campione;
-   - timeout operativo della fase residua: `220ms`.
-3. **M10 — Restart, rejoin e convergenza finale del nodo rientrato**:
-   - il nodo crashato viene effettivamente deregistrato dal transport di test e poi nuovamente registrato al restart;
-   - il nodo riavviato non resta bloccato sul valore di restart e deve quindi mostrare un **rejoin reale**;
-   - il nodo rientrato converge poi nella banda finale del cluster con soglia `<= 0.08`;
-   - il valore finale del nodo rientrato viene confrontato sia con la banda del cluster sia con un riferimento informativo derivato dal cluster residuo stabile;
-   - timeout operativo della fase di rejoin/stabilizzazione finale: `320ms`.
-4. **Validazione configurazione**:
-   - parsing YAML/JSON corretto
-   - errore obbligatorio su parametri non validi (`fanout <= 0`, `aggregation` non abilitata, peer `host:porta` malformati, `node_port` fuori range, duplicati o valori vuoti nelle liste).
-
-## Demo
-
-Per l'esperimento opzionale e completamente isolato con latenza Linux
-`tc/netem`, sei nodi, oracle statici e timeout di 30 secondi, vedere
-[`docs/traffic_control.md`](docs/traffic_control.md). Avvio rapido:
-
-```bash
-scripts/demo_tc_latency.sh average
-```
-
-La modalità normale e i relativi file Compose rimangono invariati.
-Guida operativa completa:
-- [`docs/demo.md`](docs/demo.md)
-
-Sintesi scenario demo allineato a test/documentazione canonica:
-- cluster locale reale a **3 nodi** (`node1`, `node2`, `node3`);
-- aggregazione attiva: **`average`**;
-- valori iniziali: **`10`, `30`, `50`**;
-- riferimento atteso informativo: **`30.0`**;
-- criterio di successo M09: banda cluster **`max(values) - min(values) <= 0.05`**;
-- verifica automatica canonica: `go test ./tests/integration -run TestClusterConvergence -count=1`.
-
-## Deploy EC2 (Learner Lab)
-Runbook completo:
-- [`docs/deployment_ec2.md`](docs/deployment_ec2.md)
-
-Nota vincolante Learner Lab (sintesi):
-- usare come percorso principale **1 EC2 + Docker Compose** per ridurre costo/fragilità;
-- rispettare i vincoli di laboratorio su budget/quote (incluso budget indicativo da **50 USD** e metrica budget con possibile ritardo);
-- eseguire sempre cleanup finale (`docker compose down` e rilascio risorse EC2/EBS) per evitare consumo involontario.
-
-## Grafico offline della convergenza
-
-Il comando `scripts/cluster_convergence_report.sh` osserva passivamente una run Compose e salva in `artifacts/cluster/<timestamp>/` il log Compose sorgente, `convergence.csv`, `convergence.svg` e `summary.txt`. Il riferimento non viene inviato ai nodi: `cmd/convergence-chart` lo calcola offline dagli `initial_value` delle configurazioni associate alla run e usa i relativi `node_id` come insieme atteso.
-
-```bash
-OBSERVE_SECONDS=20 scripts/cluster_convergence_report.sh
-SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml SDCC_PROJECT_NAME=sdcc-scale \
-  SDCC_SERVICES='node1 node2 node3 node4 node5 node6' OBSERVE_SECONDS=20 \
-  scripts/cluster_convergence_report.sh
-```
-
-La prima topologia usa `average(10,30,50)=30`; la seconda usa `average(10,30,50,70,90,110)=60`. La tolleranza assoluta predefinita è `0.05` ed è modificabile con `TOLERANCE`. Il grafico contiene una serie a gradini per ogni nodo osservato, riferimento, banda e primo istante da cui tutti i nodi configurati rimangono nella banda. La convergenza non può essere dichiarata se manca anche un solo nodo configurato o compare un `node_id` estraneo; riepilogo e SVG elencano esplicitamente entrambe le anomalie.
+Il report scientifico finale in formato ACM o IEEE double-column verrà aggiunto successivamente.
