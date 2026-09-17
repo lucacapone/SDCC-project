@@ -1070,3 +1070,16 @@
 - **Descrizione task**: distinta nel riepilogo della demo TC la prima convergenza simultanea dei sei nodi dal completamento positivo della finestra di stabilità, senza modificare la logica runtime già validata.
 - **File modificati**: `scripts/demo_tc_latency.sh`, `docs/traffic_control.md`, `docs/operational_log.md`.
 - **Reasoning summary**: il monitor conserva in modo write-once il primo `elapsed` con sei nodi `[OK]`; eventuali regressioni successive a `[WAIT]` non lo cancellano né lo sovrascrivono. La decisione di successo continua a dipendere invariata da convergenza corrente, finestra minima di 8 secondi, timeout di 30 secondi, stato dei container e assenza di false suspicion. Il riepilogo sostituisce il generico tempo totale con le righe `Prima convergenza osservata` e `Stabilità verificata`. Il self-test include un harness deterministico con prima convergenza a 4s, perdita temporanea, nuova convergenza e successo finale a 9s.
+
+## 2026-09-17 00:00:00 UTC — Riorganizzazione finale della documentazione B3
+
+- **Descrizione task**: trasformata la documentazione incrementale del progetto in una documentazione finale tematica e verificabile per la consegna universitaria B3, senza modificare il comportamento runtime.
+- **File modificati**: `README.md`, `docs/architecture.md`, `docs/configuration.md`, `docs/testing.md`, `docs/deployment.md`, `docs/deployment_ec2.md`, `docs/observability.md`, `docs/traffic_control.md`, `docs/demo.md`, `docs/operational_log.md` (append-only).
+- **File eliminati**: `docs/task/M01.md`, `docs/task/M02.md`, `docs/task/M03.md`, `docs/task/M04.md`, `docs/task/M05.md`, `docs/task/M06.md`, `docs/task/M07.md`, `docs/task/M08.md`, `docs/task/M09.md`, `docs/task/M10.md`, `docs/task/M11.md`, `docs/task/M12.md`, `docs/task/TC01.md` e la directory `docs/task/`.
+- **Reasoning summary**: dopo la lettura di codice Go, configurazione, Dockerfile, file Compose, script, suite di test, documentazione canonica, note AWS, log operativo e di tutti i report incrementali, ho verificato ogni informazione contro gli artefatti correnti. Ho migrato protocollo/versioning/membership/transport e aggregazioni nell'architettura, precedence e validazioni nella configurazione, topologie e networking nel deployment, copertura e scenari di fault nei test, endpoint e campioni nell'observability, procedura EC2 single-host e checklist demo/Traffic Control nei rispettivi documenti. Ho scartato cronologia, gap chiusi, percentuali/esiti storici non riverificati, riferimenti a package superati e terminologia milestone. `docs/aws_learner_lab_notes.md` è rimasto invariato; il report finale non è stato creato e nel README resta soltanto il placeholder richiesto.
+
+## 2026-09-17 08:49:13 UTC — Precisazione timestamp riorganizzazione documentale
+
+- **Descrizione task**: precisazione append-only dell'orario reale relativo alla precedente entry di riorganizzazione finale, registrata inizialmente con l'orario convenzionale `00:00:00 UTC`.
+- **File modificati**: `docs/operational_log.md` (append-only).
+- **Reasoning summary**: la data della precedente entry è corretta, mentre l'orario effettivo della validazione era `08:49:13 UTC`; la cronologia preesistente e l'entry originale non sono state riscritte.

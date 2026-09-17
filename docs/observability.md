@@ -1,207 +1,116 @@
-# Observability minima del nodo
+# Observability
 
-## Decisione canonica e vincolante
-La scelta univoca del repository per l'observability minima è la **soluzione ibrida**: **stdout strutturato per gli eventi applicativi** + **endpoint HTTP dedicati per metriche, health e readiness**. Questa decisione è vincolante per i task successivi e sostituisce ogni precedente ambiguità tra opzione HTTP-only, stdout-only o implementazioni parallele.
+## Modello
 
-Conseguenze operative della decisione:
-- **i log evento-per-evento** devono continuare a uscire su stdout/stderr in formato strutturato tramite `log/slog`;
-- **metriche e probe** devono essere esposte solo tramite il piccolo server HTTP di observability;
-- **non sono ammesse implementazioni duplicate** che pubblichino le stesse metriche sia su stdout sia via endpoint alternativi non documentati;
-- i done criteria relativi a metriche, liveness e readiness si considerano soddisfatti solo quando sono verificabili attraverso `/metrics`, `/health` e `/ready`, mentre stdout resta il canale canonico per il debugging sequenziale degli eventi.
+L'observability combina:
 
-## 1. Architettura minima dell'observability
-L'architettura di observability introdotta e consolidata nel repository è volutamente piccola, coerente con il runtime attuale e priva di dipendenze esterne obbligatorie. I componenti minimi sono quattro:
+- log strutturati su stdout/stderr per eventi e diagnostica;
+- collector in-process condiviso fra wiring ed engine;
+- server HTTP minimale per liveness, readiness e metriche.
 
-1. **logger strutturato** basato su `log/slog`, usato per emettere eventi applicativi con chiavi stabili e leggibili sia in locale sia nei log containerizzati;
-2. **collector di metriche** nel package `internal/observability`, responsabile di mantenere contatori/gauge aggregate a bassa cardinalità e di renderle disponibili via HTTP;
-3. **stato lifecycle del nodo** con progressione monotona `startup -> bootstrap_completed -> transport_initialized -> engine_started -> shutdown`, utile per health/readiness e debugging operativo;
-4. **server HTTP minimo** integrato nel lifecycle reale di `cmd/node/main.go`, esposto di default su `:8080` e configurabile tramite `OBSERVABILITY_ADDR`.
+Non sono inclusi Prometheus, Grafana, tracing distribuito o storage centralizzato.
 
-Flusso minimo:
-- il processo avvia collector e logger durante il bootstrap del nodo;
-- il lifecycle aggiorna lo stato del collector durante bootstrap, inizializzazione transport, start engine e shutdown;
-- gli handler HTTP leggono lo snapshot corrente del collector ed espongono `/health`, `/ready` e `/metrics`;
-- i log strutturati restano la traccia evento-per-evento, mentre le metriche offrono una vista aggregata del comportamento del nodo.
+## Log strutturati
 
-## 2. Campi log supportati
-I log sono strutturati e ruotano attorno a un insieme piccolo di chiavi stabili, per evitare payload rumorosi o ad alta cardinalità. I campi supportati/attesi sono:
+Il logger usa `slog` e include campi stabili quali:
 
-- `event`: nome logico dell'evento (`node_bootstrap`, `transport_start`, `gossip_round`, `remote_merge`, `shutdown`);
-- `node_id`: identificatore logico del nodo che emette il log;
-- `runtime_instance`: identificativo stabile dell'istanza runtime che emette il log (letto da `HOSTNAME`, con fallback a `node_id` e poi `unknown`) per distinguere immediatamente container/processi diversi anche quando condividono lo stesso `node_id`;
-- `round`: round gossip locale, quando applicabile;
-- `peers`: numero di peer considerati nel round corrente;
-- `estimate`: stima/valore aggregato osservabile in quel momento;
-- `result`: esito sintetico di un merge remoto o di un'azione significativa (`applied`, `partial_merge`, `skipped`, `conflict`, `unknown`);
-- `node_state`: stato lifecycle corrente del nodo, utile soprattutto in prossimità di readiness/shutdown.
+- `event`, `node_id`, `runtime_instance`;
+- `round`, `peers`, `estimate`, `aggregation`;
+- `result` per l'esito di merge;
+- `node_state` e campi diagnostici specifici.
 
-Scelte operative sui log:
-- il set di campi è **stabile e intenzionalmente minimo**;
-- i dettagli verbosi del payload gossip non vengono serializzati nei log ordinari;
-- la cardinalità resta bassa per rendere i log leggibili e correlabili con le metriche.
+Eventi utili:
 
-### Categorie dei campi log
-Per mantenere leggibili i log prodotti da Docker Compose senza perdere la possibilità di diagnosi avanzata, i campi sono divisi in due categorie operative. In condizioni ordinarie il livello `INFO` deve privilegiare i campi essenziali; quando serve ricostruire merge, payload o decisioni per nodo, l'operatore può abilitare `LOG_LEVEL=debug` per ottenere il dettaglio diagnostico.
+- `node_bootstrap` e `transport_start`;
+- `gossip_round`;
+- `remote_merge`;
+- `membership_transition`;
+- `convergence_sample`;
+- `shutdown`.
 
-#### Campi operativi
-I campi operativi sono quelli da mostrare normalmente a livello `INFO`, perché bastano per seguire il comportamento del nodo durante avvio, round gossip, merge remoti e shutdown:
+`logging.remote_merge_mode` controlla il dettaglio dei merge (`full`, `significant`, `off`); `logging.log_estimate_delta_threshold` riduce gli eventi non significativi in base alla variazione di stima. I campi di conflitto vengono emessi soltanto quando pertinenti.
 
-- `event`;
-- `node_id`;
-- `runtime_instance`;
-- `round`;
-- `peers`;
-- `estimate`;
-- eventuale `merge_status`, quando l'evento descrive un merge remoto o un esito equivalente.
+Esempio Compose:
 
-#### Campi diagnostici
-I campi diagnostici sono quelli da mostrare a livello `DEBUG` oppure a livello `INFO` solo in casi anomali, conflittuali o comunque utili per diagnosi immediata:
+```bash
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --no-color node1
+```
 
-- `message_id`;
-- `membership_entries`;
-- `estimate_before`;
-- `estimate_after`;
-- `remote_estimate`;
-- `remote_round`;
-- `aggregation_changed`;
-- `membership_recalculation_changed`;
-- `membership_eligibility_changed`;
-- `estimate_after_aggregation_merge`;
-- `estimate_after_membership_recalculation`;
-- dettagli di conflitto e decisioni per nodo, inclusi `conflict_node_id`, `conflict_decision`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `merge_reason`, `unique_nodes` e `max_preserved`.
+## Endpoint HTTP
 
-Semantica esplicita per `event=remote_merge`:
-- per un merge significativo con `merge_status=applied`, il livello `INFO` mantiene i campi base necessari alla correlazione operativa: `event`, `node_id`, `round`, `peers`, `estimate`, `merge_status`, `remote_node_id` e i campi diagnostici sintetici `aggregation_changed`, `membership_recalculation_changed`, `membership_eligibility_changed`, `estimate_after_aggregation_merge`, `estimate_after_membership_recalculation`;
-- i campi diagnostici di dettaglio sono emessi nel record `DEBUG` dello stesso merge, così da restare disponibili quando si abilita il debug senza aumentare il rumore dei log ordinari: `estimate_before`, `estimate_after`, `remote_round`, `remote_estimate`, `membership_entries`, `unique_nodes`, `node_decisions_newer_version`, `node_decisions_duplicate_ignored`, `node_decisions_tie_break`, `remote_node_decision`, `max_preserved` e `merge_reason`;
-- `membership_entries` indica **solo** il numero di entry ricevute nel messaggio remoto (`len(msg.membership)`), mentre `peers` indica il numero peer **localmente noti dopo** merge stato + aggiornamento membership (`len(Membership.Snapshot())`); i due campi devono rimanere separati e non intercambiabili, così da distinguere chiaramente ampiezza del payload remoto e vista locale corrente del nodo;
-- `unique_nodes` espone quanti contributi nodo unici sono presenti nello stato canonico dell'aggregazione;
-- `estimate_before` / `estimate_after` espongono la differenza stimata prima/dopo il merge remoto; per uno skip puro (`merge_status=skipped`) devono coincidere, mentre una variazione prodotta da componenti runtime collaterali viene classificata come `merge_status=partial_merge`;
-- `max_preserved` espone la motivazione numerica per merge `max` (`true` quando il risultato mantiene esplicitamente `max(estimate_before, remote_estimate)`);
-- `node_decisions_newer_version` / `node_decisions_duplicate_ignored` / `node_decisions_tie_break` espongono una sintesi leggera (conteggi per tipo) delle decisioni per-nodo durante il merge `sum`;
-- `remote_node_decision` espone la decisione applicata al contributo del nodo `remote_node_id` (`newer_version`, `duplicate_ignored`, `tie_break` oppure `not_present` se assente nel payload contributi);
-- quando `merge_status=conflict`, `merge_status=partial_merge` o il merge viene classificato come comportamento anomalo, il livello `INFO` conserva il dettaglio completo includendo anche `merge_reason`, perché questo campo è necessario a diagnosticare immediatamente divergenze di payload, aggregazione, versioning o ricalcoli membership-aware; per `sum`, `average`, `min` e `max`, payload concorrenti con stessa versione globale ma contributi di nodi diversi sono attesi e normalmente appaiono come `merge_status=applied`/`merge_reason=remote_contribution_merged`, non come `same_version_different_payload`;
-- `conflict_node_id` e `conflict_decision` sono campi opzionali: vengono aggiunti al record `remote_merge` solo quando il merge ha prodotto una decisione di conflitto significativa, cioè quando esiste un nodo in conflitto (`conflict_node_id` non vuoto, per esempio una decisione per-nodo `tie_break`) oppure quando `merge_status=conflict`. Nei merge applicati o saltati senza conflitto questi campi non devono essere assunti presenti, nemmeno come stringhe vuote.
-
-## 3. Metriche esposte
-L'endpoint `/metrics` espone un formato testuale minimale pensato per verifica umana, scraping semplice e test automatici mirati. Le metriche/documenti di stato esposti sono:
-
-- **round gossip**: conteggio aggregato dei round eseguiti dal nodo;
-- **merge remoti**: conteggio dei merge remoti per esito, con cardinalità limitata ai valori `applied`, `partial_merge`, `skipped`, `conflict`, `unknown`;
-- **readiness del nodo**: stato booleano/derivato che riflette se bootstrap ed engine risultano effettivamente completati;
-- **stato lifecycle del nodo**: gauge `sdcc_node_state{state=...}` che rende osservabile la fase corrente del nodo;
-- **health applicativa minima**: esposta indirettamente tramite gli handler HTTP e coerente con lo snapshot lifecycle corrente.
-
-Principi adottati:
-- niente etichette per peer, message ID o endpoint remoti, per evitare esplosione di cardinalità;
-- metriche centrate sul comportamento del nodo, non su tracing distribuito fine-grained;
-- naming e contenuto mantenuti abbastanza stabili da poter essere validati dal test canonico `TestMetricsExposure`.
-
-## 3.1 Log `remote_merge` per diagnostica average
-L'evento strutturato `remote_merge` mantiene `peers` come numero di peer noti nella membership locale dopo il merge. Per evitare ambiguità tra dimensione della membership e contributi effettivamente usati nel calcolo di `average`, quando l'aggregazione attiva è `average` l'evento include anche:
-
-- `average_known_contributions`: numero totale di entry presenti in `AggregationData.Average.Contributions`, incluse quelle storiche/non eleggibili conservate per convergenza e rejoin;
-- `average_eligible_contributions`: numero di contributi average realmente usati per calcolare `estimate`, cioè l'intersezione tra contributi noti e nodi membership-eligible;
-- `average_eligible_node_ids`: lista ordinata dei `node_id` che entrano effettivamente nella media esposta;
-- `average_contribution_node_ids`: lista ordinata dei `node_id` presenti in `AggregationData.Average.Contributions`.
-
-Questi campi rendono distinguibile, ad esempio, un cluster con `peers=6` da una media calcolata su un sottoinsieme più piccolo di contributi `alive`. Gli stessi eventi `remote_merge` espongono inoltre la pipeline della stima in due stadi: `estimate_after_aggregation_merge` fotografa il valore subito dopo `applyRemote`/`mergeAverageState`, mentre `estimate_after_membership_recalculation` fotografa il valore dopo `recalculateStateForMembership`. I booleani `aggregation_changed`, `membership_recalculation_changed` e `membership_eligibility_changed` indicano rispettivamente se la stima è cambiata durante il merge aggregativo, durante il ricalcolo membership-aware o perché il digest/heartbeat remoto ha cambiato il set di node_id eleggibili.
-
-## 4. Endpoint disponibili
-Gli endpoint HTTP disponibili sono tre.
+Il bind è `OBSERVABILITY_ADDR`, default `:8080`.
 
 ### `/health`
-- scopo: **liveness** minima del processo;
-- comportamento: restituisce `200 OK` finché il processo HTTP/runtime è vivo;
-- contenuto utile: include il `node_state` corrente per favorire il debugging rapido.
+
+Restituisce sempre HTTP 200 finché il processo e il server rispondono, con JSON contenente stato `alive`, messaggio health e lifecycle corrente.
 
 ### `/ready`
-- scopo: **readiness** del nodo per uso locale/Compose/debug;
-- comportamento: restituisce `503` finché il nodo non ha completato bootstrap e avvio engine;
-- transizione a pronto: restituisce `200 OK` quando il nodo raggiunge `engine_started`;
-- **criterio canonico di readiness**: il nodo è pronto solo quando il collector ha già osservato sia il completamento del bootstrap sia l'avvio effettivo dell'engine gossip; il semplice fatto che il processo sia in esecuzione non è sufficiente.
+
+Restituisce HTTP 503 fino al completamento del bootstrap e all'avvio dell'engine; poi HTTP 200 con stato `ready`. Non verifica la convergenza globale.
 
 ### `/metrics`
-- scopo: esportazione testuale delle metriche minime del nodo;
-- comportamento: rende visibili contatori/gauge aggregate del collector;
-- aggiornamento runtime: l'engine gossip incrementa `sdcc_node_rounds_total` dopo ogni round completato, aggiorna `sdcc_node_known_peers`/`sdcc_node_estimate` dopo round e merge remoti e registra `sdcc_node_remote_merges_total{result=...}` subito dopo `applyRemote(...)`.
-- uso tipico: verifica manuale via `curl`, scraping leggero e test automatico canonico di regressione.
 
-Binding HTTP:
-- default: `:8080`;
-- override: variabile ambiente `OBSERVABILITY_ADDR`.
+Restituisce testo compatibile con l'exposition format Prometheus:
 
-Lifecycle del server HTTP:
-- il server di observability viene avviato dal runtime del nodo durante il bootstrap di `cmd/node/main.go`;
-- resta attivo per tutta la vita del processo, così da offrire una superficie stabile per `curl`, Compose e verifiche manuali;
-- durante l'avvio espone subito `/health`, mentre `/ready` rimane non-pronto (`503`) finché il lifecycle non raggiunge `engine_started`;
-- durante lo shutdown il processo aggiorna `node_state` a `shutdown`, quindi la disponibilità degli endpoint termina con l'arresto del processo stesso.
+- `sdcc_node_rounds_total`;
+- `sdcc_node_remote_merges_total{result=...}`;
+- `sdcc_node_known_peers`;
+- `sdcc_node_estimate`;
+- `sdcc_node_uptime_seconds`;
+- `sdcc_node_ready`;
+- `sdcc_node_state{state=...}`.
 
-## 5. Istruzioni d'uso e verifica
-### Avvio del nodo con observability attiva
-Esempio minimale:
+`known_peers` conta le entry locali di membership; non equivale al numero di contributori `alive`. `estimate` è il valore membership-aware corrente.
 
-```bash
-go run ./cmd/node --config configs/example.yaml
-```
+## Lifecycle
 
-Esempio con binding HTTP esplicito:
+Gli stati esposti sono `startup`, `bootstrap_completed`, `transport_initialized`, `engine_started`, `shutdown`. Il server HTTP parte durante lo startup e viene arrestato insieme al nodo; per questo health può essere disponibile mentre ready restituisce ancora 503.
+
+## Accesso in Docker Compose
+
+La porta non è pubblicata sull'host. Su Linux può essere interrogata tramite IP interno:
 
 ```bash
-OBSERVABILITY_ADDR=:8080 go run ./cmd/node --config configs/example.yaml
+CID=$(docker compose -p sdcc-bootstrap -f docker-compose.yml ps -q node1)
+IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CID")
+curl --fail "http://${IP}:8080/health"
+curl --fail "http://${IP}:8080/ready"
+curl --fail "http://${IP}:8080/metrics"
 ```
 
-### Verifica canonica automatica post-M11
-Il comando canonico di verifica della milestone/documentazione observability è:
+Su Docker Desktop l'IP interno potrebbe non essere raggiungibile dall'host; usare gli harness inclusi oppure un container diagnostico sulla stessa rete. Non modificare il Compose canonico durante un test di conformità senza registrare la variante.
+
+## Campioni e report di convergenza
+
+`convergence_sample` è una fotografia passiva che include almeno nodo, round, aggregazione e stima. Non influenza gossip o risultato. La pipeline:
 
 ```bash
-go test ./tests/observability -run TestMetricsExposure
+scripts/cluster_convergence_report.sh
 ```
 
-### Verifica manuale rapida
-Con il nodo in esecuzione:
+raccoglie i log di una run delimitata e usa `cmd/convergence-chart` per produrre CSV e SVG in `artifacts/cluster`. Il report calcola l'oracle dai valori configurati, valida i nodi attesi e identifica una convergenza che rimanga entro tolleranza per il resto dei campioni.
+
+`scripts/show_aggregation_status.sh` legge invece una sola volta l'ultimo campione di ogni servizio scale già attivo; non attende, non ricalcola l'aggregato e termina non-zero se mancano dati validi.
+
+## Uso durante demo e test
 
 ```bash
-curl -s http://127.0.0.1:8080/health
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/ready
-curl -s http://127.0.0.1:8080/metrics
+go test ./tests/observability -count=1
+go test ./tests/gossip -run 'TestRoundAggiornaCollector|TestConvergenceSampleEventSchema' -count=1
 ```
 
-Cosa aspettarsi:
-- `/health` risponde positivamente finché il processo è vivo;
-- `/ready` passa da non-pronto a pronto solo dopo bootstrap+start engine;
-- `/metrics` include le metriche minime del collector e lo stato lifecycle del nodo.
+Durante la demo correlare:
 
-### Correlazione pratica log + metriche
-Per una diagnosi locale rapida:
-1. controllare nei log strutturati la sequenza `node_bootstrap -> transport_start -> gossip_round`;
-2. verificare che `node_state` avanzi fino a `engine_started`;
-3. interrogare `/ready`;
-4. infine verificare in `/metrics` la presenza delle metriche coerenti con il lifecycle e con eventuali merge/round già eseguiti.
+1. crescita di `rounds_total`;
+2. eventi `remote_merge`;
+3. stime `convergence_sample` coerenti;
+4. `membership_transition` durante crash/rejoin;
+5. `/ready` separato dalla convergenza.
 
-## 6. Limiti noti e scelte progettuali
-### Limiti noti
-- l'observability è **minima**: non include tracing distribuito, profiling o integrazione nativa con backend esterni;
-- il formato `/metrics` è volutamente semplice e limitato alle esigenze del repository;
-- la readiness riflette il wiring del runtime attuale, non la salute end-to-end dell'intero cluster;
-- le metriche sono aggregate per nodo e non descrivono in dettaglio ogni peer o ogni messaggio gossip;
-- la validazione automatica copre l'esposizione minima (`TestMetricsExposure`), non un ambiente observability completo di produzione.
+## Limiti
 
-### Scelte progettuali
-- **integrazione diretta in `cmd/node/main.go`**: non è stato introdotto un layer aggiuntivo perché il wiring richiesto resta piccolo e leggibile;
-- **bassa cardinalità prima della ricchezza del dato**: priorità a metriche sostenibili e log stabili, più utili per debug e CI rispetto a un output molto dettagliato ma rumoroso;
-- **soluzione ibrida fissata esplicitamente**: stdout strutturato per eventi e HTTP per metriche/probe; nessuna delle due superfici sostituisce l'altra;
-- **health/readiness separate**: `/health` segnala vita del processo, `/ready` segnala la disponibilità funzionale minima del nodo;
-- **command-centric verification**: la prova canonica resta il comando `go test ./tests/observability -run TestMetricsExposure`, così da avere una verifica ripetibile e non ambigua;
-- **documentazione coerente con implementazione reale**: il documento descrive solo ciò che il repository espone oggi, senza introdurre claim su stack observability non presenti.
-
-## Evento `convergence_sample` e dataset CSV
-
-L'evento passivo ha i campi stabili `event=convergence_sample`, `timestamp` RFC3339Nano UTC, `node_id`, `aggregation`, `round`, `estimate` e `sample_type`. I tipi di punto sono `initial`, `local_round` e `remote_merge`; quest'ultimo viene emesso solo quando il valore locale cambia oltre `logging.log_estimate_delta_threshold`. Il log Compose originale viene conservato accanto ai derivati.
-
-Il CSV usa esattamente l'header:
-
-```text
-timestamp,elapsed_seconds,node_id,round,aggregation,estimate,event_type
-```
-
-`elapsed_seconds` è il tempo dal primo campione valido globale, non dal bootstrap di ciascun nodo. Le righe sono ordinate per timestamp, quindi `elapsed_seconds=0` identifica l'origine comune della run.
+- endpoint senza autenticazione/TLS;
+- metriche conservate soltanto in memoria;
+- nessun identificatore di trace end-to-end;
+- log potenzialmente voluminosi in modalità merge `full`;
+- readiness attesta il runtime avviato, non quorum, membership completa o aggregato convergente.

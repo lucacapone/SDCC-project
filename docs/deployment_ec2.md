@@ -1,239 +1,158 @@
-# Deploy SDCC su EC2 (AWS Learner Lab)
+# Deployment su AWS EC2
 
-## Persistenza dell'identità durante restart/rejoin
+## Ambito
 
-I named volume Compose sotto `/var/lib/sdcc` devono essere conservati per mantenere monotona la generation di ogni `NodeID`. `docker compose stop/start` e la ricreazione senza rimozione volumi sono supportati; evitare `docker compose down -v` durante prove di rejoin, perché cancella la generation e costituisce perdita dell'identità durevole. Il recovery automatico dai peer dopo perdita del volume non rientra nell'implementazione corrente.
+Il percorso supportato per B3 è **una singola istanza EC2 dell'AWS Academy Learner Lab con Docker Compose**. Tutti i nodi sono container sulla stessa VM e comunicano sulla rete bridge; non è previsto un deployment multi-host.
 
-## 1) Scopo del deploy EC2 per SDCC
+Le limitazioni specifiche del laboratorio sono raccolte separatamente in [AWS Learner Lab Notes](aws_learner_lab_notes.md).
 
-Questa guida descrive **solo** il deploy dimostrativo di SDCC su EC2 in contesto **AWS Academy Learner Lab**, allineato ai comandi e agli artefatti reali del repository.
+## 1. Preparare l'istanza
 
-Obiettivo pratico:
+Creare una EC2 Linux x86_64 compatibile con Docker, dimensionata per almeno tre container (sei per gli scenari scale/TC), con volume sufficiente per immagini e log. Associare la key pair e il profilo consentiti dal Learner Lab.
 
-- eseguire il cluster SDCC a 3 nodi (`node1`, `node2`, `node3`) su una VM EC2;
-- mantenere il flusso il più vicino possibile al percorso locale canonico (`docker-compose.yml` in root);
-- validare in modo osservabile bootstrap, readiness, round gossip e convergenza.
+Security Group minimo:
 
-Questa non è una guida AWS generica: è un runbook operativo focalizzato sul progetto SDCC.
+- ingresso SSH TCP/22 soltanto dal proprio indirizzo IP, oppure accesso browser/Session Manager se disponibile;
+- uscita HTTPS/DNS necessaria a installazione pacchetti, clone e pull delle immagini;
+- nessuna regola pubblica per UDP gossip o porta 8080: restano interne al bridge Docker.
 
----
+Non esporre metriche prive di autenticazione a Internet. Se si aggiunge temporaneamente un port mapping per la demo, limitarlo al proprio IP e rimuoverlo dopo l'uso.
 
-## 2) Ipotesi architetturale principale (raccomandata): **Opzione A**
+## 2. Installare i prerequisiti
 
-### Opzione A — 1 EC2 + Docker Compose (**percorso principale**)
+Installare con il package manager della distribuzione:
 
-Percorso raccomandato per Learner Lab:
-
-- **una sola istanza EC2 Linux**;
-- repository SDCC clonata sulla VM;
-- avvio del cluster con il file canonico `docker-compose.yml` di root.
-
-Vantaggi pratici per SDCC:
-
-- minor costo e minor rischio budget;
-- setup semplice e replicabile;
-- nessuna complessità di networking multi-host per la demo.
-
-### Opzione B — multi-host EC2 (opzionale/avanzata)
-
-Deploy con più EC2 è possibile, ma va considerato **opzionale e avanzato**:
-
-- maggiore costo;
-- gestione IP/porte più fragile;
-- bootstrap/membership tra host più complesso.
-
-**Regola operativa**: salvo esigenze specifiche approvate, usare Opzione A come percorso principale.
-
----
-
-## 3) Prerequisiti
-
-## Regione
-
-Nel Learner Lab usare solo regioni consentite:
-
-- `us-east-1` (preferita);
-- `us-west-2`.
-
-## Accesso e istanza
-
-Prerequisiti minimi:
-
-1. Istanza EC2 Linux piccola (tipicamente `t3.small` o equivalente consentito dal lab).
-2. Key pair disponibile nella regione scelta:
-   - in `us-east-1` in genere è disponibile `vockey`;
-   - in altre regioni potrebbe essere necessario creare/gestire una key pair dedicata.
-3. Security Group minimale (vedi sezione 5).
-4. Accesso alla VM via SSH (se usato):
-
-```bash
-chmod 400 <key>.pem
-ssh -i <key>.pem ec2-user@<EC2_PUBLIC_IP>
-```
-
-## Runtime software sulla VM
-
-Installare/validare:
-
+- Git;
 - Docker Engine;
-- Docker Compose plugin (`docker compose`);
-- Git.
+- plugin Docker Compose v2.
 
-Verifica rapida:
+Abilitare e avviare Docker, aggiungere l'utente al gruppo Docker se appropriato, quindi aprire una nuova sessione. Verificare:
 
 ```bash
-docker --version
-docker compose version
 git --version
+docker info
+docker compose version
 ```
 
----
+I comandi esatti di installazione dipendono dall'AMI scelta; seguire la documentazione ufficiale della distribuzione anziché copiare comandi per un sistema diverso.
 
-## 4) Costi e limiti Learner Lab (vincolanti)
-
-Punti operativi da rispettare:
-
-- budget progetto noto: **50 USD**;
-- la metrica budget può avere ritardo di **8–12 ore**;
-- limite per regione: fino a **9 istanze EC2 contemporanee**;
-- limite complessivo: fino a **32 vCPU**;
-- EBS con tetto totale tipico **100 GB**;
-- superare limiti/costi può causare disabilitazione del lab.
-
-Conseguenza pratica per SDCC:
-
-- mantenere la demo su **1 EC2** quando possibile;
-- evitare servizi non necessari (NAT Gateway, RDS, ECS/EKS, ecc.);
-- fare cleanup esplicito a fine sessione.
-
----
-
-## 5) Security Group minimo per demo SDCC
-
-Principio: aprire solo il minimo indispensabile.
-
-## Traffico esterno (Internet -> EC2)
-
-- `22/tcp` da IP sorgente ristretto (solo se serve SSH);
-- eventuale porta observability HTTP **solo se serve demo esterna**:
-  - `8080/tcp` limitata al proprio IP pubblico (non `0.0.0.0/0` se evitabile).
-
-## Traffico interno (tra container sulla stessa EC2)
-
-Con Opzione A, la comunicazione gossip tra nodi avviene sulla rete Docker Compose interna (`sdcc-net`) e usa le porte UDP configurate (`7001`, `7002`, `7003`) **dentro** la rete container.
-
-Queste porte non devono necessariamente essere esposte pubblicamente nel Security Group per la demo base su singola VM.
-
----
-
-## 6) Bootstrap operativo su EC2 (comandi allineati alla repo)
-
-Eseguire sulla VM EC2.
-
-### 6.1 Clone repository
+## 3. Ottenere il progetto
 
 ```bash
-git clone <URL_REPO_SDCC>
+git clone <repository-url>
 cd SDCC-project
 ```
 
-### 6.2 Avvio cluster Compose canonico
-
-Comando canonico repository:
-
-```bash
-docker compose up -d --build
-```
-
-Verifica servizi:
-
-```bash
-docker compose ps
-```
-
-### 6.3 Verifica log applicativi
-
-```bash
-docker compose logs --tail 120 node1
-docker compose logs --tail 120 node2
-docker compose logs --tail 120 node3
-```
-
-In alternativa, usare gli script repository (utile anche per diagnostica):
+## 4. Avviare il cluster a 3 nodi
 
 ```bash
 scripts/cluster_up.sh
 scripts/cluster_wait_ready.sh
+docker compose -p sdcc-bootstrap -f docker-compose.yml ps
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --tail=50
 ```
 
-### 6.4 Verifica endpoint observability
+Il build usa il `Dockerfile` multi-stage e produce `sdcc-node:local`. I tre nodi eseguono `average` sui valori 10, 30 e 50; il risultato atteso è 30.
 
-Se la porta 8080 del nodo target è raggiungibile dall’host/contesto corrente:
-
-```bash
-curl -s http://127.0.0.1:8080/health
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/ready
-curl -s http://127.0.0.1:8080/metrics
-```
-
-Nota: in base al mapping porte del deployment specifico, questi check possono richiedere esecuzione locale dentro la VM o adattamento endpoint.
-
----
-
-## 7) Verifica demo su EC2 (passi osservabili + criteri)
-
-Checklist osservabile consigliata:
-
-1. `docker compose ps` mostra `node1`, `node2`, `node3` in stato attivo.
-2. Nei log compaiono marker coerenti con bootstrap/round gossip.
-3. `/ready` restituisce `200` quando bootstrap+engine sono completati.
-4. `/metrics` espone metriche minime (`sdcc_node_rounds_total`, `sdcc_node_estimate`, `sdcc_node_remote_merges_total`, ecc.).
-5. Le stime dei nodi convergono in banda stretta nello scenario `average` con valori iniziali `10/30/50`.
-
-Criterio di convergenza allineato alla test strategy:
-
-- banda cluster `max(values)-min(values) <= 0.05`.
-
-Comando canonico di verifica automatica (se eseguito nel contesto adeguato):
+Per una prova automatica completa:
 
 ```bash
 go test ./tests/integration -run TestClusterConvergence -count=1
+go test ./tests/integration -run TestNodeCrashAndRestart -count=1
 ```
 
----
+Questi comandi richiedono anche Go 1.22 sulla VM. Se Go non è installato, usare gli script e la checklist manuale di [Demo](demo.md).
 
-## 8) Stop e cleanup (obbligatorio)
+## 5. Avviare il cluster a 6 nodi
 
-A fine demo:
-
-1. Fermare cluster SDCC sulla VM:
+Arrestare prima il cluster a tre nodi, perché entrambi nominano la rete `sdcc-net`:
 
 ```bash
-docker compose down
+scripts/cluster_down.sh
+
+export SDCC_COMPOSE_FILE=deploy/docker-compose.scale.yml
+export SDCC_PROJECT_NAME=sdcc-scale
+export SDCC_SERVICES='node1 node2 node3 node4 node5 node6'
+
+scripts/cluster_up.sh
+scripts/cluster_wait_ready.sh
+scripts/show_aggregation_status.sh
 ```
 
-2. Se usati gli script repository:
+L'average atteso per i sei valori configurati è 60. Consultare i log con:
+
+```bash
+docker compose -p sdcc-scale -f deploy/docker-compose.scale.yml logs --tail=100
+```
+
+## 6. Readiness, log e metriche
+
+I Compose non pubblicano le porte HTTP. `cluster_wait_ready.sh` è il controllo operativo canonico. Per dimostrare `/health`, `/ready` e `/metrics` senza modificare il deployment, ricavare l'IP interno del container dalla rete Docker e interrogare la porta 8080 dalla VM, se la configurazione Docker lo consente:
+
+```bash
+NODE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+  "$(docker compose -p sdcc-bootstrap -f docker-compose.yml ps -q node1)")
+curl --fail "http://${NODE_IP}:8080/health"
+curl --fail "http://${NODE_IP}:8080/ready"
+curl --fail "http://${NODE_IP}:8080/metrics"
+```
+
+Per gli eventi applicativi:
+
+```bash
+docker compose -p sdcc-bootstrap -f docker-compose.yml logs --no-color | \
+  grep -E 'event=(gossip_round|remote_merge|convergence_sample|membership_transition)'
+```
+
+## 7. Crash e rejoin
+
+```bash
+scripts/fault_injection/node_stop_start.sh stop node1
+docker compose -p sdcc-bootstrap -f docker-compose.yml ps
+scripts/fault_injection/node_stop_start.sh start node1
+scripts/fault_injection/collect_debug_snapshot.sh node1
+```
+
+I volumi devono essere preservati tra stop/start: contengono la generation necessaria affinché il rejoin della stessa `node_id` prevalga sullo stato precedente.
+
+## 8. Traffic Control opzionale
+
+Su kernel Linux con NetEm disponibile:
+
+```bash
+scripts/demo_tc_latency.sh --self-test
+scripts/demo_tc_latency.sh average
+```
+
+La modalità costruisce un'immagine Alpine dedicata, assegna `NET_ADMIN` soltanto ai container TC e non richiede aperture nel Security Group. Vedere [Traffic Control](traffic_control.md).
+
+## 9. Cleanup e controllo costi
+
+Cluster standard:
 
 ```bash
 scripts/cluster_down.sh
 ```
 
-3. In AWS Console/CLI:
+Cluster scale (con le variabili ancora esportate):
 
-- fermare o terminare l’istanza EC2 non più necessaria;
-- verificare dischi EBS residui e altre risorse lasciate attive;
-- confermare che non restino istanze compute inutili.
+```bash
+scripts/cluster_down.sh
+```
 
-Cleanup è obbligatorio per evitare consumo budget involontario.
+Traffic Control:
 
----
+```bash
+docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down
+```
 
-## 9) Limiti noti e rischi pratici
+Usare `docker compose ... down -v` soltanto per un reset definitivo. Dopo la demo arrestare o terminare la EC2 secondo le regole del Learner Lab e controllare che non restino volumi/istanze inutilizzati.
 
-1. **IP pubblico variabile**: dopo stop/start EC2 l’IPv4 pubblico può cambiare.
-2. **Differenze locale vs EC2**: latenza, performance e networking possono differire dal laptop locale.
-3. **Metrica budget non realtime**: il residuo mostrato può essere in ritardo (8–12 ore).
-4. **Multi-host EC2 più fragile/costoso**: gestione di seed peer, porte, IP e SG è più complessa rispetto a 1 VM.
-5. **Rischio risorse dimenticate**: istanze/dischi lasciati attivi consumano budget anche fuori dalla demo.
+## 10. Troubleshooting
 
-Per SDCC in Learner Lab, la scelta robusta resta: **Opzione A (1 EC2 + Docker Compose)** come percorso standard; **multi-host solo per esigenze specifiche**.
+- **SSH irraggiungibile:** controllare sessione Learner Lab, IP pubblico, route, key pair e regola TCP/22 limitata al proprio IP.
+- **Docker permission denied:** usare una nuova sessione dopo l'aggiunta al gruppo Docker o il meccanismo amministrativo previsto dall'AMI.
+- **Build lenta o spazio esaurito:** verificare `df -h`, `docker system df` e rimuovere soltanto risorse non necessarie.
+- **Container in restart:** consultare `docker compose ... ps` e `logs`; verificare mount, configurazione e scrittura dei volumi.
+- **Metriche non raggiungibili:** usare IP interno/porta 8080 dalla VM; non aprire automaticamente la porta a Internet.
+- **NetEm fallisce:** verificare supporto kernel e capability `NET_ADMIN`; la modalità standard non dipende da Traffic Control.
