@@ -236,4 +236,4 @@ Il deployment B3 supportato è **una singola istanza EC2 con Docker Compose**. G
 
 Il report scientifico finale del progetto, redatto in formato IEEE conference double-column, documenta architettura, implementazione, strategia di testing, risultati di convergenza, fault tolerance, Traffic Control e deployment su AWS EC2.
 
-- [SDCC Project Report](docs/report_sdcc.tex)
+- [SDCC Project Report](docs/report_sdcc.pdf)
