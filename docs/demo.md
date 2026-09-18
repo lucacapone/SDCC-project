@@ -146,7 +146,6 @@ docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down
 - Solo peer `alive` contribuiscono alla stima esposta; metadata non eleggibili restano disponibili per rejoin.
 - Persistenza della generation rende monotono il restart della stessa identità, finché i volumi non vengono eliminati.
 - Traffic Control è una valutazione sintetica single-host, non una WAN reale.
-- Il report scientifico e il dataset definitivo sono deliverable successivi.
 
 ## Cleanup di emergenza
 
