@@ -207,4 +207,3 @@ docker compose -f deploy/docker-compose.tc.yml -p sdcc-tc down
 - Le soglie temporali Compose dipendono dalle risorse dell'host e possono richiedere override documentati nei test/script.
 - Traffic Control misura uno scenario sintetico single-host, non una WAN reale.
 - I grafici sono prodotti da log applicativi e non sostituiscono un sistema di tracing distribuito.
-- Il repository non contiene ancora il dataset definitivo o i risultati da discutere nel report scientifico.
